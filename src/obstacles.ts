@@ -30,6 +30,13 @@ export interface ObstacleOptions {
   join?: number;
   /** Which triangles to consider at all, by triangle index: the active floor, inside the region. */
   keep?: (t: number) => boolean;
+  /**
+   * Ground this far above an obstacle's foot that its steep faces lead onto is part of it: the
+   * top of a rock, the plateau behind a cliff. Zero leaves obstacles as their steep faces only.
+   */
+  climb?: number;
+  /** Cells never taken as obstacle ground, keyed as cellKey: where mobs were recorded. */
+  avoid?: Set<number>;
 }
 
 const OFFSET = 1 << 16;
@@ -48,9 +55,13 @@ export function findObstacles(pos: ArrayLike<number>, opts: ObstacleOptions = {}
   const cell = opts.cell ?? 0.5;
   const join = Math.max(1, Math.round((opts.join ?? 1) / cell));
   const keep = opts.keep;
+  const climb = opts.climb ?? 0;
+  const avoid = opts.avoid;
 
-  // Every cell a steep face passes through, with the face's height span.
+  // Every cell a steep face passes through, with the face's height span; and, for the climb,
+  // the highest walkable surface in every other cell.
   const cells = new Map<number, { foot: number; top: number; }>();
+  const floors = new Map<number, number>();
   const mark = (x: number, y: number, z: number) => {
     const k = keyOf(Math.floor(x / cell), Math.floor(z / cell));
     const c = cells.get(k);
@@ -70,14 +81,20 @@ export function findObstacles(pos: ArrayLike<number>, opts: ObstacleOptions = {}
     const vx = cx - ax, vy = cy - ay, vz = cz - az;
     const ny = uz * vx - ux * vz;
     const len = Math.hypot(uy * vz - uz * vy, ny, ux * vy - uy * vx) || 1;
-    if (Math.abs(ny / len) >= up) continue;
+    const steep = Math.abs(ny / len) < up;
+    if (!steep && !climb) continue;
     // Sample the face densely enough that no cell it crosses is skipped.
     const longest = Math.max(Math.hypot(ux, uz), Math.hypot(vx, vz), Math.hypot(cx - bx, cz - bz));
     const n = Math.max(1, Math.ceil(longest / (cell / 2)));
     for (let i = 0; i <= n; i++) {
       for (let j = 0; j <= n - i; j++) {
         const s = i / n, r = j / n;
-        mark(ax + ux * s + vx * r, ay + uy * s + vy * r, az + uz * s + vz * r);
+        const x = ax + ux * s + vx * r, y = ay + uy * s + vy * r, z = az + uz * s + vz * r;
+        if (steep) mark(x, y, z);
+        else {
+          const k = keyOf(Math.floor(x / cell), Math.floor(z / cell));
+          floors.set(k, Math.min(floors.get(k) ?? Infinity, y));
+        }
       }
     }
   }
@@ -104,16 +121,42 @@ export function findObstacles(pos: ArrayLike<number>, opts: ObstacleOptions = {}
         }
       }
     }
-    let sx = 0, sz = 0, foot = -Infinity, top = Infinity;
+    let foot = -Infinity, top = Infinity;
+    for (const k of members) {
+      const c = cells.get(k)!;
+      foot = Math.max(foot, c.foot);
+      top = Math.min(top, c.top);
+    }
+    if (climb > 0) {
+      // Walk from the steep faces onto the ground they lead up to: a neighbour joins when its
+      // surface carries on from where the face tops out (within a step of it) and still sits at
+      // least `climb` above the obstacle's foot, so a rock's top comes with its sides while the
+      // gentle slope its downhill side stands on does not. A cell a mob was recorded in ends it.
+      const taken = new Set(members);
+      const frontier: [number, number][] = members.map(k => [k, cells.get(k)!.top]);
+      while (frontier.length) {
+        const [k, level] = frontier.pop()!;
+        const [ix, iz] = unkey(k);
+        for (let dz = -1; dz <= 1; dz++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nk = keyOf(ix + dx, iz + dz);
+            if (taken.has(nk) || cells.has(nk) || avoid?.has(nk)) continue;
+            const y = floors.get(nk);
+            if (y === undefined || Math.abs(y - level) > 1 || y > foot - climb) continue;
+            taken.add(nk);
+            members.push(nk);
+            frontier.push([nk, y]);
+          }
+        }
+      }
+    }
+    let sx = 0, sz = 0;
     const list: [number, number][] = [];
     for (const k of members) {
       const [ix, iz] = unkey(k);
       list.push([ix, iz]);
       sx += (ix + 0.5) * cell;
       sz += (iz + 0.5) * cell;
-      const c = cells.get(k)!;
-      foot = Math.max(foot, c.foot);
-      top = Math.min(top, c.top);
     }
     out.push({ cells: list, x: sx / list.length, z: sz / list.length, foot, top });
   }

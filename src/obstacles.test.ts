@@ -76,4 +76,19 @@ assert.ok(kept.length >= 4, "a ring survives the exclusion");
 assert.ok(kept.every(v => v[0] <= 1.5 + 1e-9), `no vertex enters the sampled column, got x up to ${Math.max(...kept.map(v => v[0]))}`);
 assert.ok(area(kept) < area(ring), "the excluded side makes it smaller");
 
+// A mesa: steep walls with a flat top four yalms up. Without a climb the obstacle is its walls;
+// with one it takes the top as well, and the floor around it stays out.
+const mesa = (() => {
+  const out = [...trunk(0, 0, 3, 4)];
+  out.push(...[-3, -4, -3, 3, -4, -3, 3, -4, 3], ...[-3, -4, -3, 3, -4, 3, -3, -4, 3]); // the top at y=-4
+  return new Float32Array([...floor, ...out]);
+})();
+const walls = findObstacles(mesa, { cell: 0.5, join: 1 });
+const whole = findObstacles(mesa, { cell: 0.5, join: 1, climb: 2 });
+assert.strictEqual(walls.length, 1);
+assert.strictEqual(whole.length, 1);
+assert.ok(obstacleArea(whole[0]) > obstacleArea(walls[0]) + 20, `the climb takes the top: ${obstacleArea(walls[0])} -> ${obstacleArea(whole[0])} y2`);
+assert.ok(obstacleArea(whole[0]) < 60, `but not the floor around it: ${obstacleArea(whole[0])} y2`);
+assert.ok(whole[0].cells.some(([ix, iz]) => ix === 0 && iz === 0), "the centre of the top is in");
+
 console.log("ok");
