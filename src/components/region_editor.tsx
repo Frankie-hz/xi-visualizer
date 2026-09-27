@@ -517,10 +517,13 @@ export default function RegionEditor(props: RegionEditorProps) {
     const mesh = zoneMesh;
     if (!mesh) return ring;
     const ray = new THREE.Raycaster();
-    const down = new THREE.Vector3(0, 1, 0); // y grows downward
     return ring.map(([x, y, z]) => {
-      ray.set(new THREE.Vector3(x, y - 30, z), down);
-      ray.far = 60;
+      // The scene is mirrored (see graphics/scene.ts), so the ray is set up in world space from
+      // two zone points: from 30 yalms above the vertex straight down through it.
+      const from = mesh.localToWorld(new THREE.Vector3(x, y - 30, z));
+      const to = mesh.localToWorld(new THREE.Vector3(x, y + 30, z));
+      ray.set(from, to.clone().sub(from).normalize());
+      ray.far = from.distanceTo(to);
       const hits = ray.intersectObject(mesh, false);
       // The surface nearest the obstacle's foot, and only within a step of it: a bridge overhead,
       // a cave below, or the rock's own shoulder where the ring crosses it are not the ground the
