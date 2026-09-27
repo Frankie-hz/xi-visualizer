@@ -132,23 +132,33 @@ export function findObstacles(pos: ArrayLike<number>, opts: ObstacleOptions = {}
       // surface carries on from where the face tops out (within a step of it) and still sits at
       // least `climb` above the obstacle's foot, so a rock's top comes with its sides while the
       // gentle slope its downhill side stands on does not. A cell a mob was recorded in ends it.
+      // A rock top is a few times its own sides; a whole hillside is not. Past that budget the
+      // walk was running away over open ground, and the obstacle keeps only its faces.
+      const budget = members.length * 3 + Math.ceil(16 / (cell * cell));
       const taken = new Set(members);
+      const climbed: number[] = [];
       const frontier: [number, number][] = members.map(k => [k, cells.get(k)!.top]);
-      while (frontier.length) {
+      let overrun = false;
+      while (frontier.length && !overrun) {
         const [k, level] = frontier.pop()!;
         const [ix, iz] = unkey(k);
-        for (let dz = -1; dz <= 1; dz++) {
+        for (let dz = -1; dz <= 1 && !overrun; dz++) {
           for (let dx = -1; dx <= 1; dx++) {
             const nk = keyOf(ix + dx, iz + dz);
             if (taken.has(nk) || cells.has(nk) || avoid?.has(nk)) continue;
             const y = floors.get(nk);
             if (y === undefined || Math.abs(y - level) > 1 || y > foot - climb) continue;
             taken.add(nk);
-            members.push(nk);
+            climbed.push(nk);
             frontier.push([nk, y]);
+            if (climbed.length > budget) {
+              overrun = true;
+              break;
+            }
           }
         }
       }
+      if (!overrun) members.push(...climbed);
     }
     let sx = 0, sz = 0;
     const list: [number, number][] = [];
