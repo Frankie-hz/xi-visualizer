@@ -143,21 +143,30 @@ export default function RegionEditor(props: RegionEditorProps) {
     setHoleHover(null);
   };
   /**
-   * Joins a hole with the holes near it into one: the convex hull of all their vertices, since
-   * two obstacles a mob cannot pass between are one obstacle to it. Undo brings the pieces back.
+   * Merging is two steps: the menu opens a plan with a reach dial and a preview of the hull, and
+   * Apply commits it. The merged hole is the convex hull of the group's vertices, since two
+   * obstacles a mob cannot pass between are one obstacle to it. Undo brings the pieces back.
    */
-  const mergeHoles = (name: string, index: number) => {
-    const entry = regions().find(r => r.name === name);
-    if (!entry) return;
-    const group = [index, ...nearHoles(entry, index)];
-    if (group.length < 2) return flash("no other hole within 2 yalms");
-    const pts = group.flatMap(k => entry.rings[k]);
-    const hull = convexHull(pts);
+  const [merge, setMerge] = createSignal<{ name: string; index: number; } | null>(null);
+  const [mergeReach, setMergeReach] = createSignal(2);
+  const mergePlan = createMemo(() => {
+    const m = merge();
+    const entry = m && regions().find(r => r.name === m.name);
+    if (!m || !entry || !entry.rings[m.index]) return null;
+    const group = [m.index, ...nearHoles(entry, m.index, mergeReach())];
+    return { entry, group, hull: group.length > 1 ? onGround(convexHull(group.flatMap(k => entry.rings[k]))) : null };
+  });
+  const mergeHoles = () => {
+    const plan = mergePlan();
+    const m = merge();
+    if (!plan || !m || !plan.hull) return flash("no other hole within reach");
+    const { entry, group, hull } = plan;
     const rings = [...entry.rings.filter((_, k) => !group.includes(k)), hull];
     const pieces = repairRegion({ rings });
     checkpoint(`merge ${group.length} holes`);
-    setRegions(rs => rs.map(r => (r.name === name ? { name, rings: (pieces.length === 1 ? pieces[0].rings : rings).map(onGround) } : r)));
+    setRegions(rs => rs.map(r => (r.name === m.name ? { name: m.name, rings: (pieces.length === 1 ? pieces[0].rings : rings).map(onGround) } : r)));
     setHoleHover(null);
+    setMerge(null);
     flash(`merged ${group.length} holes`);
   };
   const convexHull = (pts: Vertex[]): Ring => {
@@ -1324,6 +1333,33 @@ export default function RegionEditor(props: RegionEditorProps) {
     });
   });
 
+  // The merge plan: the hull the group would become, and the holes going into it.
+  createEffect(() => {
+    const plan = mergePlan();
+    if (!plan) return;
+    const segments: number[] = [];
+    const push = (ring: Ring) => {
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        segments.push(a[0], a[1] - 0.25, a[2], b[0], b[1] - 0.25, b[2]);
+      }
+    };
+    for (const k of plan.group) push(plan.entry.rings[k]);
+    if (plan.hull) push(plan.hull);
+    const geo = new LineSegmentsGeometry();
+    geo.setPositions(segments);
+    const mat = materialFor("merge", () => new LineMaterial({ color: 0xc084fc, linewidth: 2.5, depthTest: false })) as LineMaterial;
+    mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
+    obstacleLineMaterials.push(mat);
+    const lines = new LineSegments2(geo, mat);
+    lines.renderOrder = 4;
+    scene().add(lines);
+    onCleanup(() => {
+      scene().remove(lines);
+      geo.dispose();
+    });
+  });
+
   // The active region's own mobs light up in its colour; everything else stays a dim backdrop.
   createEffect(() => {
     const data = props.roam;
@@ -1948,7 +1984,8 @@ export default function RegionEditor(props: RegionEditorProps) {
       if (mode() !== "draw") {
         // Not drawing, so there is nothing to finish: Escape backs out of whatever is selected.
         if (ev.key !== "Escape") return;
-        if (mode() === "obstacles") setMode("select");
+        if (merge()) setMerge(null);
+        else if (mode() === "obstacles") setMode("select");
         else if (replayId()) setReplayId(null);
         else if (walker()) editWalker(null);
         else setActiveName(null);
@@ -2330,7 +2367,40 @@ export default function RegionEditor(props: RegionEditorProps) {
             </button>
           </div>
         </Show>
-        <Show when={mode() === "obstacles" && !props.readOnly}>
+        <Show when={mergePlan()}>
+          {plan => (
+            <div class="absolute top-10 right-2 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] uppercase tracking-wide text-slate-500">Merge holes</span>
+                <span class="text-slate-400">{plan().group.length} in the group · esc cancels</span>
+              </div>
+              <label class="flex items-center gap-2" title="A hole whose edge is within this of the chosen one joins the merge">
+                <span class="w-24 text-slate-300">reach</span>
+                <input
+                  type="range"
+                  class="flex-1"
+                  min="0.25"
+                  max="12"
+                  step="0.25"
+                  value={mergeReach()}
+                  onInput={e => setMergeReach(Number(e.currentTarget.value))}
+                />
+                <span class="w-12 text-right font-mono text-slate-200">{mergeReach()}y</span>
+              </label>
+              <div class="flex gap-1">
+                <button
+                  class="flex-1 px-2 py-1 bg-violet-700 hover:bg-violet-600 rounded disabled:opacity-40"
+                  disabled={plan().group.length < 2}
+                  onClick={mergeHoles}
+                >
+                  Merge {plan().group.length} holes
+                </button>
+                <button class="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded" onClick={() => setMerge(null)}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </Show>
+        <Show when={mode() === "obstacles" && !props.readOnly && !merge()}>
           <div class="absolute top-10 right-2 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
             <div class="flex items-center justify-between">
               <span class="text-[10px] uppercase tracking-wide text-slate-500">Carve holes</span>
@@ -2482,9 +2552,9 @@ export default function RegionEditor(props: RegionEditorProps) {
                   </div>
                   <button
                     class="block w-full text-left px-3 py-1 hover:bg-slate-700"
-                    onClick={() => (mergeHoles(hole().name, hole().index), setMenu(null))}
+                    onClick={() => (setMerge({ name: hole().name, index: hole().index }), setMenu(null))}
                   >
-                    Merge nearby holes ({active() ? nearHoles(active()!, hole().index).length : 0} within 2y)
+                    Merge nearby holes… ({active() ? nearHoles(active()!, hole().index, mergeReach()).length : 0} within {mergeReach()}y)
                   </button>
                   <button
                     class="block w-full text-left px-3 py-1 hover:bg-slate-700 text-red-400"
