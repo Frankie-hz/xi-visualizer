@@ -162,9 +162,9 @@ export default function RegionEditor(props: RegionEditorProps) {
     if (!plan || !m || !plan.hull) return flash("no other hole within reach");
     const { entry, group, hull } = plan;
     const rings = [...entry.rings.filter((_, k) => !group.includes(k)), hull];
-    const pieces = repairRegion({ rings });
+    const one = asOne(repairRegion({ rings }), Math.abs(ringArea(entry.rings[0])));
     checkpoint(`merge ${group.length} holes`);
-    setRegions(rs => rs.map(r => (r.name === m.name ? { name: m.name, rings: (pieces.length === 1 ? pieces[0].rings : rings).map(onGround) } : r)));
+    setRegions(rs => rs.map(r => (r.name === m.name ? { name: m.name, rings: (one ? one.rings : rings).map(onGround) } : r)));
     setHoleHover(null);
     setMerge(null);
     flash(`merged ${group.length} holes`);
@@ -562,14 +562,33 @@ export default function RegionEditor(props: RegionEditorProps) {
   };
   /** The cells the active region's own mobs were recorded in: a ring never takes those, since the
    * data has a mob standing there whatever the mesh says. */
-  const walkedCells = createMemo(() => {
+  const memberTrail = createMemo(() => {
     const name = activeName();
+    if (!name || mode() !== "obstacles") return [] as TrailPoint[];
+    return trailPoints(props.spawns.filter(s => assign()[s.id]?.includes(name)).map(s => s.id));
+  });
+  const walkedCells = createMemo(() => {
     const out = new Set<number>();
-    if (!name || mode() !== "obstacles") return out;
-    const ids = props.spawns.filter(s => assign()[s.id]?.includes(name)).map(s => s.id);
-    for (const p of trailPoints(ids)) out.add(cellKey(p.x, p.z, OBSTACLE_CELL));
+    for (const p of memberTrail()) out.add(cellKey(p.x, p.z, OBSTACLE_CELL));
     return out;
   });
+  /**
+   * The clipper's answer as one region, or null when the cut genuinely splits it. Two rings that
+   * overlap at two points fence off a pocket of ground between them; that pocket comes back as a
+   * piece of its own, and since nothing reaches it, it is absorbed rather than counted as a split.
+   * A piece with real area, or with a mob recorded in it, is a split.
+   */
+  const asOne = (pieces: Region[], outlineArea: number): Region | null => {
+    if (pieces.length === 1) return pieces[0];
+    if (!pieces.length) return null;
+    const sized = pieces.map(p => ({ p, area: Math.abs(ringArea(p.rings[0])) })).sort((a, b) => b.area - a.area);
+    const trail = memberTrail();
+    for (const { p, area } of sized.slice(1)) {
+      if (area >= 0.05 * outlineArea) return null;
+      if (trail.some(t => inRing(p.rings[0], t.x, t.z))) return null;
+    }
+    return sized[0].p;
+  };
   /** The rings the obstacles on offer would cut, merged where their margins meet: what Ring all
    * takes, and separately what is over its size and waits for a click. */
   const previewRings = createMemo(() => ({
@@ -588,15 +607,16 @@ export default function RegionEditor(props: RegionEditorProps) {
     if (!name || !entry || !list.length) return;
     const rings = ringsAround(list, obstacleMargin(), OBSTACLE_CELL, walkedCells()).map(onGround);
     let shape: Region = { rings: entry.rings.map(ring => ring.map(v => [...v] as Vertex)) };
+    const outlineArea = Math.abs(ringArea(entry.rings[0]));
     let done = 0;
     let skipped = 0;
     for (const ring of rings) {
-      const pieces = repairRegion({ rings: [...shape.rings, ring] });
-      if (pieces.length !== 1) {
+      const one = asOne(repairRegion({ rings: [...shape.rings, ring] }), outlineArea);
+      if (!one) {
         skipped++;
         continue;
       }
-      shape = pieces[0];
+      shape = one;
       done++;
     }
     if (done) {
