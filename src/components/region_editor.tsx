@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import * as THREE from "three";
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
-import { Line2, LineGeometry, LineMaterial, LineSegments2, MapControls } from "three/examples/jsm/Addons.js";
+import { Line2, LineGeometry, LineMaterial, LineSegments2, LineSegmentsGeometry, MapControls } from "three/examples/jsm/Addons.js";
 import { createMapCamera, fitCameraToContents } from "../graphics/camera";
 import { buildNavMeshGroup, parseNavMesh } from "../graphics/navmesh";
 import { beaconMaterial, cometMaterial, handleMaterial, roamMaterial, spawnMaterial } from "../graphics/region_points";
@@ -1120,9 +1120,10 @@ export default function RegionEditor(props: RegionEditorProps) {
         segments.push(a[0], a[1] - 0.2, a[2], b[0], b[1] - 0.2, b[2]);
       }
     }
-    // WebGL draws LineBasicMaterial one pixel wide whatever it is told, so this is a Line2 like
-    // the selected outline, sized in screen pixels.
-    const geo = new LineGeometry();
+    // WebGL draws LineBasicMaterial one pixel wide whatever it is told, so this is a wide line like
+    // the selected outline, sized in screen pixels. Segments geometry, not LineGeometry: that one
+    // takes a polyline and would join every ring to the next.
+    const geo = new LineSegmentsGeometry();
     geo.setPositions(segments);
     const mat = materialFor("obstacles", () => new LineMaterial({ color: 0xffb020, linewidth: 2.5, depthTest: false })) as LineMaterial;
     mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
