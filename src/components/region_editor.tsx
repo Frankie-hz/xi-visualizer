@@ -466,14 +466,24 @@ export default function RegionEditor(props: RegionEditorProps) {
   };
 
   // --- obstacles: holes drawn around the collision mesh's steep faces ---
-  const [obstacleMargin, setObstacleMargin] = createSignal(1);
-  // The dials: what counts as steep, how close faces must be to be one obstacle, how tall and how
-  // wide an obstacle must be to show at all, and how big one may be before "ring all" skips it.
-  const [obstacleSlope, setObstacleSlope] = createSignal(50); // degrees from level
-  const [obstacleJoin, setObstacleJoin] = createSignal(1); // yalms
-  const [obstacleMinHeight, setObstacleMinHeight] = createSignal(0.5); // yalms
-  const [obstacleMinArea, setObstacleMinArea] = createSignal(0.5); // square yalms of footprint
-  const [obstacleBulkMax, setObstacleBulkMax] = createSignal(150); // square yalms of footprint
+  // The dials: how far off the faces the ring sits, what counts as steep, how close faces must be
+  // to be one obstacle, how tall and how wide an obstacle must be to show at all, and how big one
+  // may be before "ring all" skips it.
+  const OBSTACLE_DEFAULTS = { margin: 1, slope: 50, join: 1, minHeight: 0.5, minArea: 0.5, bulkMax: 150 };
+  const [obstacleMargin, setObstacleMargin] = createSignal(OBSTACLE_DEFAULTS.margin); // yalms
+  const [obstacleSlope, setObstacleSlope] = createSignal(OBSTACLE_DEFAULTS.slope); // degrees from level
+  const [obstacleJoin, setObstacleJoin] = createSignal(OBSTACLE_DEFAULTS.join); // yalms
+  const [obstacleMinHeight, setObstacleMinHeight] = createSignal(OBSTACLE_DEFAULTS.minHeight); // yalms
+  const [obstacleMinArea, setObstacleMinArea] = createSignal(OBSTACLE_DEFAULTS.minArea); // square yalms of footprint
+  const [obstacleBulkMax, setObstacleBulkMax] = createSignal(OBSTACLE_DEFAULTS.bulkMax); // square yalms of footprint
+  const resetObstacleDials = () => {
+    setObstacleMargin(OBSTACLE_DEFAULTS.margin);
+    setObstacleSlope(OBSTACLE_DEFAULTS.slope);
+    setObstacleJoin(OBSTACLE_DEFAULTS.join);
+    setObstacleMinHeight(OBSTACLE_DEFAULTS.minHeight);
+    setObstacleMinArea(OBSTACLE_DEFAULTS.minArea);
+    setObstacleBulkMax(OBSTACLE_DEFAULTS.bulkMax);
+  };
   const [obstacles, setObstacles] = createSignal<Obstacle[]>([]);
   const bulk = () => obstacles().filter(o => obstacleArea(o, OBSTACLE_CELL) <= obstacleBulkMax());
   /** The steep faces inside the active region on the current floor, clustered into obstacles. */
@@ -2393,14 +2403,23 @@ export default function RegionEditor(props: RegionEditorProps) {
                 </label>
               )}
             </For>
-            <button
-              class="w-full px-2 py-1 bg-amber-700 hover:bg-amber-600 rounded disabled:opacity-40"
-              disabled={!bulk().length}
-              title="Ring every obstacle up to the size above; each one goes through the clipper on its own"
-              onClick={() => ringObstacles(bulk())}
-            >
-              Ring all ({bulk().length})
-            </button>
+            <div class="flex gap-1">
+              <button
+                class="flex-1 px-2 py-1 bg-amber-700 hover:bg-amber-600 rounded disabled:opacity-40"
+                disabled={!bulk().length}
+                title="Ring every obstacle up to the size above; each one goes through the clipper on its own"
+                onClick={() => ringObstacles(bulk())}
+              >
+                Ring all ({bulk().length})
+              </button>
+              <button
+                class="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded"
+                title="Put every dial back to its default"
+                onClick={resetObstacleDials}
+              >
+                Defaults
+              </button>
+            </div>
           </div>
         </Show>
         <Show when={cursor()}>
