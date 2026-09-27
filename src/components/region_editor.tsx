@@ -2172,7 +2172,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                   classList={{ "pointer-events-auto": mode() !== "draw", "pointer-events-none": mode() === "draw" }}
                   style={{ color: cssOf(r.name) }}
                   title={`Select ${r.name}, right-click for more`}
-                  onClick={() => setActiveName(r.name)}
+                  onClick={() => (setActiveName(r.name), zoomTo(r.name))}
                   onContextMenu={e => (e.preventDefault(), setMenu({ kind: "region", name: r.name, x: e.clientX, y: e.clientY }))}
                 >
                   {r.name} <span class="text-slate-400 font-normal">{spawnCounts()[r.name] ?? 0}</span>
@@ -2774,7 +2774,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                   ref={el => rowRefs.set(r.name, el)}
                   class="flex items-center gap-2 py-1 px-1 rounded cursor-pointer hover:bg-slate-700"
                   classList={{ "bg-slate-700": r.name === activeName() }}
-                  onClick={() => setActiveName(r.name)}
+                  onClick={() => (setActiveName(r.name), zoomTo(r.name))}
                   onContextMenu={e => (e.preventDefault(), setMenu({ kind: "region", name: r.name, x: e.clientX, y: e.clientY }))}
                 >
                   <span class="w-3 h-3 rounded-full shrink-0" style={{ background: cssOf(r.name) }} />
