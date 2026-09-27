@@ -478,10 +478,11 @@ export default function RegionEditor(props: RegionEditorProps) {
   // The dials: how far off the faces the ring sits, what counts as steep, how close faces must be
   // to be one obstacle, how tall and how wide an obstacle must be to show at all, and how big one
   // may be before "ring all" skips it.
-  const OBSTACLE_DEFAULTS = { margin: 1, slope: 50, join: 1, minHeight: 0.5, minArea: 0.5, bulkMax: 150 };
+  const OBSTACLE_DEFAULTS = { margin: 1, slope: 50, join: 1, climb: 2, minHeight: 0.5, minArea: 0.5, bulkMax: 150 };
   const [obstacleMargin, setObstacleMargin] = createSignal(OBSTACLE_DEFAULTS.margin); // yalms
   const [obstacleSlope, setObstacleSlope] = createSignal(OBSTACLE_DEFAULTS.slope); // degrees from level
   const [obstacleJoin, setObstacleJoin] = createSignal(OBSTACLE_DEFAULTS.join); // yalms
+  const [obstacleClimb, setObstacleClimb] = createSignal(OBSTACLE_DEFAULTS.climb); // yalms above the foot
   const [obstacleMinHeight, setObstacleMinHeight] = createSignal(OBSTACLE_DEFAULTS.minHeight); // yalms
   const [obstacleMinArea, setObstacleMinArea] = createSignal(OBSTACLE_DEFAULTS.minArea); // square yalms of footprint
   const [obstacleBulkMax, setObstacleBulkMax] = createSignal(OBSTACLE_DEFAULTS.bulkMax); // square yalms of footprint
@@ -489,6 +490,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     setObstacleMargin(OBSTACLE_DEFAULTS.margin);
     setObstacleSlope(OBSTACLE_DEFAULTS.slope);
     setObstacleJoin(OBSTACLE_DEFAULTS.join);
+    setObstacleClimb(OBSTACLE_DEFAULTS.climb);
     setObstacleMinHeight(OBSTACLE_DEFAULTS.minHeight);
     setObstacleMinArea(OBSTACLE_DEFAULTS.minArea);
     setObstacleBulkMax(OBSTACLE_DEFAULTS.bulkMax);
@@ -497,6 +499,16 @@ export default function RegionEditor(props: RegionEditorProps) {
   // The obstacle under the cursor in carve mode: its ring lights up, and a click cuts it.
   const [obstacleHover, setObstacleHover] = createSignal<{ obstacle: Obstacle; x: number; y: number; } | null>(null);
   const bulk = () => obstacles().filter(o => obstacleArea(o, OBSTACLE_CELL) <= obstacleBulkMax());
+  const memberTrail = createMemo(() => {
+    const name = activeName();
+    if (!name || mode() !== "obstacles") return [] as TrailPoint[];
+    return trailPoints(props.spawns.filter(s => assign()[s.id]?.includes(name)).map(s => s.id));
+  });
+  const walkedCells = createMemo(() => {
+    const out = new Set<number>();
+    for (const p of memberTrail()) out.add(cellKey(p.x, p.z, OBSTACLE_CELL));
+    return out;
+  });
   /** The steep faces inside the active region on the current floor, clustered into obstacles. */
   const scanObstacles = () => {
     const r = active();
@@ -521,14 +533,14 @@ export default function RegionEditor(props: RegionEditorProps) {
       const z = (pos[o + 2] + pos[o + 5] + pos[o + 8]) / 3;
       return x >= minX && x <= maxX && z >= minZ && z <= maxZ && containsXZ(r, x, z);
     };
-    const found = findObstacles(pos, { cell: OBSTACLE_CELL, up, join: obstacleJoin(), keep });
+    const found = findObstacles(pos, { cell: OBSTACLE_CELL, up, join: obstacleJoin(), climb: obstacleClimb(), avoid: walkedCells(), keep });
     // Height is foot minus top because y points down.
     setObstacles(found.filter(o => o.foot - o.top >= minHeight && obstacleArea(o, OBSTACLE_CELL) >= minArea));
   };
   // Rescans whenever the region itself changes too: a ring just cut, or undone, moves obstacles
   // into or out of a hole, and the list of what is left to ring must follow.
   createEffect(on(
-    [mode, activeName, floor, regions, obstacleSlope, obstacleJoin, obstacleMinHeight, obstacleMinArea],
+    [mode, activeName, floor, regions, obstacleSlope, obstacleJoin, obstacleClimb, obstacleMinHeight, obstacleMinArea, walkedCells],
     () => (mode() === "obstacles" ? scanObstacles() : setObstacles([])),
   ));
   /**
@@ -562,16 +574,6 @@ export default function RegionEditor(props: RegionEditorProps) {
   };
   /** The cells the active region's own mobs were recorded in: a ring never takes those, since the
    * data has a mob standing there whatever the mesh says. */
-  const memberTrail = createMemo(() => {
-    const name = activeName();
-    if (!name || mode() !== "obstacles") return [] as TrailPoint[];
-    return trailPoints(props.spawns.filter(s => assign()[s.id]?.includes(name)).map(s => s.id));
-  });
-  const walkedCells = createMemo(() => {
-    const out = new Set<number>();
-    for (const p of memberTrail()) out.add(cellKey(p.x, p.z, OBSTACLE_CELL));
-    return out;
-  });
   /**
    * The clipper's answer as one region, or null when the cut genuinely splits it. Two rings that
    * overlap at two points fence off a pocket of ground between them; that pocket comes back as a
@@ -2497,6 +2499,17 @@ export default function RegionEditor(props: RegionEditorProps) {
                   max: 4,
                   step: 0.25,
                   title: "Faces this close are one obstacle: a trunk and its branches, a rock and its ledges",
+                },
+                {
+                  label: "climb",
+                  unit: "y",
+                  get: obstacleClimb,
+                  set: setObstacleClimb,
+                  min: 0,
+                  max: 8,
+                  step: 0.5,
+                  title:
+                    "Ground the steep faces lead up onto, this far above their foot, is part of the obstacle: a rock's top, the plateau behind a cliff. 0 keeps only the faces",
                 },
                 {
                   label: "at least tall",
