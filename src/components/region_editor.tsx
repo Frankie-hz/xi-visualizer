@@ -514,8 +514,10 @@ export default function RegionEditor(props: RegionEditorProps) {
     // Height is foot minus top because y points down.
     setObstacles(found.filter(o => o.foot - o.top >= minHeight && obstacleArea(o, OBSTACLE_CELL) >= minArea));
   };
+  // Rescans whenever the region itself changes too: a ring just cut, or undone, moves obstacles
+  // into or out of a hole, and the list of what is left to ring must follow.
   createEffect(on(
-    [mode, activeName, floor, obstacleSlope, obstacleJoin, obstacleMinHeight, obstacleMinArea],
+    [mode, activeName, floor, regions, obstacleSlope, obstacleJoin, obstacleMinHeight, obstacleMinArea],
     () => (mode() === "obstacles" ? scanObstacles() : setObstacles([])),
   ));
   /**
@@ -581,7 +583,6 @@ export default function RegionEditor(props: RegionEditorProps) {
       // Where a ring carved a bay, the clipper's new corners borrowed a neighbour's height; every
       // ring goes back onto the terrain so the outline does not dip under it.
       setRegions(rs => rs.map(r => (r.name === name ? { name, rings: shape.rings.map(onGround) } : r)));
-      setObstacles(os => os.filter(o => !list.includes(o)));
     }
     if (skipped) flash(`${skipped} ring${skipped === 1 ? "" : "s"} would cut ${name} in two; left alone`);
   };
