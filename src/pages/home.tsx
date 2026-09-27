@@ -13,6 +13,9 @@ export default function HomePage() {
           <li>
             <A href="/zone">Zone viewer</A>
           </li>
+          <li>
+            <A href="/pathnodes">Path nodes</A>
+          </li>
         </ul>
       </div>
     </section>

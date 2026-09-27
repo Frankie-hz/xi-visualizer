@@ -16,6 +16,10 @@ export const routes: RouteDefinition[] = [
     component: lazy(() => import("./pages/roam")),
   },
   {
+    path: "/pathnodes/:id?",
+    component: lazy(() => import("./pages/path_nodes")),
+  },
+  {
     path: "/zone/:id?",
     component: lazy(() => import("./pages/zones")),
   },
