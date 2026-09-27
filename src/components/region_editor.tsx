@@ -1654,6 +1654,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     raycaster.params.Points = { threshold: 2 };
     const mouse = new THREE.Vector2();
     let downAt: { x: number; y: number; } | null = null;
+    let rightDownAt: { x: number; y: number; } | null = null;
 
     const aim = (ev: MouseEvent) => {
       const rect = canvasElement.getBoundingClientRect();
@@ -1714,6 +1715,8 @@ export default function RegionEditor(props: RegionEditorProps) {
 
     const onContextMenu = (ev: MouseEvent) => {
       ev.preventDefault();
+      // A right-drag turned the view; letting go of it is not asking for a menu.
+      if (rightDownAt && Math.hypot(ev.clientX - rightDownAt.x, ev.clientY - rightDownAt.y) > 3) return;
       // The menu opens where the cursor is, which is where the tooltip already is.
       setHover(null);
       aim(ev);
@@ -1734,6 +1737,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     };
 
     const onMouseDown = (ev: MouseEvent) => {
+      if (ev.button === 2) rightDownAt = { x: ev.clientX, y: ev.clientY };
       // Reviewing: the camera, hovering and selection all still work; nothing moves under them.
       if (props.readOnly) return;
       if (ev.button !== 0) return;
