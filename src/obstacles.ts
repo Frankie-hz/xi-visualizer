@@ -156,6 +156,47 @@ export function ringsAround(list: Obstacle[], margin: number, cell = 0.5, avoid?
       }
     }
   }
+  if (avoid?.size) {
+    // Punching single sampled cells out of the ring leaves spikes and slots a cell wide. Opening
+    // by one cell (erode, then grow back into nothing that is avoided) takes those off, and a
+    // piece left with no obstacle cell of its own goes too.
+    const has = (ix: number, iz: number) => grown.has(keyOf(ix, iz));
+    const eroded = new Map<number, number>();
+    for (const [k, foot] of grown) {
+      const [x, z] = unkey(k);
+      let solid = true;
+      for (let dz = -1; dz <= 1 && solid; dz++) for (let dx = -1; dx <= 1 && solid; dx++) solid = has(x + dx, z + dz);
+      if (solid) eroded.set(k, foot);
+    }
+    const opened = new Map<number, number>();
+    for (const [k, foot] of eroded) {
+      const [x, z] = unkey(k);
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nk = keyOf(x + dx, z + dz);
+          if (grown.has(nk)) opened.set(nk, foot);
+        }
+      }
+    }
+    // Keep only the pieces that still touch the obstacles themselves.
+    const seeds = list.flatMap(o => o.cells.map(([ix, iz]) => keyOf(ix, iz))).filter(k => opened.has(k));
+    const reached = new Set<number>(seeds);
+    const queue = [...seeds];
+    while (queue.length) {
+      const [x, z] = unkey(queue.pop()!);
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nk = keyOf(x + dx, z + dz);
+          if (opened.has(nk) && !reached.has(nk)) {
+            reached.add(nk);
+            queue.push(nk);
+          }
+        }
+      }
+    }
+    grown.clear();
+    for (const k of reached) grown.set(k, opened.get(k)!);
+  }
   // Every cell edge with no occupied neighbour is a boundary edge; shared edges cancel, and what
   // remains chains into loops. The edge order makes an outer loop wind one way and an enclosed
   // pocket the other, so the sign of the area tells them apart.
