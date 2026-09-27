@@ -156,7 +156,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     const rings = [...entry.rings.filter((_, k) => !group.includes(k)), hull];
     const pieces = repairRegion({ rings });
     checkpoint(`merge ${group.length} holes`);
-    setRegions(rs => rs.map(r => (r.name === name ? { name, rings: pieces.length === 1 ? pieces[0].rings : rings } : r)));
+    setRegions(rs => rs.map(r => (r.name === name ? { name, rings: (pieces.length === 1 ? pieces[0].rings : rings).map(onGround) } : r)));
     setHoleHover(null);
     flash(`merged ${group.length} holes`);
   };
@@ -526,7 +526,7 @@ export default function RegionEditor(props: RegionEditorProps) {
       // a cave below, or the rock's own shoulder where the ring crosses it are not the ground the
       // mob stands on. With nothing that close the foot itself will do.
       let best = y;
-      let gap = 2;
+      let gap = 3;
       for (const h of hits) {
         const p = mesh.worldToLocal(h.point.clone());
         if (Math.abs(p.y - y) < gap) (gap = Math.abs(p.y - y), best = p.y);
@@ -561,7 +561,9 @@ export default function RegionEditor(props: RegionEditorProps) {
     }
     if (done) {
       checkpoint(done === 1 ? "ring an obstacle" : `ring ${done} obstacles`);
-      setRegions(rs => rs.map(r => (r.name === name ? { name, rings: shape.rings } : r)));
+      // Where a ring carved a bay, the clipper's new corners borrowed a neighbour's height; every
+      // ring goes back onto the terrain so the outline does not dip under it.
+      setRegions(rs => rs.map(r => (r.name === name ? { name, rings: shape.rings.map(onGround) } : r)));
       setObstacles(os => os.filter(o => !list.includes(o)));
     }
     if (skipped) flash(`${skipped} ring${skipped === 1 ? "" : "s"} would cut ${name} in two; left alone`);
