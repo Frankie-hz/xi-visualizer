@@ -494,6 +494,8 @@ export default function RegionEditor(props: RegionEditorProps) {
     setObstacleBulkMax(OBSTACLE_DEFAULTS.bulkMax);
   };
   const [obstacles, setObstacles] = createSignal<Obstacle[]>([]);
+  // The obstacle under the cursor in carve mode: its ring lights up, and a click cuts it.
+  const [obstacleHover, setObstacleHover] = createSignal<{ obstacle: Obstacle; x: number; y: number; } | null>(null);
   const bulk = () => obstacles().filter(o => obstacleArea(o, OBSTACLE_CELL) <= obstacleBulkMax());
   /** The steep faces inside the active region on the current floor, clustered into obstacles. */
   const scanObstacles = () => {
@@ -1301,7 +1303,8 @@ export default function RegionEditor(props: RegionEditorProps) {
     if (!small.length && !big.length) return;
     const added: { lines: LineSegments2; geo: LineSegmentsGeometry; }[] = [];
     // Two colours: what Ring all takes in full amber, what is over its size dimmer.
-    for (const [rings, key, color] of [[small, "obstacles", 0xffb020], [big, "obstacles-big", 0x8a6a2a]] as const) {
+    // Two looks: what Ring all takes solid, what is over its size dashed; both full amber.
+    for (const [rings, key, dashed] of [[small, "obstacles", false], [big, "obstacles-big", true]] as const) {
       if (!rings.length) continue;
       const segments: number[] = [];
       for (const ring of rings) {
@@ -1317,10 +1320,14 @@ export default function RegionEditor(props: RegionEditorProps) {
       // that one takes a polyline and would join every ring to the next.
       const geo = new LineSegmentsGeometry();
       geo.setPositions(segments);
-      const mat = materialFor(key, () => new LineMaterial({ color, linewidth: 2.5, depthTest: false })) as LineMaterial;
+      const mat = materialFor(
+        key,
+        () => new LineMaterial({ color: 0xffb020, linewidth: 2.5, depthTest: false, dashed, dashSize: 1, gapSize: 0.7 }),
+      ) as LineMaterial;
       mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
       obstacleLineMaterials.push(mat);
       const lines = new LineSegments2(geo, mat);
+      if (dashed) lines.computeLineDistances();
       lines.renderOrder = 3;
       scene().add(lines);
       added.push({ lines, geo });
@@ -1330,6 +1337,32 @@ export default function RegionEditor(props: RegionEditorProps) {
         scene().remove(lines);
         geo.dispose();
       }
+    });
+  });
+
+  // The obstacle under the cursor, drawn as the ring a click would cut.
+  createEffect(() => {
+    const h = obstacleHover();
+    if (!h || mode() !== "obstacles") return;
+    const segments: number[] = [];
+    for (const ring of ringsAround([h.obstacle], obstacleMargin(), OBSTACLE_CELL, walkedCells()).map(onGround)) {
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        segments.push(a[0], a[1] - 0.3, a[2], b[0], b[1] - 0.3, b[2]);
+      }
+    }
+    if (!segments.length) return;
+    const geo = new LineSegmentsGeometry();
+    geo.setPositions(segments);
+    const mat = materialFor("obstacle-hover", () => new LineMaterial({ color: 0xffffff, linewidth: 3.5, depthTest: false })) as LineMaterial;
+    mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
+    obstacleLineMaterials.push(mat);
+    const lines = new LineSegments2(geo, mat);
+    lines.renderOrder = 5;
+    scene().add(lines);
+    onCleanup(() => {
+      scene().remove(lines);
+      geo.dispose();
     });
   });
 
@@ -1832,6 +1865,11 @@ export default function RegionEditor(props: RegionEditorProps) {
         const k = p && act ? holeAt(act, p.x, p.z) : 0;
         setHoleHover(k && act ? { name: act.name, index: k, x: ev.clientX, y: ev.clientY } : null);
       } else setHoleHover(null);
+      if (mode() === "obstacles") {
+        const p = pickZonePoint(lastY(active()));
+        const o = p && obstacleAt(obstacles(), p.x, p.z, obstacleMargin(), OBSTACLE_CELL);
+        setObstacleHover(o ? { obstacle: o, x: ev.clientX, y: ev.clientY } : null);
+      } else if (obstacleHover()) setObstacleHover(null);
 
       if (drag) {
         const p = pickZonePoint(activePath()?.legs[drag.idx]?.[1] ?? lastY(active()));
@@ -2650,6 +2688,18 @@ export default function RegionEditor(props: RegionEditorProps) {
         <Show when={toast()}>
           <div class="absolute bottom-2 left-1/2 -translate-x-1/2 bg-emerald-600 text-white text-xs font-mono rounded px-3 py-1 pointer-events-none">
             {toast()}
+          </div>
+        </Show>
+        <Show when={obstacleHover() && mode() === "obstacles" && !menu()}>
+          <div
+            class="fixed bg-slate-900/90 text-white px-2 py-1 rounded text-xs pointer-events-none z-50"
+            style={{ left: `${obstacleHover()!.x + 12}px`, top: `${obstacleHover()!.y + 12}px` }}
+          >
+            <div class="font-bold">obstacle · {obstacleArea(obstacleHover()!.obstacle, OBSTACLE_CELL).toFixed(0)} y²</div>
+            <div class="text-slate-400">
+              {(obstacleHover()!.obstacle.foot - obstacleHover()!.obstacle.top).toFixed(1)} y tall · click to ring it
+              {obstacleArea(obstacleHover()!.obstacle, OBSTACLE_CELL) > obstacleBulkMax() ? " · over the ring-all size" : ""}
+            </div>
           </div>
         </Show>
         <Show when={holeHover() && !hover() && !menu()}>
