@@ -135,32 +135,41 @@ export function obstacleAt(obstacles: Obstacle[], x: number, z: number, margin: 
 }
 
 /**
- * A hole ring around an obstacle: the outline of every cell within `margin` of its cells, so the
- * corners are rounded rather than boxed, at the height the obstacle meets the ground.
+ * Hole rings around obstacles: the outline of every cell within `margin` of their cells, so the
+ * corners come out rounded rather than boxed. Obstacles whose margins meet come out as one ring,
+ * and a pocket enclosed between them is filled, since nothing reaches it. Each vertex sits at the
+ * height where the nearest obstacle meets the ground; the editor lifts it onto the terrain.
  */
-export function ringAround(o: Obstacle, margin: number, cell = 0.5): Ring {
+export function ringsAround(list: Obstacle[], margin: number, cell = 0.5): Ring[] {
   const reach = Math.ceil(margin / cell);
-  const grown = new Set<number>();
-  for (const [ix, iz] of o.cells) {
-    for (let dz = -reach; dz <= reach; dz++) {
-      for (let dx = -reach; dx <= reach; dx++) {
-        if (Math.hypot(dx, dz) * cell <= margin + cell / 2) grown.add(keyOf(ix + dx, iz + dz));
+  const grown = new Map<number, number>(); // cell -> foot height of the obstacle it came from
+  for (const o of list) {
+    for (const [ix, iz] of o.cells) {
+      for (let dz = -reach; dz <= reach; dz++) {
+        for (let dx = -reach; dx <= reach; dx++) {
+          if (Math.hypot(dx, dz) * cell <= margin + cell / 2) grown.set(keyOf(ix + dx, iz + dz), o.foot);
+        }
       }
     }
   }
   // Every cell edge with no occupied neighbour is a boundary edge; shared edges cancel, and what
-  // remains chains into loops. The longest loop is the outline; anything inside it is enclosed by
-  // the obstacle and stays out of the region with it.
+  // remains chains into loops. The edge order makes an outer loop wind one way and an enclosed
+  // pocket the other, so the sign of the area tells them apart.
   const corner = (ix: number, iz: number) => keyOf(ix, iz);
   const edges = new Map<number, number>();
-  for (const k of grown) {
+  const footAt = new Map<number, number>();
+  for (const [k, foot] of grown) {
     const [x, z] = unkey(k);
-    if (!grown.has(keyOf(x, z - 1))) edges.set(corner(x, z), corner(x + 1, z));
-    if (!grown.has(keyOf(x + 1, z))) edges.set(corner(x + 1, z), corner(x + 1, z + 1));
-    if (!grown.has(keyOf(x, z + 1))) edges.set(corner(x + 1, z + 1), corner(x, z + 1));
-    if (!grown.has(keyOf(x - 1, z))) edges.set(corner(x, z + 1), corner(x, z));
+    const add = (a: number, b: number) => {
+      edges.set(a, b);
+      footAt.set(a, foot);
+    };
+    if (!grown.has(keyOf(x, z - 1))) add(corner(x, z), corner(x + 1, z));
+    if (!grown.has(keyOf(x + 1, z))) add(corner(x + 1, z), corner(x + 1, z + 1));
+    if (!grown.has(keyOf(x, z + 1))) add(corner(x + 1, z + 1), corner(x, z + 1));
+    if (!grown.has(keyOf(x - 1, z))) add(corner(x, z + 1), corner(x, z));
   }
-  let best: Ring = [];
+  const rings: Ring[] = [];
   while (edges.size) {
     const start = edges.keys().next().value as number;
     const ring: Ring = [];
@@ -170,15 +179,31 @@ export function ringAround(o: Obstacle, margin: number, cell = 0.5): Ring {
       if (next === undefined) break;
       edges.delete(at);
       const [x, z] = unkey(at);
-      ring.push([x * cell, o.foot, z * cell]);
+      ring.push([x * cell, footAt.get(at) ?? list[0].foot, z * cell]);
       at = next;
       if (at === start) break;
     }
-    if (ring.length > best.length) best = ring;
+    if (ring.length >= 4 && signedArea(ring) > 0) rings.push(ring);
   }
   // The staircase carries nothing a mob would notice; a corner under a cell's area goes.
-  return best.length >= 4 ? simplifyRing(best, cell * cell) : best;
+  return rings.map(r => simplifyRing(r, cell * cell));
 }
+
+/** The one ring around a single obstacle. */
+export function ringAround(o: Obstacle, margin: number, cell = 0.5): Ring {
+  const rings = ringsAround([o], margin, cell);
+  return rings.reduce((best, r) => (r.length > best.length ? r : best), [] as Ring);
+}
+
+const signedArea = (ring: Ring) => {
+  let sum = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    sum += a[0] * b[2] - b[0] * a[2];
+  }
+  return sum / 2;
+};
 
 /** Area of an obstacle's footprint in square yalms, for telling a trunk from a cliff. */
 export function obstacleArea(o: Obstacle, cell = 0.5): number {

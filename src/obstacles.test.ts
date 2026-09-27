@@ -1,6 +1,6 @@
 // node src/obstacles.test.ts
 import assert from "node:assert";
-import { findObstacles, obstacleArea, obstacleAt, ringAround } from "./obstacles.ts";
+import { findObstacles, obstacleArea, obstacleAt, ringAround, ringsAround } from "./obstacles.ts";
 import type { Ring } from "./regions.ts";
 
 // A square trunk one yalm across standing on flat ground: four vertical quads (two triangles
@@ -60,5 +60,12 @@ assert.strictEqual(obstacleAt(found, 5, 5, 1), undefined);
 // A cliff face is kept out by the caller's filter, not by the finder.
 const onlyFirst = findObstacles(pos, { cell: 0.5, keep: t => t < 2 + 8 });
 assert.strictEqual(onlyFirst.length, 1, "the keep filter limits which triangles are read");
+
+// Two obstacles whose margins overlap ring as one; far apart they stay two.
+const pair = findObstacles(new Float32Array([...trunk(0, 0), ...trunk(3, 0)]), { cell: 0.5, join: 1 });
+assert.strictEqual(pair.length, 2, "three yalms apart is two obstacles");
+assert.strictEqual(ringsAround(pair, 1, 0.5).length, 1, "but their margin rings meet, so one hole");
+assert.strictEqual(ringsAround(pair, 0.25, 0.5).length, 2, "at a small margin they stay two holes");
+assert.ok(ringsAround(pair, 1, 0.5)[0].every(v => Math.abs(v[1]) < 1e-6), "merged ring keeps the foot height");
 
 console.log("ok");

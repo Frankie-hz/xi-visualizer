@@ -9,10 +9,10 @@ import { setupBaseScene } from "../graphics/scene";
 import { cleanupNode } from "../graphics/util";
 import { createViewer } from "../graphics/viewer";
 import { ColorKind, colorMesh, createZoneMesh, mapIdPerVertex, prepareMeshData } from "../graphics/ximesh";
-import { findObstacles, obstacleArea, obstacleAt, ringAround } from "../obstacles";
+import { findObstacles, obstacleArea, obstacleAt, ringAround, ringsAround } from "../obstacles";
 import type { Obstacle } from "../obstacles";
 import { containsXZ, regionAt, regionHue, regionsFromPoints, repairRegion, routeFromTrail, selfIntersects, simplifyRing, validate } from "../regions";
-import type { Finding, Patrol, Region, RegionSet, Spawn, TrailPoint, Vertex } from "../regions";
+import type { Finding, Patrol, Region, RegionSet, Ring, Spawn, TrailPoint, Vertex } from "../regions";
 import type { RoamData } from "../roam";
 import MobList from "./region_mob_list";
 import ShortcutsCard from "./region_shortcuts";
@@ -420,34 +420,60 @@ export default function RegionEditor(props: RegionEditorProps) {
     () => (mode() === "obstacles" ? scanObstacles() : setObstacles([])),
   ));
   /**
+   * Terrain height under a ring vertex, found by dropping a ray through the zone mesh near the
+   * obstacle's own foot. A ring around a rock on a slope needs each vertex on the ground beside
+   * it, not all at one height, or it floats on the downhill side and buries on the uphill one.
+   */
+  const onGround = (ring: Ring): Ring => {
+    const mesh = zoneMesh;
+    if (!mesh) return ring;
+    const ray = new THREE.Raycaster();
+    const down = new THREE.Vector3(0, 1, 0); // y grows downward
+    return ring.map(([x, y, z]) => {
+      ray.set(new THREE.Vector3(x, y - 30, z), down);
+      ray.far = 60;
+      const hits = ray.intersectObject(mesh, false);
+      // The nearest surface to the obstacle's foot: a bridge overhead or a cave below is not it.
+      let best = y;
+      let gap = Infinity;
+      for (const h of hits) {
+        const p = mesh.worldToLocal(h.point.clone());
+        if (Math.abs(p.y - y) < gap) (gap = Math.abs(p.y - y), best = p.y);
+      }
+      return [x, best, z] as Vertex;
+    });
+  };
+  /** The rings the obstacles on offer would cut, merged where their margins meet. */
+  const previewRings = createMemo(() => ringsAround(obstacles(), obstacleMargin(), OBSTACLE_CELL).map(onGround));
+  /**
    * Cuts a hole around each obstacle. Every ring goes through the clipper at once, so one that
    * overlaps another ring becomes part of it and one that crosses the outline carves a bay into
-   * it rather than being left hanging outside. An obstacle whose ring would cut the region in two
-   * is skipped and named, for the person to handle.
+   * it rather than being left hanging outside. A ring that would cut the region in two is skipped
+   * and counted, for the person to handle.
    */
   const ringObstacles = (list: Obstacle[]) => {
     const name = activeName();
     const entry = regions().find(r => r.name === name);
     if (!name || !entry || !list.length) return;
-    const margin = obstacleMargin();
+    const rings = ringsAround(list, obstacleMargin(), OBSTACLE_CELL).map(onGround);
     let shape: Region = { rings: entry.rings.map(ring => ring.map(v => [...v] as Vertex)) };
-    const done: Obstacle[] = [];
+    let done = 0;
     let skipped = 0;
-    for (const o of list) {
-      const pieces = repairRegion({ rings: [...shape.rings, ringAround(o, margin, OBSTACLE_CELL)] });
+    for (const ring of rings) {
+      const pieces = repairRegion({ rings: [...shape.rings, ring] });
       if (pieces.length !== 1) {
         skipped++;
         continue;
       }
       shape = pieces[0];
-      done.push(o);
+      done++;
     }
-    if (done.length) {
-      checkpoint(done.length === 1 ? "ring an obstacle" : `ring ${done.length} obstacles`);
+    if (done) {
+      checkpoint(done === 1 ? "ring an obstacle" : `ring ${done} obstacles`);
       setRegions(rs => rs.map(r => (r.name === name ? { name, rings: shape.rings } : r)));
-      setObstacles(os => os.filter(o => !done.includes(o)));
+      setObstacles(os => os.filter(o => !list.includes(o)));
     }
-    if (skipped) flash(`${skipped} obstacle${skipped === 1 ? "" : "s"} would cut ${name} in two; left alone`);
+    if (skipped) flash(`${skipped} ring${skipped === 1 ? "" : "s"} would cut ${name} in two; left alone`);
   };
 
   const editActive = (fn: (r: RegionEntry) => void) => {
@@ -1121,12 +1147,10 @@ export default function RegionEditor(props: RegionEditorProps) {
   // The obstacles on offer, each drawn as the ring a click would cut, so the margin is visible
   // before anything is changed.
   createEffect(() => {
-    const list = obstacles();
-    const margin = obstacleMargin();
-    if (!list.length) return;
+    const rings = previewRings();
+    if (!rings.length) return;
     const segments: number[] = [];
-    for (const o of list) {
-      const ring = ringAround(o, margin, OBSTACLE_CELL);
+    for (const ring of rings) {
       for (let i = 0; i < ring.length; i++) {
         const a = ring[i];
         const b = ring[(i + 1) % ring.length];
