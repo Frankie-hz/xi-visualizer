@@ -87,6 +87,94 @@ export default function RegionEditor(props: RegionEditorProps) {
   const [floors, setFloors] = createSignal<number[]>([]);
   const [floor, setFloor] = createSignal<number | null>(null);
   const [hover, setHover] = createSignal<{ spawn: Spawn; x: number; y: number; } | null>(null);
+  // The hole under the cursor in the active region, for the marker and the context menu.
+  const [holeHover, setHoleHover] = createSignal<{ name: string; index: number; x: number; y: number; } | null>(null);
+  const inRing = (ring: Ring, x: number, z: number) => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, , zi] = ring[i], [xj, , zj] = ring[j];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+    }
+    return inside;
+  };
+  /** Index of the hole ring of `r` that holds x/z, the smallest if they nest, or 0 for none. */
+  const holeAt = (r: Region, x: number, z: number) => {
+    let best = 0;
+    let area = Infinity;
+    for (let k = 1; k < r.rings.length; k++) {
+      if (r.rings[k].length < 3 || !inRing(r.rings[k], x, z)) continue;
+      const a = Math.abs(ringArea(r.rings[k]));
+      if (a < area) (area = a, best = k);
+    }
+    return best;
+  };
+  const ringArea = (ring: Ring) => {
+    let sum = 0;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      sum += a[0] * b[2] - b[0] * a[2];
+    }
+    return sum / 2;
+  };
+  /** Shortest distance between two rings' edges, on x/z. */
+  const ringDistance = (a: Ring, b: Ring) => {
+    const segDist = (px: number, pz: number, ax: number, az: number, bx: number, bz: number) => {
+      const dx = bx - ax, dz = bz - az;
+      const t = dx || dz ? Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz))) : 0;
+      return Math.hypot(px - ax - t * dx, pz - az - t * dz);
+    };
+    let best = Infinity;
+    for (const [outer, inner] of [[a, b], [b, a]] as const) {
+      for (const [px, , pz] of outer) {
+        for (let i = 0; i < inner.length; i++) {
+          const [ax, , az] = inner[i], [bx, , bz] = inner[(i + 1) % inner.length];
+          best = Math.min(best, segDist(px, pz, ax, az, bx, bz));
+        }
+      }
+    }
+    return best;
+  };
+  /** Holes of the active region within `reach` yalms of hole `index`, itself excluded. */
+  const nearHoles = (r: Region, index: number, reach = 2) =>
+    r.rings.map((ring, k) => k).filter(k => k >= 1 && k !== index && r.rings[k].length >= 3 && ringDistance(r.rings[index], r.rings[k]) <= reach);
+  const deleteHole = (name: string, index: number) => {
+    checkpoint("delete a hole");
+    setRegions(rs => rs.map(r => (r.name === name ? { name, rings: r.rings.filter((_, k) => k !== index) } : r)));
+    setHoleHover(null);
+  };
+  /**
+   * Joins a hole with the holes near it into one: the convex hull of all their vertices, since
+   * two obstacles a mob cannot pass between are one obstacle to it. Undo brings the pieces back.
+   */
+  const mergeHoles = (name: string, index: number) => {
+    const entry = regions().find(r => r.name === name);
+    if (!entry) return;
+    const group = [index, ...nearHoles(entry, index)];
+    if (group.length < 2) return flash("no other hole within 2 yalms");
+    const pts = group.flatMap(k => entry.rings[k]);
+    const hull = convexHull(pts);
+    const rings = [...entry.rings.filter((_, k) => !group.includes(k)), hull];
+    const pieces = repairRegion({ rings });
+    checkpoint(`merge ${group.length} holes`);
+    setRegions(rs => rs.map(r => (r.name === name ? { name, rings: pieces.length === 1 ? pieces[0].rings : rings } : r)));
+    setHoleHover(null);
+    flash(`merged ${group.length} holes`);
+  };
+  const convexHull = (pts: Vertex[]): Ring => {
+    const sorted = [...pts].sort((a, b) => a[0] - b[0] || a[2] - b[2]);
+    const cross = (o: Vertex, a: Vertex, b: Vertex) => (a[0] - o[0]) * (b[2] - o[2]) - (a[2] - o[2]) * (b[0] - o[0]);
+    const lower: Vertex[] = [];
+    for (const p of sorted) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+      lower.push(p);
+    }
+    const upper: Vertex[] = [];
+    for (const p of [...sorted].reverse()) {
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+      upper.push(p);
+    }
+    return [...lower.slice(0, -1), ...upper.slice(0, -1)].map(v => [...v] as Vertex);
+  };
   const [cursor, setCursor] = createSignal<THREE.Vector3 | undefined>();
   const [toast, setToast] = createSignal<string | undefined>();
   const [rowFocus, setRowFocus] = createSignal<string | null>(null);
@@ -95,6 +183,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     | { x: number; y: number; }
       & (
         | { kind: "region"; name: string; }
+        | { kind: "hole"; name: string; index: number; }
         | { kind: "spawn"; spawn: Spawn; }
         | { kind: "route"; lead: string; }
       )
@@ -1579,6 +1668,9 @@ export default function RegionEditor(props: RegionEditorProps) {
       const spawn = pickSpawn();
       if (spawn) return setMenu({ kind: "spawn", spawn, x: ev.clientX, y: ev.clientY });
       const p = pickZonePoint();
+      const act = active();
+      const hole = p && act && !props.readOnly ? holeAt(act, p.x, p.z) : 0;
+      if (hole) return setMenu({ kind: "hole", name: act!.name, index: hole, x: ev.clientX, y: ev.clientY });
       const name = p && regionAt(asSet(regions()), p.x, p.z, p.y);
       setMenu(name ? { kind: "region", name, x: ev.clientX, y: ev.clientY } : null);
     };
@@ -1636,6 +1728,12 @@ export default function RegionEditor(props: RegionEditorProps) {
     const onMouseMove = (ev: MouseEvent) => {
       aim(ev);
       setCursor(groundPoint());
+      if (!drag && !spawnDrag && mode() === "select") {
+        const act = active();
+        const p = act ? pickZonePoint(lastY(act)) : null;
+        const k = p && act ? holeAt(act, p.x, p.z) : 0;
+        setHoleHover(k && act ? { name: act.name, index: k, x: ev.clientX, y: ev.clientY } : null);
+      } else setHoleHover(null);
 
       if (drag) {
         const p = pickZonePoint(activePath()?.legs[drag.idx]?.[1] ?? lastY(active()));
@@ -2263,6 +2361,27 @@ export default function RegionEditor(props: RegionEditorProps) {
                 </>
               )}
             </Show>
+            <Show when={menu()!.kind === "hole" ? (menu() as any) as { name: string; index: number; } : null}>
+              {hole => (
+                <>
+                  <div class="px-3 py-1 text-slate-500">
+                    {hole().name} · hole {hole().index} · {Math.abs(ringArea(active()?.rings[hole().index] ?? [])).toFixed(0)} y²
+                  </div>
+                  <button
+                    class="block w-full text-left px-3 py-1 hover:bg-slate-700"
+                    onClick={() => (mergeHoles(hole().name, hole().index), setMenu(null))}
+                  >
+                    Merge nearby holes ({active() ? nearHoles(active()!, hole().index).length : 0} within 2y)
+                  </button>
+                  <button
+                    class="block w-full text-left px-3 py-1 hover:bg-slate-700 text-red-400"
+                    onClick={() => (deleteHole(hole().name, hole().index), setMenu(null))}
+                  >
+                    Delete hole
+                  </button>
+                </>
+              )}
+            </Show>
             <Show when={menu()!.kind === "spawn" ? (menu() as any).spawn as Spawn : null}>
               {spawn => (
                 <>
@@ -2348,6 +2467,18 @@ export default function RegionEditor(props: RegionEditorProps) {
         <Show when={toast()}>
           <div class="absolute bottom-2 left-1/2 -translate-x-1/2 bg-emerald-600 text-white text-xs font-mono rounded px-3 py-1 pointer-events-none">
             {toast()}
+          </div>
+        </Show>
+        <Show when={holeHover() && !hover() && !menu()}>
+          <div
+            class="fixed bg-slate-900/90 text-white px-2 py-1 rounded text-xs pointer-events-none z-50"
+            style={{ left: `${holeHover()!.x + 12}px`, top: `${holeHover()!.y + 12}px` }}
+          >
+            <div class="font-bold">hole {holeHover()!.index}</div>
+            <div class="text-slate-400">
+              {Math.abs(ringArea(active()?.rings[holeHover()!.index] ?? [])).toFixed(0)} y² · {active()?.rings[holeHover()!.index]?.length ?? 0} vertices
+            </div>
+            <div class="text-slate-500">right-click to delete or merge</div>
           </div>
         </Show>
         <Show when={hover()}>

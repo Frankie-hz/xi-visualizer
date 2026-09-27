@@ -11,6 +11,7 @@ const SHORTCUTS: { title: string; keys: [string, string][]; }[] = [
       ["right-click", "a corner to remove that vertex"],
       ["enter / esc", "finish drawing"],
       ["click", "in Obstacles mode, ring the steep faces under the cursor with a hole at the margin"],
+      ["right-click", "inside a hole of the selected region to delete it or merge it with the holes near it"],
     ],
   },
   {
