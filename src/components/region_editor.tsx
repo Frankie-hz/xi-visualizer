@@ -2245,10 +2245,33 @@ export default function RegionEditor(props: RegionEditorProps) {
           </div>
         </Show>
         <ShortcutsCard />
+        {/* The map's own toolbar: tools that act on the view rather than the lists beside it. */}
+        <Show when={!props.readOnly}>
+          <div class="absolute top-2 left-2 flex gap-1 text-xs">
+            <button
+              class="flex items-center gap-1.5 px-2 py-1 rounded disabled:opacity-40"
+              classList={{
+                "bg-amber-600 hover:bg-amber-500 text-white": mode() === "obstacles",
+                "bg-slate-900/80 hover:bg-slate-800 text-slate-200": mode() !== "obstacles",
+              }}
+              disabled={!active()}
+              title={active()
+                ? "Carve holes around the collision obstacles in the selected region: trees, rocks, walls"
+                : "Select a region first"}
+              onClick={() => setMode(m => (m === "obstacles" ? "select" : "obstacles"))}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M8 1.5l5.6 3.25v6.5L8 14.5l-5.6-3.25v-6.5z" />
+                <circle cx="8" cy="8" r="2.4" fill="currentColor" stroke="none" />
+              </svg>
+              Carve holes
+            </button>
+          </div>
+        </Show>
         <Show when={mode() === "obstacles" && !props.readOnly}>
           <div class="absolute top-10 right-2 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
             <div class="flex items-center justify-between">
-              <span class="text-[10px] uppercase tracking-wide text-slate-500">Obstacles</span>
+              <span class="text-[10px] uppercase tracking-wide text-slate-500">Carve holes</span>
               <span class="text-slate-400">
                 {obstacles().length} found · {obstacles().length - bulk().length} over the ring-all size · esc leaves
               </span>
@@ -2806,14 +2829,6 @@ export default function RegionEditor(props: RegionEditorProps) {
                   onClick={refitActive}
                 >
                   Refit
-                </button>
-                <button
-                  class="px-2 py-1 rounded text-xs"
-                  classList={{ "bg-amber-600 hover:bg-amber-500": mode() === "obstacles", "bg-slate-600 hover:bg-slate-500": mode() !== "obstacles" }}
-                  title="Show the steep faces of the collision mesh inside this region; click one to ring it with a hole"
-                  onClick={() => setMode(m => (m === "obstacles" ? "select" : "obstacles"))}
-                >
-                  Obstacles
                 </button>
               </div>
 
