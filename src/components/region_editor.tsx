@@ -53,8 +53,6 @@ interface RegionEditorProps {
 type Mode = "select" | "draw" | "obstacles";
 /** Grid the collision mesh's steep faces are read on, in yalms. */
 const OBSTACLE_CELL = 0.5;
-/** Footprint above which "ring everything" leaves an obstacle alone: a cliff, not a tree. */
-const OBSTACLE_BULK_MAX = 60;
 
 const GOLDEN = 0.61803398875; // successive regions land far apart on the colour wheel
 const PATH_COLOR = 0xa78bfa; // routes are violet, clear of the region hues and the cyan trails
@@ -380,13 +378,24 @@ export default function RegionEditor(props: RegionEditorProps) {
 
   // --- obstacles: holes drawn around the collision mesh's steep faces ---
   const [obstacleMargin, setObstacleMargin] = createSignal(1);
+  // The dials: what counts as steep, how close faces must be to be one obstacle, how tall and how
+  // wide an obstacle must be to show at all, and how big one may be before "ring all" skips it.
+  const [obstacleSlope, setObstacleSlope] = createSignal(50); // degrees from level
+  const [obstacleJoin, setObstacleJoin] = createSignal(1); // yalms
+  const [obstacleMinHeight, setObstacleMinHeight] = createSignal(0.5); // yalms
+  const [obstacleMinArea, setObstacleMinArea] = createSignal(0.5); // square yalms of footprint
+  const [obstacleBulkMax, setObstacleBulkMax] = createSignal(60); // square yalms of footprint
   const [obstacles, setObstacles] = createSignal<Obstacle[]>([]);
+  const bulk = () => obstacles().filter(o => obstacleArea(o, OBSTACLE_CELL) <= obstacleBulkMax());
   /** The steep faces inside the active region on the current floor, clustered into obstacles. */
   const scanObstacles = () => {
     const r = active();
     if (!r || !zoneMesh || !floorIndex || (r.rings[0]?.length ?? 0) < 3) return setObstacles([]);
     const pos = zoneMesh.geometry.getAttribute("position").array as Float32Array;
     const only = floor();
+    const up = Math.cos((obstacleSlope() * Math.PI) / 180);
+    const minHeight = obstacleMinHeight();
+    const minArea = obstacleMinArea();
     const perVertex = floorIndex.perVertex;
     let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
     for (const [x, , z] of r.rings[0]) {
@@ -402,9 +411,14 @@ export default function RegionEditor(props: RegionEditorProps) {
       const z = (pos[o + 2] + pos[o + 5] + pos[o + 8]) / 3;
       return x >= minX && x <= maxX && z >= minZ && z <= maxZ && containsXZ(r, x, z);
     };
-    setObstacles(findObstacles(pos, { cell: OBSTACLE_CELL, keep }));
+    const found = findObstacles(pos, { cell: OBSTACLE_CELL, up, join: obstacleJoin(), keep });
+    // Height is foot minus top because y points down.
+    setObstacles(found.filter(o => o.foot - o.top >= minHeight && obstacleArea(o, OBSTACLE_CELL) >= minArea));
   };
-  createEffect(on([mode, activeName, floor], () => (mode() === "obstacles" ? scanObstacles() : setObstacles([]))));
+  createEffect(on(
+    [mode, activeName, floor, obstacleSlope, obstacleJoin, obstacleMinHeight, obstacleMinArea],
+    () => (mode() === "obstacles" ? scanObstacles() : setObstacles([])),
+  ));
   /**
    * Cuts a hole around each obstacle. Every ring goes through the clipper at once, so one that
    * overlaps another ring becomes part of it and one that crosses the outline carves a bay into
@@ -2090,6 +2104,102 @@ export default function RegionEditor(props: RegionEditorProps) {
           </div>
         </Show>
         <ShortcutsCard />
+        <Show when={mode() === "obstacles" && !props.readOnly}>
+          <div class="absolute top-10 right-2 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] uppercase tracking-wide text-slate-500">Obstacles</span>
+              <span class="text-slate-400">{obstacles().length} found · esc leaves</span>
+            </div>
+            <For
+              each={[
+                {
+                  label: "margin",
+                  unit: "y",
+                  get: obstacleMargin,
+                  set: setObstacleMargin,
+                  min: 0,
+                  max: 5,
+                  step: 0.25,
+                  title: "How far off the faces the hole ring sits: the mob's own radius plus some",
+                },
+                {
+                  label: "steeper than",
+                  unit: "°",
+                  get: obstacleSlope,
+                  set: setObstacleSlope,
+                  min: 20,
+                  max: 85,
+                  step: 1,
+                  title: "A face this steep or more is an obstacle; below it is ground a mob walks",
+                },
+                {
+                  label: "join within",
+                  unit: "y",
+                  get: obstacleJoin,
+                  set: setObstacleJoin,
+                  min: 0,
+                  max: 4,
+                  step: 0.25,
+                  title: "Faces this close are one obstacle: a trunk and its branches, a rock and its ledges",
+                },
+                {
+                  label: "at least tall",
+                  unit: "y",
+                  get: obstacleMinHeight,
+                  set: setObstacleMinHeight,
+                  min: 0,
+                  max: 4,
+                  step: 0.25,
+                  title: "Lower than this is a kerb or a root, not something a mob paths around",
+                },
+                {
+                  label: "at least wide",
+                  unit: "y²",
+                  get: obstacleMinArea,
+                  set: setObstacleMinArea,
+                  min: 0,
+                  max: 10,
+                  step: 0.25,
+                  title: "Footprint under this is a speck of geometry",
+                },
+                {
+                  label: "ring all up to",
+                  unit: "y²",
+                  get: obstacleBulkMax,
+                  set: setObstacleBulkMax,
+                  min: 5,
+                  max: 500,
+                  step: 5,
+                  title: "Ring all skips anything bigger: a cliff or a wall takes a click of its own",
+                },
+              ]}
+            >
+              {d => (
+                <label class="flex items-center gap-2" title={d.title}>
+                  <span class="w-24 text-slate-300">{d.label}</span>
+                  <input
+                    type="range"
+                    class="flex-1"
+                    min={d.min}
+                    max={d.max}
+                    step={d.step}
+                    value={d.get()}
+                    onInput={e => d.set(Number(e.currentTarget.value))}
+                  />
+                  <span class="w-12 text-right font-mono text-slate-200">{d.get()}{d.unit}</span>
+                </label>
+              )}
+            </For>
+            <button
+              class="w-full px-2 py-1 bg-amber-700 hover:bg-amber-600 rounded disabled:opacity-40"
+              disabled={!bulk().length}
+              title="Ring every obstacle up to the size above; each one goes through the clipper on its own"
+              onClick={() => ringObstacles(bulk())}
+            >
+              Ring all ({bulk().length})
+            </button>
+          </div>
+        </Show>
         <Show when={cursor()}>
           <div
             class="absolute bottom-2 left-2 font-mono text-xs text-slate-200 bg-slate-900/75 rounded px-2 py-1 cursor-pointer select-none"
@@ -2530,29 +2640,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                   Obstacles
                 </button>
               </div>
-              <Show when={mode() === "obstacles"}>
-                <div class="flex items-center gap-1 text-xs">
-                  <span class="text-slate-400">margin</span>
-                  <input
-                    type="number"
-                    class="w-14 px-1 py-0.5 bg-slate-700 rounded"
-                    min="0"
-                    max="5"
-                    step="0.25"
-                    value={obstacleMargin()}
-                    onInput={e => setObstacleMargin(Math.max(0, Number(e.currentTarget.value) || 0))}
-                  />
-                  <span class="text-slate-400">y</span>
-                  <button
-                    class="ml-auto px-2 py-1 bg-amber-700 hover:bg-amber-600 rounded disabled:opacity-40"
-                    disabled={!obstacles().some(o => obstacleArea(o, OBSTACLE_CELL) <= OBSTACLE_BULK_MAX)}
-                    title={`Ring every obstacle under ${OBSTACLE_BULK_MAX} square yalms; bigger ones are cliffs and take a click each`}
-                    onClick={() => ringObstacles(obstacles().filter(o => obstacleArea(o, OBSTACLE_CELL) <= OBSTACLE_BULK_MAX))}
-                  >
-                    Ring all ({obstacles().filter(o => obstacleArea(o, OBSTACLE_CELL) <= OBSTACLE_BULK_MAX).length})
-                  </button>
-                </div>
-              </Show>
+
               <div class="text-xs text-slate-400">
                 {spawnCounts()[active()!.name] ?? 0} assigned{filter() && ` · ${members().length} shown`}
               </div>
