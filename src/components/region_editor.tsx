@@ -473,7 +473,7 @@ export default function RegionEditor(props: RegionEditorProps) {
   const [obstacleJoin, setObstacleJoin] = createSignal(1); // yalms
   const [obstacleMinHeight, setObstacleMinHeight] = createSignal(0.5); // yalms
   const [obstacleMinArea, setObstacleMinArea] = createSignal(0.5); // square yalms of footprint
-  const [obstacleBulkMax, setObstacleBulkMax] = createSignal(60); // square yalms of footprint
+  const [obstacleBulkMax, setObstacleBulkMax] = createSignal(150); // square yalms of footprint
   const [obstacles, setObstacles] = createSignal<Obstacle[]>([]);
   const bulk = () => obstacles().filter(o => obstacleArea(o, OBSTACLE_CELL) <= obstacleBulkMax());
   /** The steep faces inside the active region on the current floor, clustered into obstacles. */
@@ -534,8 +534,12 @@ export default function RegionEditor(props: RegionEditorProps) {
       return [x, best, z] as Vertex;
     });
   };
-  /** The rings the obstacles on offer would cut, merged where their margins meet. */
-  const previewRings = createMemo(() => ringsAround(obstacles(), obstacleMargin(), OBSTACLE_CELL).map(onGround));
+  /** The rings the obstacles on offer would cut, merged where their margins meet: what Ring all
+   * takes, and separately what is over its size and waits for a click. */
+  const previewRings = createMemo(() => ({
+    bulk: ringsAround(bulk(), obstacleMargin(), OBSTACLE_CELL).map(onGround),
+    big: ringsAround(obstacles().filter(o => !bulk().includes(o)), obstacleMargin(), OBSTACLE_CELL).map(onGround),
+  }));
   /**
    * Cuts a hole around each obstacle. Every ring goes through the clipper at once, so one that
    * overlaps another ring becomes part of it and one that crosses the outline carves a bay into
@@ -969,7 +973,7 @@ export default function RegionEditor(props: RegionEditorProps) {
   const spawnLabelRefs = new Map<string, HTMLDivElement>();
   const handleMap: Handle[] = [];
   const activeLineMaterials: LineMaterial[] = [];
-  let obstacleLineMaterial: LineMaterial | undefined;
+  const obstacleLineMaterials: LineMaterial[] = [];
   const drawnSpawns: number[] = [];
   let handlePoints: THREE.Points | undefined;
   let spawnPoints: THREE.Points | undefined;
@@ -1240,31 +1244,39 @@ export default function RegionEditor(props: RegionEditorProps) {
   // The obstacles on offer, each drawn as the ring a click would cut, so the margin is visible
   // before anything is changed.
   createEffect(() => {
-    const rings = previewRings();
-    if (!rings.length) return;
-    const segments: number[] = [];
-    for (const ring of rings) {
-      for (let i = 0; i < ring.length; i++) {
-        const a = ring[i];
-        const b = ring[(i + 1) % ring.length];
-        // A hair above the ground so the line is not swallowed by the terrain it lies on.
-        segments.push(a[0], a[1] - 0.2, a[2], b[0], b[1] - 0.2, b[2]);
+    const { bulk: small, big } = previewRings();
+    if (!small.length && !big.length) return;
+    const added: { lines: LineSegments2; geo: LineSegmentsGeometry; }[] = [];
+    // Two colours: what Ring all takes in full amber, what is over its size dimmer.
+    for (const [rings, key, color] of [[small, "obstacles", 0xffb020], [big, "obstacles-big", 0x8a6a2a]] as const) {
+      if (!rings.length) continue;
+      const segments: number[] = [];
+      for (const ring of rings) {
+        for (let i = 0; i < ring.length; i++) {
+          const a = ring[i];
+          const b = ring[(i + 1) % ring.length];
+          // A hair above the ground so the line is not swallowed by the terrain it lies on.
+          segments.push(a[0], a[1] - 0.2, a[2], b[0], b[1] - 0.2, b[2]);
+        }
       }
+      // WebGL draws LineBasicMaterial one pixel wide whatever it is told, so this is a wide line
+      // like the selected outline, sized in screen pixels. Segments geometry, not LineGeometry:
+      // that one takes a polyline and would join every ring to the next.
+      const geo = new LineSegmentsGeometry();
+      geo.setPositions(segments);
+      const mat = materialFor(key, () => new LineMaterial({ color, linewidth: 2.5, depthTest: false })) as LineMaterial;
+      mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
+      obstacleLineMaterials.push(mat);
+      const lines = new LineSegments2(geo, mat);
+      lines.renderOrder = 3;
+      scene().add(lines);
+      added.push({ lines, geo });
     }
-    // WebGL draws LineBasicMaterial one pixel wide whatever it is told, so this is a wide line like
-    // the selected outline, sized in screen pixels. Segments geometry, not LineGeometry: that one
-    // takes a polyline and would join every ring to the next.
-    const geo = new LineSegmentsGeometry();
-    geo.setPositions(segments);
-    const mat = materialFor("obstacles", () => new LineMaterial({ color: 0xffb020, linewidth: 2.5, depthTest: false })) as LineMaterial;
-    mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
-    obstacleLineMaterial = mat;
-    const lines = new LineSegments2(geo, mat);
-    lines.renderOrder = 3;
-    scene().add(lines);
     onCleanup(() => {
-      scene().remove(lines);
-      geo.dispose();
+      for (const { lines, geo } of added) {
+        scene().remove(lines);
+        geo.dispose();
+      }
     });
   });
 
@@ -1585,7 +1597,7 @@ export default function RegionEditor(props: RegionEditorProps) {
       scene: scene(),
       camera: camera(),
       onFrame: dt => {
-        for (const m of [...activeLineMaterials, stalkMaterial, ...(obstacleLineMaterial ? [obstacleLineMaterial] : [])]) {
+        for (const m of [...activeLineMaterials, stalkMaterial, ...obstacleLineMaterials]) {
           m.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
         }
         stepReplay(dt);
@@ -2234,7 +2246,9 @@ export default function RegionEditor(props: RegionEditorProps) {
           <div class="absolute top-10 right-2 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
             <div class="flex items-center justify-between">
               <span class="text-[10px] uppercase tracking-wide text-slate-500">Obstacles</span>
-              <span class="text-slate-400">{obstacles().length} found · esc leaves</span>
+              <span class="text-slate-400">
+                {obstacles().length} found · {obstacles().length - bulk().length} over the ring-all size · esc leaves
+              </span>
             </div>
             <For
               each={[
