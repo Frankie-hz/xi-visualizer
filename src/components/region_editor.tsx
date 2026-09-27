@@ -820,6 +820,26 @@ export default function RegionEditor(props: RegionEditorProps) {
     camera().position.copy(center).add(offset);
   };
 
+  /** Centres on a region and pulls the camera in or out so the whole outline fits the view,
+   * keeping the direction it is looked at from. */
+  const zoomTo = (name: string) => {
+    const r = regions().find(x => x.name === name);
+    if (!r?.rings[0]?.length || !controls) return;
+    const box = new THREE.Box3();
+    for (const [x, y, z] of r.rings[0]) box.expandByPoint(new THREE.Vector3(x, -y, -z));
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const cam = camera();
+    const fov = (cam.fov * Math.PI) / 180;
+    // Straight down the outline spans x and z; from an angle it foreshortens, so this is the
+    // distance that fits it seen from above, with a fifth of margin.
+    const need = Math.max(size.z / (2 * Math.tan(fov / 2)), size.x / (2 * Math.tan(fov / 2) * cam.aspect)) * 1.2;
+    const direction = new THREE.Vector3().subVectors(cam.position, controls.target).normalize();
+    controls.target.copy(center);
+    cam.position.copy(center).addScaledVector(direction, Math.max(need, 20));
+    controls.update();
+  };
+
   const centerOn = (name: string) => {
     const r = regions().find(x => x.name === name);
     if (!r?.rings[0]?.length) return;
@@ -1882,7 +1902,9 @@ export default function RegionEditor(props: RegionEditorProps) {
         }
         return;
       }
-      setActiveName((p && regionAt(asSet(regions()), p.x, p.z, p.y)) ?? null);
+      const picked = (p && regionAt(asSet(regions()), p.x, p.z, p.y)) ?? null;
+      setActiveName(picked);
+      if (picked) zoomTo(picked);
     };
 
     const onKeyDown = (ev: KeyboardEvent) => {
