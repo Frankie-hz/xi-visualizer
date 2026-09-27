@@ -433,9 +433,11 @@ export default function RegionEditor(props: RegionEditorProps) {
       ray.set(new THREE.Vector3(x, y - 30, z), down);
       ray.far = 60;
       const hits = ray.intersectObject(mesh, false);
-      // The nearest surface to the obstacle's foot: a bridge overhead or a cave below is not it.
+      // The surface nearest the obstacle's foot, and only within a step of it: a bridge overhead,
+      // a cave below, or the rock's own shoulder where the ring crosses it are not the ground the
+      // mob stands on. With nothing that close the foot itself will do.
       let best = y;
-      let gap = Infinity;
+      let gap = 2;
       for (const h of hits) {
         const p = mesh.worldToLocal(h.point.clone());
         if (Math.abs(p.y - y) < gap) (gap = Math.abs(p.y - y), best = p.y);
