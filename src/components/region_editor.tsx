@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import * as THREE from "three";
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
-import { Line2, LineGeometry, LineMaterial, MapControls } from "three/examples/jsm/Addons.js";
+import { Line2, LineGeometry, LineMaterial, LineSegments2, MapControls } from "three/examples/jsm/Addons.js";
 import { createMapCamera, fitCameraToContents } from "../graphics/camera";
 import { buildNavMeshGroup, parseNavMesh } from "../graphics/navmesh";
 import { beaconMaterial, cometMaterial, handleMaterial, roamMaterial, spawnMaterial } from "../graphics/region_points";
@@ -405,22 +405,35 @@ export default function RegionEditor(props: RegionEditorProps) {
     setObstacles(findObstacles(pos, { cell: OBSTACLE_CELL, keep }));
   };
   createEffect(on([mode, activeName, floor], () => (mode() === "obstacles" ? scanObstacles() : setObstacles([]))));
-  /** Cuts a hole around each obstacle, then lets the clipper merge whatever overlaps. */
+  /**
+   * Cuts a hole around each obstacle. Every ring goes through the clipper at once, so one that
+   * overlaps another ring becomes part of it and one that crosses the outline carves a bay into
+   * it rather than being left hanging outside. An obstacle whose ring would cut the region in two
+   * is skipped and named, for the person to handle.
+   */
   const ringObstacles = (list: Obstacle[]) => {
     const name = activeName();
-    if (!name || !list.length) return;
-    checkpoint(list.length === 1 ? "ring an obstacle" : `ring ${list.length} obstacles`);
-    const margin = obstacleMargin();
-    editActive(r => {
-      for (const o of list) r.rings.push(ringAround(o, margin, OBSTACLE_CELL));
-    });
-    // Rings that overlap each other, an older hole or the outline are one shape after repair; a
-    // region the repair would split keeps the rings as they are for the person to sort out.
     const entry = regions().find(r => r.name === name);
-    const pieces = entry ? repairRegion(entry) : [];
-    if (pieces.length === 1) setRegions(rs => rs.map(r => (r.name === name ? { name, rings: pieces[0].rings } : r)));
-    else if (pieces.length > 1) flash(`${name} would split; rings left unmerged`);
-    setObstacles(os => os.filter(o => !list.includes(o)));
+    if (!name || !entry || !list.length) return;
+    const margin = obstacleMargin();
+    let shape: Region = { rings: entry.rings.map(ring => ring.map(v => [...v] as Vertex)) };
+    const done: Obstacle[] = [];
+    let skipped = 0;
+    for (const o of list) {
+      const pieces = repairRegion({ rings: [...shape.rings, ringAround(o, margin, OBSTACLE_CELL)] });
+      if (pieces.length !== 1) {
+        skipped++;
+        continue;
+      }
+      shape = pieces[0];
+      done.push(o);
+    }
+    if (done.length) {
+      checkpoint(done.length === 1 ? "ring an obstacle" : `ring ${done.length} obstacles`);
+      setRegions(rs => rs.map(r => (r.name === name ? { name, rings: shape.rings } : r)));
+      setObstacles(os => os.filter(o => !done.includes(o)));
+    }
+    if (skipped) flash(`${skipped} obstacle${skipped === 1 ? "" : "s"} would cut ${name} in two; left alone`);
   };
 
   const editActive = (fn: (r: RegionEntry) => void) => {
@@ -823,6 +836,7 @@ export default function RegionEditor(props: RegionEditorProps) {
   const spawnLabelRefs = new Map<string, HTMLDivElement>();
   const handleMap: Handle[] = [];
   const activeLineMaterials: LineMaterial[] = [];
+  let obstacleLineMaterial: LineMaterial | undefined;
   const drawnSpawns: number[] = [];
   let handlePoints: THREE.Points | undefined;
   let spawnPoints: THREE.Points | undefined;
@@ -1106,9 +1120,14 @@ export default function RegionEditor(props: RegionEditorProps) {
         segments.push(a[0], a[1] - 0.2, a[2], b[0], b[1] - 0.2, b[2]);
       }
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(segments), 3));
-    const lines = new THREE.LineSegments(geo, materialFor("obstacles", () => new THREE.LineBasicMaterial({ color: 0xf59e0b, depthTest: false })));
+    // WebGL draws LineBasicMaterial one pixel wide whatever it is told, so this is a Line2 like
+    // the selected outline, sized in screen pixels.
+    const geo = new LineGeometry();
+    geo.setPositions(segments);
+    const mat = materialFor("obstacles", () => new LineMaterial({ color: 0xffb020, linewidth: 2.5, depthTest: false })) as LineMaterial;
+    mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
+    obstacleLineMaterial = mat;
+    const lines = new LineSegments2(geo, mat);
     lines.renderOrder = 3;
     scene().add(lines);
     onCleanup(() => {
@@ -1434,7 +1453,9 @@ export default function RegionEditor(props: RegionEditorProps) {
       scene: scene(),
       camera: camera(),
       onFrame: dt => {
-        for (const m of [...activeLineMaterials, stalkMaterial]) m.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
+        for (const m of [...activeLineMaterials, stalkMaterial, ...(obstacleLineMaterial ? [obstacleLineMaterial] : [])]) {
+          m.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
+        }
         stepReplay(dt);
       },
       onAfterRender: () => placeLabels(),

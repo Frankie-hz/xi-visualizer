@@ -118,7 +118,7 @@ export const cometMaterial = () =>
 // Polygon handles are squares in the region colour: corners filled, edge midpoints hollow.
 export const handleMaterial = () =>
   new THREE.ShaderMaterial({
-    uniforms: { pointSize: { value: 12 } },
+    uniforms: { pointSize: { value: 9 } },
     vertexShader: POINT_VERTEX,
     fragmentShader: `
       varying vec3 vColor;
