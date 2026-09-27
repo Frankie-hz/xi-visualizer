@@ -1,6 +1,6 @@
 // node src/obstacles.test.ts
 import assert from "node:assert";
-import { findObstacles, obstacleArea, obstacleAt, ringAround, ringsAround } from "./obstacles.ts";
+import { cellKey, findObstacles, obstacleArea, obstacleAt, ringAround, ringsAround } from "./obstacles.ts";
 import type { Ring } from "./regions.ts";
 
 // A square trunk one yalm across standing on flat ground: four vertical quads (two triangles
@@ -67,5 +67,13 @@ assert.strictEqual(pair.length, 2, "three yalms apart is two obstacles");
 assert.strictEqual(ringsAround(pair, 1, 0.5).length, 1, "but their margin rings meet, so one hole");
 assert.strictEqual(ringsAround(pair, 0.25, 0.5).length, 2, "at a small margin they stay two holes");
 assert.ok(ringsAround(pair, 1, 0.5)[0].every(v => Math.abs(v[1]) < 1e-6), "merged ring keeps the foot height");
+
+// Ground a mob was recorded on is never ringed: with samples all along x=1.5 the ring stops short.
+const walked = new Set<number>();
+for (let z = -3; z <= 3; z += 0.25) walked.add(cellKey(1.5, z, 0.5));
+const kept = ringsAround([near], 1, 0.5, walked)[0];
+assert.ok(kept.length >= 4, "a ring survives the exclusion");
+assert.ok(kept.every(v => v[0] <= 1.5 + 1e-9), `no vertex enters the sampled column, got x up to ${Math.max(...kept.map(v => v[0]))}`);
+assert.ok(area(kept) < area(ring), "the excluded side makes it smaller");
 
 console.log("ok");

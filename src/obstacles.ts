@@ -35,6 +35,8 @@ export interface ObstacleOptions {
 const OFFSET = 1 << 16;
 const SPAN = 1 << 17;
 const keyOf = (ix: number, iz: number) => (ix + OFFSET) * SPAN + (iz + OFFSET);
+/** The key of the grid cell a point falls in, for building a set of cells to keep out of rings. */
+export const cellKey = (x: number, z: number, cell = 0.5) => keyOf(Math.floor(x / cell), Math.floor(z / cell));
 const unkey = (k: number): [number, number] => [Math.floor(k / SPAN) - OFFSET, (k % SPAN) - OFFSET];
 
 /**
@@ -140,14 +142,16 @@ export function obstacleAt(obstacles: Obstacle[], x: number, z: number, margin: 
  * and a pocket enclosed between them is filled, since nothing reaches it. Each vertex sits at the
  * height where the nearest obstacle meets the ground; the editor lifts it onto the terrain.
  */
-export function ringsAround(list: Obstacle[], margin: number, cell = 0.5): Ring[] {
+export function ringsAround(list: Obstacle[], margin: number, cell = 0.5, avoid?: Set<number>): Ring[] {
   const reach = Math.ceil(margin / cell);
   const grown = new Map<number, number>(); // cell -> foot height of the obstacle it came from
   for (const o of list) {
     for (const [ix, iz] of o.cells) {
       for (let dz = -reach; dz <= reach; dz++) {
         for (let dx = -reach; dx <= reach; dx++) {
-          if (Math.hypot(dx, dz) * cell <= margin + cell / 2) grown.set(keyOf(ix + dx, iz + dz), o.foot);
+          const k = keyOf(ix + dx, iz + dz);
+          // A cell a mob was recorded in stays ground whatever the mesh says of it.
+          if (Math.hypot(dx, dz) * cell <= margin + cell / 2 && !avoid?.has(k)) grown.set(k, o.foot);
         }
       }
     }
@@ -190,8 +194,8 @@ export function ringsAround(list: Obstacle[], margin: number, cell = 0.5): Ring[
 }
 
 /** The one ring around a single obstacle. */
-export function ringAround(o: Obstacle, margin: number, cell = 0.5): Ring {
-  const rings = ringsAround([o], margin, cell);
+export function ringAround(o: Obstacle, margin: number, cell = 0.5, avoid?: Set<number>): Ring {
+  const rings = ringsAround([o], margin, cell, avoid);
   return rings.reduce((best, r) => (r.length > best.length ? r : best), [] as Ring);
 }
 

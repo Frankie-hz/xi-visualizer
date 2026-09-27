@@ -9,7 +9,7 @@ import { setupBaseScene } from "../graphics/scene";
 import { cleanupNode } from "../graphics/util";
 import { createViewer } from "../graphics/viewer";
 import { ColorKind, colorMesh, createZoneMesh, mapIdPerVertex, prepareMeshData } from "../graphics/ximesh";
-import { findObstacles, obstacleArea, obstacleAt, ringAround, ringsAround } from "../obstacles";
+import { cellKey, findObstacles, obstacleArea, obstacleAt, ringsAround } from "../obstacles";
 import type { Obstacle } from "../obstacles";
 import { containsXZ, regionAt, regionHue, regionsFromPoints, repairRegion, routeFromTrail, selfIntersects, simplifyRing, validate } from "../regions";
 import type { Finding, Patrol, Region, RegionSet, Ring, Spawn, TrailPoint, Vertex } from "../regions";
@@ -549,11 +549,21 @@ export default function RegionEditor(props: RegionEditorProps) {
       return [x, best, z] as Vertex;
     });
   };
+  /** The cells the active region's own mobs were recorded in: a ring never takes those, since the
+   * data has a mob standing there whatever the mesh says. */
+  const walkedCells = createMemo(() => {
+    const name = activeName();
+    const out = new Set<number>();
+    if (!name || mode() !== "obstacles") return out;
+    const ids = props.spawns.filter(s => assign()[s.id]?.includes(name)).map(s => s.id);
+    for (const p of trailPoints(ids)) out.add(cellKey(p.x, p.z, OBSTACLE_CELL));
+    return out;
+  });
   /** The rings the obstacles on offer would cut, merged where their margins meet: what Ring all
    * takes, and separately what is over its size and waits for a click. */
   const previewRings = createMemo(() => ({
-    bulk: ringsAround(bulk(), obstacleMargin(), OBSTACLE_CELL).map(onGround),
-    big: ringsAround(obstacles().filter(o => !bulk().includes(o)), obstacleMargin(), OBSTACLE_CELL).map(onGround),
+    bulk: ringsAround(bulk(), obstacleMargin(), OBSTACLE_CELL, walkedCells()).map(onGround),
+    big: ringsAround(obstacles().filter(o => !bulk().includes(o)), obstacleMargin(), OBSTACLE_CELL, walkedCells()).map(onGround),
   }));
   /**
    * Cuts a hole around each obstacle. Every ring goes through the clipper at once, so one that
@@ -565,7 +575,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     const name = activeName();
     const entry = regions().find(r => r.name === name);
     if (!name || !entry || !list.length) return;
-    const rings = ringsAround(list, obstacleMargin(), OBSTACLE_CELL).map(onGround);
+    const rings = ringsAround(list, obstacleMargin(), OBSTACLE_CELL, walkedCells()).map(onGround);
     let shape: Region = { rings: entry.rings.map(ring => ring.map(v => [...v] as Vertex)) };
     let done = 0;
     let skipped = 0;
