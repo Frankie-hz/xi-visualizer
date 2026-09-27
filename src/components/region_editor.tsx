@@ -2288,6 +2288,21 @@ export default function RegionEditor(props: RegionEditorProps) {
               </svg>
               Carve holes
             </button>
+            <button
+              class="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-900/80 hover:bg-slate-800 text-slate-200 disabled:opacity-40"
+              disabled={!active()}
+              title={active() ? "Drop the least important quarter of the selected region's vertices" : "Select a region first"}
+              onClick={() => {
+                checkpoint(`simplify ${activeName()}`);
+                editActive(r => (r.rings = r.rings.map(ring => simplifyRing(ring, Infinity, Math.ceil(ring.length * 0.75)))));
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M2 12l3-6 3 4 2-3 4 5" />
+                <path d="M2 12h12" stroke-dasharray="2 1.5" />
+              </svg>
+              Simplify
+            </button>
           </div>
         </Show>
         <Show when={mode() === "obstacles" && !props.readOnly}>
@@ -2833,16 +2848,6 @@ export default function RegionEditor(props: RegionEditorProps) {
                 </button>
                 <button class="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs" onClick={() => assignInside(true)}>
                   Unassign inside
-                </button>
-                <button
-                  class="px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs"
-                  title="Drop the least important quarter of the vertices"
-                  onClick={() => {
-                    checkpoint(`simplify ${activeName()}`);
-                    editActive(r => (r.rings = r.rings.map(ring => simplifyRing(ring, Infinity, Math.ceil(ring.length * 0.75)))));
-                  }}
-                >
-                  Simplify
                 </button>
                 <button
                   class="px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs disabled:opacity-40 disabled:text-slate-300"
