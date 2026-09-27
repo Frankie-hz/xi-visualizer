@@ -10,6 +10,7 @@ const SHORTCUTS: { title: string; keys: [string, string][]; }[] = [
       ["drag", "a small square on an edge to add a vertex"],
       ["right-click", "a corner to remove that vertex"],
       ["enter / esc", "finish drawing"],
+      ["click", "in Obstacles mode, ring the steep faces under the cursor with a hole at the margin"],
     ],
   },
   {

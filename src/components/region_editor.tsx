@@ -1,17 +1,19 @@
-import { createEffect, on, untrack, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import * as THREE from "three";
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { Line2, LineGeometry, LineMaterial, MapControls } from "three/examples/jsm/Addons.js";
 import { createMapCamera, fitCameraToContents } from "../graphics/camera";
+import { buildNavMeshGroup, parseNavMesh } from "../graphics/navmesh";
 import { beaconMaterial, cometMaterial, handleMaterial, roamMaterial, spawnMaterial } from "../graphics/region_points";
 import { setupBaseScene } from "../graphics/scene";
 import { cleanupNode } from "../graphics/util";
 import { createViewer } from "../graphics/viewer";
-import { buildNavMeshGroup, parseNavMesh } from "../graphics/navmesh";
 import { ColorKind, colorMesh, createZoneMesh, mapIdPerVertex, prepareMeshData } from "../graphics/ximesh";
-import type { RoamData } from "../roam";
+import { findObstacles, obstacleArea, obstacleAt, ringAround } from "../obstacles";
+import type { Obstacle } from "../obstacles";
 import { containsXZ, regionAt, regionHue, regionsFromPoints, repairRegion, routeFromTrail, selfIntersects, simplifyRing, validate } from "../regions";
 import type { Finding, Patrol, Region, RegionSet, Spawn, TrailPoint, Vertex } from "../regions";
+import type { RoamData } from "../roam";
 import MobList from "./region_mob_list";
 import ShortcutsCard from "./region_shortcuts";
 import type { ZoneData } from "./zone_model";
@@ -47,6 +49,13 @@ interface RegionEditorProps {
   onChange: (regions: RegionSet, assign: Record<string, string[]>, paths: Record<string, Patrol>) => void;
 }
 
+// "obstacles" is a click mode too: each click rings the steep faces under it with a hole.
+type Mode = "select" | "draw" | "obstacles";
+/** Grid the collision mesh's steep faces are read on, in yalms. */
+const OBSTACLE_CELL = 0.5;
+/** Footprint above which "ring everything" leaves an obstacle alone: a cliff, not a tree. */
+const OBSTACLE_BULK_MAX = 60;
+
 const GOLDEN = 0.61803398875; // successive regions land far apart on the colour wheel
 const PATH_COLOR = 0xa78bfa; // routes are violet, clear of the region hues and the cyan trails
 
@@ -64,7 +73,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     props.assign ?? Object.fromEntries(props.spawns.filter(s => s.regions?.length).map(s => [s.id, s.regions!])),
   );
   const [activeName, setActiveName] = createSignal<string | null>(null);
-  const [mode, setMode] = createSignal<"select" | "draw">("select");
+  const [mode, setMode] = createSignal<Mode>("select");
   // Patrol routes, keyed by the spawn that walks them. A spawn has a region or a route, never both.
   const [paths, setPaths] = createSignal<Record<string, Patrol>>(
     props.paths ?? Object.fromEntries(props.spawns.filter(s => s.path).map(s => [s.id, { legs: s.path!, loop: s.loop }])),
@@ -309,7 +318,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     activeName: string | null;
     walker: string | null;
     mirror: string[];
-    mode: "select" | "draw";
+    mode: Mode;
   }
   interface Step {
     label: string;
@@ -367,6 +376,51 @@ export default function RegionEditor(props: RegionEditorProps) {
   /** Steps back to just before the numbered step, so the history list is clickable. */
   const rewindTo = (index: number) => {
     for (let i = undoStack().length; i > index; i--) undo();
+  };
+
+  // --- obstacles: holes drawn around the collision mesh's steep faces ---
+  const [obstacleMargin, setObstacleMargin] = createSignal(1);
+  const [obstacles, setObstacles] = createSignal<Obstacle[]>([]);
+  /** The steep faces inside the active region on the current floor, clustered into obstacles. */
+  const scanObstacles = () => {
+    const r = active();
+    if (!r || !zoneMesh || !floorIndex || (r.rings[0]?.length ?? 0) < 3) return setObstacles([]);
+    const pos = zoneMesh.geometry.getAttribute("position").array as Float32Array;
+    const only = floor();
+    const perVertex = floorIndex.perVertex;
+    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+    for (const [x, , z] of r.rings[0]) {
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minZ = Math.min(minZ, z);
+      maxZ = Math.max(maxZ, z);
+    }
+    const keep = (t: number) => {
+      if (only !== null && perVertex[t * 3] !== only) return false;
+      const o = t * 9;
+      const x = (pos[o] + pos[o + 3] + pos[o + 6]) / 3;
+      const z = (pos[o + 2] + pos[o + 5] + pos[o + 8]) / 3;
+      return x >= minX && x <= maxX && z >= minZ && z <= maxZ && containsXZ(r, x, z);
+    };
+    setObstacles(findObstacles(pos, { cell: OBSTACLE_CELL, keep }));
+  };
+  createEffect(on([mode, activeName, floor], () => (mode() === "obstacles" ? scanObstacles() : setObstacles([]))));
+  /** Cuts a hole around each obstacle, then lets the clipper merge whatever overlaps. */
+  const ringObstacles = (list: Obstacle[]) => {
+    const name = activeName();
+    if (!name || !list.length) return;
+    checkpoint(list.length === 1 ? "ring an obstacle" : `ring ${list.length} obstacles`);
+    const margin = obstacleMargin();
+    editActive(r => {
+      for (const o of list) r.rings.push(ringAround(o, margin, OBSTACLE_CELL));
+    });
+    // Rings that overlap each other, an older hole or the outline are one shape after repair; a
+    // region the repair would split keeps the rings as they are for the person to sort out.
+    const entry = regions().find(r => r.name === name);
+    const pieces = entry ? repairRegion(entry) : [];
+    if (pieces.length === 1) setRegions(rs => rs.map(r => (r.name === name ? { name, rings: pieces[0].rings } : r)));
+    else if (pieces.length > 1) flash(`${name} would split; rings left unmerged`);
+    setObstacles(os => os.filter(o => !list.includes(o)));
   };
 
   const editActive = (fn: (r: RegionEntry) => void) => {
@@ -792,9 +846,9 @@ export default function RegionEditor(props: RegionEditorProps) {
     perVertex: Uint8Array;
   }
   /** Roam points drawn at once. Above this a zone is sampled for display only; see where it is used. */
-const DRAWN_POINT_CAP = 600_000;
+  const DRAWN_POINT_CAP = 600_000;
 
-const CELL = 12;
+  const CELL = 12;
   const buildFloorIndex = (mesh: THREE.Mesh, prep: ReturnType<typeof prepareMeshData>): FloorIndex => {
     const perVertex = mapIdPerVertex(mesh, prep);
     const pos = mesh.geometry.getAttribute("position");
@@ -1033,6 +1087,33 @@ const CELL = 12;
       scene().remove(points);
       geo.dispose();
       (points.material as THREE.Material).dispose();
+    });
+  });
+
+  // The obstacles on offer, each drawn as the ring a click would cut, so the margin is visible
+  // before anything is changed.
+  createEffect(() => {
+    const list = obstacles();
+    const margin = obstacleMargin();
+    if (!list.length) return;
+    const segments: number[] = [];
+    for (const o of list) {
+      const ring = ringAround(o, margin, OBSTACLE_CELL);
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i];
+        const b = ring[(i + 1) % ring.length];
+        // A hair above the ground so the line is not swallowed by the terrain it lies on.
+        segments.push(a[0], a[1] - 0.2, a[2], b[0], b[1] - 0.2, b[2]);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(segments), 3));
+    const lines = new THREE.LineSegments(geo, materialFor("obstacles", () => new THREE.LineBasicMaterial({ color: 0xf59e0b, depthTest: false })));
+    lines.renderOrder = 3;
+    scene().add(lines);
+    onCleanup(() => {
+      scene().remove(lines);
+      geo.dispose();
     });
   });
 
@@ -1555,6 +1636,13 @@ const CELL = 12;
       }
       if (pickHandle()) return;
 
+      if (mode() === "obstacles") {
+        const p = pickZonePoint(lastY(active()));
+        const o = p && obstacleAt(obstacles(), p.x, p.z, obstacleMargin(), OBSTACLE_CELL);
+        if (o) ringObstacles([o]);
+        return;
+      }
+
       if (mode() === "draw" && activePath()) {
         const p = pickZonePoint(activePath()!.legs.at(-1)?.[1] ?? 0);
         if (!p) return;
@@ -1636,7 +1724,8 @@ const CELL = 12;
       if (mode() !== "draw") {
         // Not drawing, so there is nothing to finish: Escape backs out of whatever is selected.
         if (ev.key !== "Escape") return;
-        if (replayId()) setReplayId(null);
+        if (mode() === "obstacles") setMode("select");
+        else if (replayId()) setReplayId(null);
         else if (walker()) editWalker(null);
         else setActiveName(null);
         return;
@@ -2260,32 +2349,34 @@ const CELL = 12;
         </Show>
 
         <Show when={tab() === "regions"}>
-          {/* The tools that change geometry, and only those: the list of regions below is the
-              main thing a reviewer came to read. */}
+          {
+            /* The tools that change geometry, and only those: the list of regions below is the
+              main thing a reviewer came to read. */
+          }
           <Show when={!props.readOnly}>
-          <div class="flex gap-1 mb-2">
-            <button class="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded" onClick={addRegion}>+ Region</button>
-            <button
-              class="px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded disabled:opacity-40 disabled:text-slate-300"
-              disabled={!active()}
-              onClick={() => {
-                checkpoint("start a hole");
-                editActive(r => r.rings.push([]));
-                setMode("draw");
-              }}
-              title="Cut a hole in the active region"
-            >
-              + Hole
-            </button>
-            <button
-              class="px-2 py-1 rounded disabled:opacity-40 disabled:text-slate-300"
-              classList={{ "bg-emerald-600 hover:bg-emerald-500": mode() === "draw", "bg-slate-600 hover:bg-slate-500": mode() !== "draw" }}
-              disabled={!active()}
-              onClick={() => setMode(m => (m === "draw" ? "select" : "draw"))}
-            >
-              {mode() === "draw" ? "Done" : "Draw"}
-            </button>
-          </div>
+            <div class="flex gap-1 mb-2">
+              <button class="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded" onClick={addRegion}>+ Region</button>
+              <button
+                class="px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded disabled:opacity-40 disabled:text-slate-300"
+                disabled={!active()}
+                onClick={() => {
+                  checkpoint("start a hole");
+                  editActive(r => r.rings.push([]));
+                  setMode("draw");
+                }}
+                title="Cut a hole in the active region"
+              >
+                + Hole
+              </button>
+              <button
+                class="px-2 py-1 rounded disabled:opacity-40 disabled:text-slate-300"
+                classList={{ "bg-emerald-600 hover:bg-emerald-500": mode() === "draw", "bg-slate-600 hover:bg-slate-500": mode() !== "draw" }}
+                disabled={!active()}
+                onClick={() => setMode(m => (m === "draw" ? "select" : "draw"))}
+              >
+                {mode() === "draw" ? "Done" : "Draw"}
+              </button>
+            </div>
           </Show>
 
           {/* Only somewhere with floors to choose between: an outdoor zone is one map sheet. */}
@@ -2348,9 +2439,9 @@ const CELL = 12;
                   />
                   <span
                     class="text-xs text-slate-400"
-                    title={`${vertexCount(r)} vertices${
-                      r.rings.length > 1 ? `, ${r.rings.length - 1} hole${r.rings.length > 2 ? "s" : ""}` : ""
-                    }, ${spawnCounts()[r.name] ?? 0} mobs placed here`}
+                    title={`${vertexCount(r)} vertices${r.rings.length > 1 ? `, ${r.rings.length - 1} hole${r.rings.length > 2 ? "s" : ""}` : ""}, ${
+                      spawnCounts()[r.name] ?? 0
+                    } mobs placed here`}
                   >
                     {vertexCount(r)}v{r.rings.length > 1 ? `+${r.rings.length - 1}h` : ""} · {spawnCounts()[r.name] ?? 0}
                   </span>
@@ -2408,7 +2499,38 @@ const CELL = 12;
                 >
                   Refit
                 </button>
+                <button
+                  class="px-2 py-1 rounded text-xs"
+                  classList={{ "bg-amber-600 hover:bg-amber-500": mode() === "obstacles", "bg-slate-600 hover:bg-slate-500": mode() !== "obstacles" }}
+                  title="Show the steep faces of the collision mesh inside this region; click one to ring it with a hole"
+                  onClick={() => setMode(m => (m === "obstacles" ? "select" : "obstacles"))}
+                >
+                  Obstacles
+                </button>
               </div>
+              <Show when={mode() === "obstacles"}>
+                <div class="flex items-center gap-1 text-xs">
+                  <span class="text-slate-400">margin</span>
+                  <input
+                    type="number"
+                    class="w-14 px-1 py-0.5 bg-slate-700 rounded"
+                    min="0"
+                    max="5"
+                    step="0.25"
+                    value={obstacleMargin()}
+                    onInput={e => setObstacleMargin(Math.max(0, Number(e.currentTarget.value) || 0))}
+                  />
+                  <span class="text-slate-400">y</span>
+                  <button
+                    class="ml-auto px-2 py-1 bg-amber-700 hover:bg-amber-600 rounded disabled:opacity-40"
+                    disabled={!obstacles().some(o => obstacleArea(o, OBSTACLE_CELL) <= OBSTACLE_BULK_MAX)}
+                    title={`Ring every obstacle under ${OBSTACLE_BULK_MAX} square yalms; bigger ones are cliffs and take a click each`}
+                    onClick={() => ringObstacles(obstacles().filter(o => obstacleArea(o, OBSTACLE_CELL) <= OBSTACLE_BULK_MAX))}
+                  >
+                    Ring all ({obstacles().filter(o => obstacleArea(o, OBSTACLE_CELL) <= OBSTACLE_BULK_MAX).length})
+                  </button>
+                </div>
+              </Show>
               <div class="text-xs text-slate-400">
                 {spawnCounts()[active()!.name] ?? 0} assigned{filter() && ` · ${members().length} shown`}
               </div>
