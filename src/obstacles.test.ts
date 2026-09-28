@@ -68,6 +68,14 @@ assert.strictEqual(ringsAround(pair, 1, 0.5).length, 1, "but their margin rings 
 assert.strictEqual(ringsAround(pair, 0.25, 0.5).length, 2, "at a small margin they stay two holes");
 assert.ok(ringsAround(pair, 1, 0.5)[0].every(v => Math.abs(v[1]) < 1e-6), "merged ring keeps the foot height");
 
+const inRingXZ = (ring: Ring, x: number, z: number) => {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, , zi] = ring[i], [xj, , zj] = ring[j];
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+};
 // Ground a mob was recorded on is never ringed: with samples all along x=1.5 the ring stops short.
 const walked = new Set<number>();
 for (let z = -3; z <= 3; z += 0.25) walked.add(cellKey(1.5, z, 0.5));
@@ -75,6 +83,7 @@ const kept = ringsAround([near], 1, 0.5, walked)[0];
 assert.ok(kept.length >= 4, "a ring survives the exclusion");
 assert.ok(kept.every(v => v[0] <= 1.5 + 1e-9), `no vertex enters the sampled column, got x up to ${Math.max(...kept.map(v => v[0]))}`);
 assert.ok(area(kept) < area(ring), "the excluded side makes it smaller");
+for (let z = -3; z <= 3; z += 0.5) assert.ok(!inRingXZ(kept, 1.75, z), `a sampled cell centre at z=${z} stays outside the ring`);
 
 // A mesa: steep walls with a flat top four yalms up. Without a climb the obstacle is its walls;
 // with one it takes the top as well, and the floor around it stays out.
@@ -95,14 +104,6 @@ assert.ok(whole[0].cells.some(([ix, iz]) => ix === 0 && iz === 0), "the centre o
 const onTop = new Set<number>();
 for (let x = -0.5; x <= 0.5; x += 0.5) for (let z = -0.5; z <= 0.5; z += 0.5) onTop.add(cellKey(x, z, 0.5));
 const opened = ringsAround(findObstacles(mesa, { cell: 0.5, join: 1 }), 1, 0.5, onTop);
-const inRingXZ = (ring: Ring, x: number, z: number) => {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, , zi] = ring[i], [xj, , zj] = ring[j];
-    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
-  }
-  return inside;
-};
 assert.ok(opened.length >= 1, "the rock still gets a ring");
 assert.ok(!opened.some(r => inRingXZ(r, 0, 0)), "the sampled top is outside every ring");
 

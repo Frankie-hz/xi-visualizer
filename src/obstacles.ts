@@ -1,5 +1,5 @@
 import { simplifyRing } from "./regions.ts";
-import type { Ring } from "./regions.ts";
+import type { Ring, Vertex } from "./regions.ts";
 
 /**
  * Obstacles read off the collision mesh: a tree trunk, a rock, a fence post is a cluster of faces
@@ -251,7 +251,7 @@ export function ringsAround(list: Obstacle[], margin: number, cell = 0.5, avoid?
     for (const k of reached) grown.set(k, opened.get(k)!);
   }
   if (avoid?.size) openPockets(grown, avoid);
-  return traceCells(grown, cell, list[0]?.foot ?? 0);
+  return traceCells(grown, cell, list[0]?.foot ?? 0, avoid);
 }
 
 /**
@@ -336,7 +336,7 @@ function openPockets(grown: Map<number, number>, avoid: Set<number>) {
  * pocket the other, so the sign of the area tells them apart, and pockets are dropped: nothing
  * reaches a pocket inside an obstacle.
  */
-export function traceCells(cells: Map<number, number>, cell = 0.5, fallbackY = 0): Ring[] {
+export function traceCells(cells: Map<number, number>, cell = 0.5, fallbackY = 0, avoid?: Set<number>): Ring[] {
   const corner = (ix: number, iz: number) => keyOf(ix, iz);
   const edges = new Map<number, number>();
   const heightAt = new Map<number, number>();
@@ -368,7 +368,50 @@ export function traceCells(cells: Map<number, number>, cell = 0.5, fallbackY = 0
     if (ring.length >= 4 && signedArea(ring) > 0) rings.push(ring);
   }
   // The staircase carries nothing a mob would notice; a corner under a cell's area goes.
-  return rings.map(r => simplifyRing(r, cell * cell));
+  return rings.map(r => (avoid?.size ? simplifyKeeping(r, cell * cell, cell, avoid) : simplifyRing(r, cell * cell)));
+}
+
+/**
+ * Visvalingam simplification that never cuts across a cell to keep out of: a corner is dropped
+ * only when the triangle it spans holds no avoided cell's centre, since a diagonal drawn over a
+ * recorded cell would put that cell back inside the ring.
+ */
+function simplifyKeeping(ring: Ring, minArea: number, cell: number, avoid: Set<number>): Ring {
+  const pts = ring.map(v => [...v] as Vertex);
+  const covers = (a: Vertex, b: Vertex, c: Vertex) => {
+    const minX = Math.min(a[0], b[0], c[0]), maxX = Math.max(a[0], b[0], c[0]);
+    const minZ = Math.min(a[2], b[2], c[2]), maxZ = Math.max(a[2], b[2], c[2]);
+    const d = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]);
+    if (Math.abs(d) < 1e-9) return false;
+    for (let ix = Math.floor(minX / cell); ix <= Math.floor(maxX / cell); ix++) {
+      for (let iz = Math.floor(minZ / cell); iz <= Math.floor(maxZ / cell); iz++) {
+        if (!avoid.has(keyOf(ix, iz))) continue;
+        const x = (ix + 0.5) * cell, z = (iz + 0.5) * cell;
+        const u = ((b[2] - c[2]) * (x - c[0]) + (c[0] - b[0]) * (z - c[2])) / d;
+        const v = ((c[2] - a[2]) * (x - c[0]) + (a[0] - c[0]) * (z - c[2])) / d;
+        if (u >= -1e-9 && v >= -1e-9 && u + v <= 1 + 1e-9) return true;
+      }
+    }
+    return false;
+  };
+  const area = (i: number) => {
+    const a = pts[(i - 1 + pts.length) % pts.length], b = pts[i], c = pts[(i + 1) % pts.length];
+    return Math.abs((b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0])) / 2;
+  };
+  while (pts.length > 4) {
+    let best = -1, bestArea = minArea;
+    for (let i = 0; i < pts.length; i++) {
+      const ar = area(i);
+      if (ar >= bestArea) continue;
+      const a = pts[(i - 1 + pts.length) % pts.length], c = pts[(i + 1) % pts.length];
+      if (covers(a, pts[i], c)) continue;
+      best = i;
+      bestArea = ar;
+    }
+    if (best < 0) break;
+    pts.splice(best, 1);
+  }
+  return pts;
 }
 
 /** The [ix, iz] a cell key stands for, the inverse of cellKey. */
