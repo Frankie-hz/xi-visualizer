@@ -307,3 +307,19 @@ const signedArea = (ring: Ring) => {
 export function obstacleArea(o: Obstacle, cell = 0.5): number {
   return o.cells.length * cell * cell;
 }
+
+/**
+ * How much longer an obstacle is than it is wide: 1 to 2 for a rock or a trunk, well past that
+ * for a cliff line or a wall, which a hole should only follow when someone means it to.
+ */
+export function elongation(o: Obstacle, cell = 0.5): number {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const [ix, iz] of o.cells) {
+    minX = Math.min(minX, ix);
+    maxX = Math.max(maxX, ix);
+    minZ = Math.min(minZ, iz);
+    maxZ = Math.max(maxZ, iz);
+  }
+  const longest = (Math.max(maxX - minX, maxZ - minZ) + 1) * cell;
+  return longest / Math.sqrt(obstacleArea(o, cell));
+}

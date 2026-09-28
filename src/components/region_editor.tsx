@@ -9,7 +9,7 @@ import { setupBaseScene } from "../graphics/scene";
 import { cleanupNode } from "../graphics/util";
 import { createViewer } from "../graphics/viewer";
 import { ColorKind, colorMesh, createZoneMesh, mapIdPerVertex, prepareMeshData } from "../graphics/ximesh";
-import { cellKey, findObstacles, obstacleArea, obstacleAt, ringsAround } from "../obstacles";
+import { cellKey, elongation, findObstacles, obstacleArea, obstacleAt, ringsAround } from "../obstacles";
 import type { Obstacle } from "../obstacles";
 import { containsXZ, regionAt, regionHue, regionsFromPoints, repairRegion, routeFromTrail, selfIntersects, simplifyRing, validate } from "../regions";
 import type { Finding, Patrol, Region, RegionSet, Ring, Spawn, TrailPoint, Vertex } from "../regions";
@@ -498,7 +498,9 @@ export default function RegionEditor(props: RegionEditorProps) {
   const [obstacles, setObstacles] = createSignal<Obstacle[]>([]);
   // The obstacle under the cursor in carve mode: its ring lights up, and a click cuts it.
   const [obstacleHover, setObstacleHover] = createSignal<{ obstacle: Obstacle; x: number; y: number; } | null>(null);
-  const bulk = () => obstacles().filter(o => obstacleArea(o, OBSTACLE_CELL) <= obstacleBulkMax());
+  /** A cliff line or a wall: long and thin. Ring all leaves those to a deliberate click. */
+  const isCliff = (o: Obstacle) => elongation(o, OBSTACLE_CELL) > 2.5;
+  const bulk = () => obstacles().filter(o => obstacleArea(o, OBSTACLE_CELL) <= obstacleBulkMax() && !isCliff(o));
   const memberTrail = createMemo(() => {
     const name = activeName();
     if (!name || mode() !== "obstacles") return [] as TrailPoint[];
@@ -2465,7 +2467,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             <div class="flex items-center justify-between">
               <span class="text-[10px] uppercase tracking-wide text-slate-500">Carve holes</span>
               <span class="text-slate-400">
-                {obstacles().length} found · {obstacles().length - bulk().length} over the ring-all size · esc leaves
+                {obstacles().length} found · {obstacles().length - bulk().length} cliffs or over size · esc leaves
               </span>
             </div>
             <For
@@ -2728,7 +2730,9 @@ export default function RegionEditor(props: RegionEditorProps) {
             class="fixed bg-slate-900/90 text-white px-2 py-1 rounded text-xs pointer-events-none z-50"
             style={{ left: `${obstacleHover()!.x + 12}px`, top: `${obstacleHover()!.y + 12}px` }}
           >
-            <div class="font-bold">obstacle · {obstacleArea(obstacleHover()!.obstacle, OBSTACLE_CELL).toFixed(0)} y²</div>
+            <div class="font-bold">
+              {isCliff(obstacleHover()!.obstacle) ? "cliff line" : "obstacle"} · {obstacleArea(obstacleHover()!.obstacle, OBSTACLE_CELL).toFixed(0)} y²
+            </div>
             <div class="text-slate-400">
               {(obstacleHover()!.obstacle.foot - obstacleHover()!.obstacle.top).toFixed(1)} y tall · click to ring it
               {obstacleArea(obstacleHover()!.obstacle, OBSTACLE_CELL) > obstacleBulkMax() ? " · over the ring-all size" : ""}
