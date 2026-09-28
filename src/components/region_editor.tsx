@@ -1429,7 +1429,9 @@ export default function RegionEditor(props: RegionEditorProps) {
     // when the selected region has mobs to contrast against; dimming them all would leave specks.
     const highlighting = !!act && Object.keys(data.ranges).some(id => a[id]?.includes(act));
     const dim = highlighting ? new THREE.Color(0.16, 0.34, 0.42) : new THREE.Color(0.3, 0.75, 0.9);
-    const lit = act ? colorOf(act) : dim;
+    // The region's own points in the hue opposite its fill, and lighter: the same hue on the same
+    // fill was one wash of colour when editing.
+    const lit = act ? new THREE.Color().setHSL((hueOf(act) + 0.5) % 1, 1, 0.8) : dim;
     for (const [mobId, [start, count]] of Object.entries(data.ranges)) {
       const c = act && a[mobId]?.includes(act) ? lit : dim;
       for (let i = 0; i < count; i++) colors.setXYZ(start + i, c.r, c.g, c.b);
