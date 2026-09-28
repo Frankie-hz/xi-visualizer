@@ -37,6 +37,12 @@ export interface ObstacleOptions {
   climb?: number;
   /** Cells never taken as obstacle ground, keyed as cellKey: where mobs were recorded. */
   avoid?: Set<number>;
+  /**
+   * Only cells whose steep faces span at least this much height count: a trunk or a rock wall
+   * stands tall in one cell, while a bank or a root crosses cells as it rises and leaves each a
+   * sliver. Zero takes every steep face.
+   */
+  minSpan?: number;
 }
 
 const OFFSET = 1 << 16;
@@ -97,6 +103,10 @@ export function findObstacles(pos: ArrayLike<number>, opts: ObstacleOptions = {}
         }
       }
     }
+  }
+
+  if (opts.minSpan) {
+    for (const [k, c] of cells) if (c.foot - c.top < opts.minSpan) cells.delete(k);
   }
 
   // Cells within `join` of each other are one obstacle.

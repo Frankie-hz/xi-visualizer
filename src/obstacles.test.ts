@@ -125,4 +125,8 @@ assert.ok(!opened.some(r => inRingXZ(r, 0, 0)), "the sampled top is outside ever
   assert.ok(!inside(-3.95, 3.45), "and so is the far corner of that cell");
 }
 
+// A minimum span keeps the tall faces: a 4-yalm trunk passes at 2, not at 6.
+assert.strictEqual(findObstacles(new Float32Array([...floor, ...trunk(0, 0, 0.5, 4)]), { cell: 0.5, minSpan: 2 }).length, 1);
+assert.strictEqual(findObstacles(new Float32Array([...floor, ...trunk(0, 0, 0.5, 4)]), { cell: 0.5, minSpan: 6 }).length, 0);
+
 console.log("ok");
