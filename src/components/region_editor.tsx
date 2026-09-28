@@ -219,7 +219,8 @@ export default function RegionEditor(props: RegionEditorProps) {
       }
     }
     const rings = traceCells(taken, cell, g.y).sort((a, b) => Math.abs(ringArea(b)) - Math.abs(ringArea(a)));
-    return { entry, cells: taken, ring: rings[0] ? onGround(rings[0]) : null, why: rings[0] ? null : "nothing to grow into" };
+    const ring = rings[0] ? onGround(rings[0].map(([x, , z]) => [x, sampleFloor(x, z, g.y), z] as Vertex)) : null;
+    return { entry, cells: taken, ring, why: rings[0] ? null : "nothing to grow into" };
   });
   const growHole = () => {
     const plan = growPlan();
@@ -602,6 +603,33 @@ export default function RegionEditor(props: RegionEditorProps) {
     return out;
   });
   const walkedCells = createMemo(() => (mode() === "obstacles" ? walkedCellsAll() : new Set<number>()));
+  /** Mean sample height by 4-yalm bucket, so a ring drawn from the roam data can start at the
+   * height the mobs were actually recorded at next to it, then be dropped onto the terrain. */
+  const sampleHeights = createMemo(() => {
+    const out = new Map<number, [number, number]>();
+    for (const p of memberTrailAll()) {
+      const k = cellKey(p.x, p.z, 4);
+      const acc = out.get(k);
+      if (acc) (acc[0] += p.y, acc[1]++);
+      else out.set(k, [p.y, 1]);
+    }
+    return out;
+  });
+  const sampleFloor = (x: number, z: number, fallback: number) => {
+    const buckets = sampleHeights();
+    const [ix, iz] = cellOf(cellKey(x, z, 4));
+    for (let radius = 0; radius <= 3; radius++) {
+      let sum = 0, n = 0;
+      for (let dz = -radius; dz <= radius; dz++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          const acc = buckets.get(keyOfCell(ix + dx, iz + dz));
+          if (acc) (sum += acc[0], n += acc[1]);
+        }
+      }
+      if (n) return sum / n;
+    }
+    return fallback;
+  };
   /** The steep faces inside the active region on the current floor, clustered into obstacles. */
   const scanObstacles = () => {
     const r = active();
@@ -762,10 +790,10 @@ export default function RegionEditor(props: RegionEditorProps) {
         if (touchesEdge || patch.size < minCells || patch.size > budget) continue;
         // A patch that already lies inside a hole has nothing left to cut.
         const holes = r.rings.slice(1).filter(h => h.length >= 3);
-        const y = lastYOf(r.name, (ix + 0.5) * cell, (iz + 0.5) * cell);
+        const y = sampleFloor((ix + 0.5) * cell, (iz + 0.5) * cell, lastYOf(r.name, (ix + 0.5) * cell, (iz + 0.5) * cell));
         for (const ring of traceCells(patch, cell, y)) {
           if (holes.some(h => ring.every(([x, , z]) => inRing(h, x, z)))) continue;
-          out.push(onGround(ring));
+          out.push(onGround(ring.map(([x, , z]) => [x, sampleFloor(x, z, y), z] as Vertex)));
         }
       }
     }
