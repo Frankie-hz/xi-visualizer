@@ -107,4 +107,22 @@ const opened = ringsAround(findObstacles(mesa, { cell: 0.5, join: 1 }), 1, 0.5, 
 assert.ok(opened.length >= 1, "the rock still gets a ring");
 assert.ok(!opened.some(r => inRingXZ(r, 0, 0)), "the sampled top is outside every ring");
 
+// A sample near the corner of its cell, beside the ring: the staircase corner next to it stays,
+// so no diagonal clips the cell and the sample stays outside.
+{
+  const avoid = new Set([cellKey(-3.55, 3.05, 0.5)]);
+  const o = findObstacles(new Float32Array([...floor, ...trunk(0, 0, 3, 4)]), { cell: 0.5, join: 1 })[0];
+  const ring = ringsAround([o], 1, 0.5, avoid)[0];
+  const inside = (x: number, z: number) => {
+    let ins = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, , zi] = ring[i], [xj, , zj] = ring[j];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) ins = !ins;
+    }
+    return ins;
+  };
+  assert.ok(!inside(-3.55, 3.05), "the sample at the corner of its avoided cell is outside the ring");
+  assert.ok(!inside(-3.95, 3.45), "and so is the far corner of that cell");
+}
+
 console.log("ok");

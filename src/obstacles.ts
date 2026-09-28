@@ -378,9 +378,18 @@ export function traceCells(cells: Map<number, number>, cell = 0.5, fallbackY = 0
  */
 function simplifyKeeping(ring: Ring, minArea: number, cell: number, avoid: Set<number>): Ring {
   const pts = ring.map(v => [...v] as Vertex);
+  // The triangle a dropped corner gives up must stay clear of every avoided cell, the whole
+  // cell and not just its centre: a sample sits anywhere in its cell, and a diagonal that clips
+  // the cell's corner would put it inside the ring.
+  const reach = cell * Math.SQRT1_2;
+  const segDist = (px: number, pz: number, a: Vertex, b: Vertex) => {
+    const dx = b[0] - a[0], dz = b[2] - a[2];
+    const t = dx || dz ? Math.max(0, Math.min(1, ((px - a[0]) * dx + (pz - a[2]) * dz) / (dx * dx + dz * dz))) : 0;
+    return Math.hypot(px - a[0] - t * dx, pz - a[2] - t * dz);
+  };
   const covers = (a: Vertex, b: Vertex, c: Vertex) => {
-    const minX = Math.min(a[0], b[0], c[0]), maxX = Math.max(a[0], b[0], c[0]);
-    const minZ = Math.min(a[2], b[2], c[2]), maxZ = Math.max(a[2], b[2], c[2]);
+    const minX = Math.min(a[0], b[0], c[0]) - reach, maxX = Math.max(a[0], b[0], c[0]) + reach;
+    const minZ = Math.min(a[2], b[2], c[2]) - reach, maxZ = Math.max(a[2], b[2], c[2]) + reach;
     const d = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]);
     if (Math.abs(d) < 1e-9) return false;
     for (let ix = Math.floor(minX / cell); ix <= Math.floor(maxX / cell); ix++) {
@@ -390,6 +399,7 @@ function simplifyKeeping(ring: Ring, minArea: number, cell: number, avoid: Set<n
         const u = ((b[2] - c[2]) * (x - c[0]) + (c[0] - b[0]) * (z - c[2])) / d;
         const v = ((c[2] - a[2]) * (x - c[0]) + (a[0] - c[0]) * (z - c[2])) / d;
         if (u >= -1e-9 && v >= -1e-9 && u + v <= 1 + 1e-9) return true;
+        if (Math.min(segDist(x, z, a, b), segDist(x, z, b, c), segDist(x, z, c, a)) < reach) return true;
       }
     }
     return false;
