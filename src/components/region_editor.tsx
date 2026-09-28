@@ -757,6 +757,8 @@ export default function RegionEditor(props: RegionEditorProps) {
       maxZ = Math.max(maxZ, z);
     }
     const inside = (ix: number, iz: number) => inRing(outline, (ix + 0.5) * cell, (iz + 0.5) * cell);
+    const { bulk: small, big } = previewRings();
+    const covered = [...small, ...big];
     const seen = new Set<number>();
     const out: Ring[] = [];
     const budget = Math.abs(ringArea(outline)) * 0.25 / (cell * cell);
@@ -793,6 +795,8 @@ export default function RegionEditor(props: RegionEditorProps) {
         const y = sampleFloor((ix + 0.5) * cell, (iz + 0.5) * cell, lastYOf(r.name, (ix + 0.5) * cell, (iz + 0.5) * cell));
         for (const ring of traceCells(patch, cell, y)) {
           if (holes.some(h => ring.every(([x, , z]) => inRing(h, x, z)))) continue;
+          // A gap under a mountain is the mountain: the obstacle ring already covers it.
+          if (covered.some(o => ring.filter(([x, , z]) => inRing(o, x, z)).length >= 0.8 * ring.length)) continue;
           out.push(onGround(ring.map(([x, , z]) => [x, sampleFloor(x, z, y), z] as Vertex)));
         }
       }
