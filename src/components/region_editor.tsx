@@ -693,11 +693,11 @@ export default function RegionEditor(props: RegionEditorProps) {
       ray.set(from, to.clone().sub(from).normalize());
       ray.far = from.distanceTo(to);
       const hits = ray.intersectObject(mesh, false);
-      // The surface nearest the obstacle's foot, and only within a step of it: a bridge overhead,
-      // a cave below, or the rock's own shoulder where the ring crosses it are not the ground the
-      // mob stands on. With nothing that close the foot itself will do.
+      // The surface nearest the reference height. A bridge overhead or a cave below loses to the
+      // one the reference is near; with none within a step of it the reference was wrong (samples
+      // on a rock beside the spot) and the nearest surface there is still the ground.
       let best = y;
-      let gap = 3;
+      let gap = Infinity;
       for (const h of hits) {
         const p = mesh.worldToLocal(h.point.clone());
         if (Math.abs(p.y - y) < gap) (gap = Math.abs(p.y - y), best = p.y);
