@@ -851,7 +851,9 @@ export default function RegionEditor(props: RegionEditorProps) {
     const name = activeName();
     const entry = regions().find(r => r.name === name);
     if (!name || !entry || !list.length) return;
-    const rings = ringsAround(list, obstacleMargin(), OBSTACLE_CELL, walkedCells()).map(onGround);
+    // One ring per obstacle, so a pocket of sampled ground fenced between two rocks costs only
+    // the ring that closes it, not every ring merged with it; the clipper joins what overlaps.
+    const rings = list.flatMap(o => ringsAround([o], obstacleMargin(), OBSTACLE_CELL, walkedCells())).map(onGround);
     let shape: Region = { rings: entry.rings.map(ring => ring.map(v => [...v] as Vertex)) };
     const outlineArea = Math.abs(ringArea(entry.rings[0]));
     let done = 0;
