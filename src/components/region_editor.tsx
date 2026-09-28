@@ -154,7 +154,8 @@ export default function RegionEditor(props: RegionEditorProps) {
     checkpoint(gone.size === 1 ? "delete a hole" : `delete ${gone.size} holes`);
     setRegions(rs => rs.map(r => (r.name === name ? { name, rings: r.rings.filter((_, k) => !gone.has(k)) } : r)));
     setHoleHover(null);
-    if (gone.size > 1) flash(`deleted the hole and ${gone.size - 1} nested in it`);
+    const left = entry.rings.length - 1 - gone.size;
+    flash(gone.size > 1 ? `deleted the hole and ${gone.size - 1} nested in it, ${left} left` : `deleted hole ${index}, ${left} left`);
   };
   /**
    * Merging is two steps: the menu opens a plan with a reach dial and a preview of the hull, and
