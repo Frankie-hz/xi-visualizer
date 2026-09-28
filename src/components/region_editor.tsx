@@ -2747,7 +2747,7 @@ export default function RegionEditor(props: RegionEditorProps) {
           </div>
         </Show>
         <Show when={grow()}>
-          <div class="absolute top-10 right-2 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
+          <div class="absolute top-10 right-2 z-30 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
             <div class="flex items-center justify-between">
               <span class="text-[10px] uppercase tracking-wide text-slate-500">Hole from roam data</span>
               <span class="text-slate-400">
@@ -2777,7 +2777,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         </Show>
         <Show when={mergePlan()}>
           {plan => (
-            <div class="absolute top-10 right-2 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
+            <div class="absolute top-10 right-2 z-30 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
               <div class="flex items-center justify-between">
                 <span class="text-[10px] uppercase tracking-wide text-slate-500">Merge holes</span>
                 <span class="text-slate-400">{plan().group.length} in the group · esc cancels</span>
@@ -2809,7 +2809,7 @@ export default function RegionEditor(props: RegionEditorProps) {
           )}
         </Show>
         <Show when={mode() === "obstacles" && !props.readOnly && !merge()}>
-          <div class="absolute top-10 right-2 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
+          <div class="absolute top-10 right-2 z-30 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
             <div class="flex items-center justify-between">
               <span class="text-[10px] uppercase tracking-wide text-slate-500">Carve holes</span>
               <span class="text-slate-400">
@@ -2965,7 +2965,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         <Show when={menu()}>
           <div
             ref={menuElement}
-            class="fixed z-50 min-w-44 bg-slate-900 border border-slate-600 rounded shadow-lg py-1 text-xs"
+            class="fixed z-[100] min-w-44 bg-slate-900 border border-slate-600 rounded shadow-lg py-1 text-xs"
             style={{ left: `${menu()!.x}px`, top: `${menu()!.y}px` }}
           >
             <Show when={menu()!.kind === "region" ? (menu() as any).name : null}>
