@@ -571,6 +571,7 @@ export default function RegionEditor(props: RegionEditorProps) {
   const TALL_FACE = 2; // yalms of face height in one cell: a trunk or a rock wall, not a bank or a root
   const GROUND_SNAP = 2; // yalms; a vertex with the ground this close sits on it
   const SPIKE = 2; // yalms; a vertex this far above or below both its neighbours is never on the ground
+  const SLOPE = 0.7; // rise per yalm of edge a ring may climb between two vertices: a 35-degree hillside
   const [obstacleMargin, setObstacleMargin] = createSignal(OBSTACLE_DEFAULTS.margin); // yalms
   const [obstacleSlope, setObstacleSlope] = createSignal(OBSTACLE_DEFAULTS.slope); // degrees from level
   const [obstacleJoin, setObstacleJoin] = createSignal(OBSTACLE_DEFAULTS.join); // yalms
@@ -759,14 +760,24 @@ export default function RegionEditor(props: RegionEditorProps) {
       return [x, y, z] as Vertex;
     });
     const n = out.length;
+    // How far a vertex may stand from its neighbours' height: SPIKE, or more when the edges are
+    // long enough for a hillside to carry it there.
+    const allow = out.map(([x, , z], i) => {
+      const p = out[(i + n - 1) % n], q = out[(i + 1) % n];
+      return Math.max(SPIKE, SLOPE * Math.min(Math.hypot(x - p[0], z - p[2]), Math.hypot(x - q[0], z - q[2])));
+    });
     for (let pass = 0; pass < 4; pass++) {
       let any = false;
       for (let i = 0; i < n; i++) {
         const a = out[(i + n - 1) % n][1], b = out[(i + 1) % n][1], y = out[i][1];
-        if (y >= Math.min(a, b) - SPIKE && y <= Math.max(a, b) + SPIKE) continue;
+        if (y >= Math.min(a, b) - allow[i] && y <= Math.max(a, b) + allow[i]) continue;
         const ref = (a + b) / 2;
         const s = nearest(stacks[i], ref);
-        out[i] = [out[i][0], +(Math.abs(s - ref) <= SPIKE ? s : ref).toFixed(2), out[i][2]];
+        let target: number;
+        if (Math.abs(s - ref) <= SPIKE) target = s; // ground at the neighbours' level: the storey below, or under an overhang
+        else if (Math.abs(nearest(stacks[i], y) - y) <= 3) continue; // on a floor of its own: the ring is climbing a ridge
+        else target = ref;
+        out[i] = [out[i][0], +target.toFixed(2), out[i][2]];
         moved++;
         any = true;
       }
