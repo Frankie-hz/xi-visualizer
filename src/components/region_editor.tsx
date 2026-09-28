@@ -498,8 +498,9 @@ export default function RegionEditor(props: RegionEditorProps) {
   const [obstacles, setObstacles] = createSignal<Obstacle[]>([]);
   // The obstacle under the cursor in carve mode: its ring lights up, and a click cuts it.
   const [obstacleHover, setObstacleHover] = createSignal<{ obstacle: Obstacle; x: number; y: number; } | null>(null);
-  /** A cliff line or a wall: long and thin. Ring all leaves those to a deliberate click. */
-  const isCliff = (o: Obstacle) => elongation(o, OBSTACLE_CELL) > 2.5;
+  /** A cliff line or a wall: long and thin, and big enough for "thin" to mean anything. Ring
+   * all leaves those to a deliberate click. */
+  const isCliff = (o: Obstacle) => obstacleArea(o, OBSTACLE_CELL) >= 10 && elongation(o, OBSTACLE_CELL) > 2.5;
   const bulk = () => obstacles().filter(o => obstacleArea(o, OBSTACLE_CELL) <= obstacleBulkMax() && !isCliff(o));
   const memberTrail = createMemo(() => {
     const name = activeName();
@@ -533,16 +534,24 @@ export default function RegionEditor(props: RegionEditorProps) {
       const o = t * 9;
       const x = (pos[o] + pos[o + 3] + pos[o + 6]) / 3;
       const z = (pos[o + 2] + pos[o + 5] + pos[o + 8]) / 3;
-      return x >= minX && x <= maxX && z >= minZ && z <= maxZ && containsXZ(r, x, z);
+      // Inside the outline, holes included: an obstacle half inside an old hole is still one
+      // obstacle, and its ring is what grows that hole to fit it.
+      return x >= minX && x <= maxX && z >= minZ && z <= maxZ && inRing(r.rings[0], x, z);
     };
     const found = findObstacles(pos, { cell: OBSTACLE_CELL, up, join: obstacleJoin(), climb: obstacleClimb(), avoid: walkedCells(), keep });
-    // Height is foot minus top because y points down.
-    setObstacles(found.filter(o => o.foot - o.top >= minHeight && obstacleArea(o, OBSTACLE_CELL) >= minArea));
+    // Height is foot minus top because y points down. An obstacle whose ring already lies inside
+    // an existing hole has nothing left to cut.
+    const holes = r.rings.slice(1).filter(h => h.length >= 3);
+    const buried = (o: Obstacle) => {
+      const ring = ringsAround([o], obstacleMargin(), OBSTACLE_CELL, walkedCells())[0];
+      return !!ring && holes.some(h => ring.every(([x, , z]) => inRing(h, x, z)));
+    };
+    setObstacles(found.filter(o => o.foot - o.top >= minHeight && obstacleArea(o, OBSTACLE_CELL) >= minArea && !buried(o)));
   };
   // Rescans whenever the region itself changes too: a ring just cut, or undone, moves obstacles
   // into or out of a hole, and the list of what is left to ring must follow.
   createEffect(on(
-    [mode, activeName, floor, regions, obstacleSlope, obstacleJoin, obstacleClimb, obstacleMinHeight, obstacleMinArea, walkedCells],
+    [mode, activeName, floor, regions, obstacleSlope, obstacleJoin, obstacleClimb, obstacleMinHeight, obstacleMinArea, obstacleMargin, walkedCells],
     () => (mode() === "obstacles" ? scanObstacles() : setObstacles([])),
   ));
   /**
