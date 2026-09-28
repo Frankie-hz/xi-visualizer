@@ -1295,6 +1295,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     geo.setAttribute("big", new THREE.BufferAttribute(new Float32Array(data.count), 1));
     // Everything is on screen until a floor says otherwise.
     geo.setAttribute("shown", new THREE.BufferAttribute(new Float32Array(data.count).fill(1), 1));
+    geo.setAttribute("lit", new THREE.BufferAttribute(new Float32Array(data.count), 1));
 
     // Draw every nth point once a zone has more of them than a screen can distinguish. Pashhow
     // Marshlands records 2,268,933, against West Ronfaure's 682,000, and rasterising all of them
@@ -1432,11 +1433,17 @@ export default function RegionEditor(props: RegionEditorProps) {
     // The region's own points in the hue opposite its fill, and lighter: the same hue on the same
     // fill was one wash of colour when editing.
     const lit = act ? new THREE.Color().setHSL((hueOf(act) + 0.5) % 1, 1, 0.8) : dim;
+    const litAttr = points.geometry.getAttribute("lit") as THREE.BufferAttribute;
     for (const [mobId, [start, count]] of Object.entries(data.ranges)) {
-      const c = act && a[mobId]?.includes(act) ? lit : dim;
-      for (let i = 0; i < count; i++) colors.setXYZ(start + i, c.r, c.g, c.b);
+      const mine = !!act && !!a[mobId]?.includes(act);
+      const c = mine ? lit : dim;
+      for (let i = 0; i < count; i++) {
+        colors.setXYZ(start + i, c.r, c.g, c.b);
+        litAttr.setX(start + i, mine ? 1 : 0);
+      }
     }
     colors.needsUpdate = true;
+    litAttr.needsUpdate = true;
   });
 
   // Focusing one mob only touches its own slice of the buffer, so it can follow the cursor.

@@ -45,14 +45,18 @@ export const roamMaterial = () =>
       uniform float focused;
       attribute float big;
       attribute float shown;
+      attribute float lit;
       varying vec3 vColor;
       varying float vBig;
       varying float vShown;
+      varying float vLit;
       void main() {
         vColor = color;
         vBig = big;
         vShown = shown;
-        gl_PointSize = big > 0.5 ? 9.0 : 2.0;
+        vLit = lit;
+        // The selected region's own points are bigger and solid; the backdrop stays fine and faint.
+        gl_PointSize = big > 0.5 ? 9.0 : (lit > 0.5 ? 4.0 : 2.0);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
@@ -61,6 +65,7 @@ export const roamMaterial = () =>
       varying vec3 vColor;
       varying float vBig;
       varying float vShown;
+      varying float vLit;
       void main() {
         // Trails belonging to another floor are not just dimmed: the point of picking a floor is
         // that what is left on screen is on it.
@@ -73,7 +78,7 @@ export const roamMaterial = () =>
           // not borrow it, and cyan reads on top of any region fill.
           gl_FragColor = d > 0.34 ? vec4(0.02, 0.02, 0.04, 1.0) : vec4(0.35, 0.95, 1.0, 1.0);
         } else {
-          gl_FragColor = vec4(vColor, 0.6);
+          gl_FragColor = vec4(vColor, vLit > 0.5 ? 1.0 : 0.6);
         }
         #include <colorspace_fragment>
       }
