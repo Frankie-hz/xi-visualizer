@@ -568,6 +568,9 @@ export default function RegionEditor(props: RegionEditorProps) {
   // to be one obstacle, how tall and how wide an obstacle must be to show at all, and how big one
   // may be before "ring all" skips it.
   const OBSTACLE_DEFAULTS = { margin: 1, slope: 50, join: 1, climb: 2, minHeight: 0.5, minArea: 0.5, bulkMax: 150 };
+  const TALL_FACE = 2; // yalms of face height in one cell: a trunk or a rock wall, not a bank or a root
+  const GROUND_SNAP = 2; // yalms; a vertex with the ground this close sits on it
+  const SPIKE = 2; // yalms; a vertex this far above or below both its neighbours is never on the ground
   const [obstacleMargin, setObstacleMargin] = createSignal(OBSTACLE_DEFAULTS.margin); // yalms
   const [obstacleSlope, setObstacleSlope] = createSignal(OBSTACLE_DEFAULTS.slope); // degrees from level
   const [obstacleJoin, setObstacleJoin] = createSignal(OBSTACLE_DEFAULTS.join); // yalms
@@ -656,7 +659,18 @@ export default function RegionEditor(props: RegionEditorProps) {
       // obstacle, and its ring is what grows that hole to fit it.
       return x >= minX && x <= maxX && z >= minZ && z <= maxZ && inRing(r.rings[0], x, z);
     };
-    const found = findObstacles(pos, { cell: OBSTACLE_CELL, up, join: obstacleJoin(), climb: obstacleClimb(), avoid: walkedCells(), keep });
+    const scan = { cell: OBSTACLE_CELL, up, join: obstacleJoin(), climb: obstacleClimb(), avoid: walkedCells(), keep };
+    const found = findObstacles(pos, scan);
+    // A blob past the bulk size, or shaped like a cliff, is trees and rocks chained together
+    // through the low faces between them: roots, a bank. Its tall faces, the trunks and rock
+    // walls, are found again on their own and offered as parts.
+    const blobs = found.filter(o => obstacleArea(o, OBSTACLE_CELL) > obstacleBulkMax() || (obstacleArea(o, OBSTACLE_CELL) >= 10 && elongation(o, OBSTACLE_CELL) > 2.5));
+    if (blobs.length) {
+      const inBlob = new Set(blobs.flatMap(o => o.cells.map(([ix, iz]) => keyOfCell(ix, iz))));
+      for (const part of findObstacles(pos, { ...scan, minSpan: TALL_FACE })) {
+        if (part.cells.filter(([ix, iz]) => inBlob.has(keyOfCell(ix, iz))).length * 2 >= part.cells.length) found.push(part);
+      }
+    }
     // Height is foot minus top because y points down. An obstacle whose ring already lies inside
     // an existing hole has nothing left to cut.
     const holes = r.rings.slice(1).filter(h => h.length >= 3);
@@ -673,7 +687,7 @@ export default function RegionEditor(props: RegionEditorProps) {
   // Rescans whenever the region itself changes too: a ring just cut, or undone, moves obstacles
   // into or out of a hole, and the list of what is left to ring must follow.
   createEffect(on(
-    [mode, activeName, floor, regions, obstacleSlope, obstacleJoin, obstacleClimb, obstacleMinHeight, obstacleMinArea, obstacleMargin, walkedCells],
+    [mode, activeName, floor, regions, obstacleSlope, obstacleJoin, obstacleClimb, obstacleMinHeight, obstacleMinArea, obstacleMargin, obstacleBulkMax, walkedCells],
     () => (mode() === "obstacles" ? scanObstacles() : setObstacles([])),
   ));
   /**
@@ -713,6 +727,52 @@ export default function RegionEditor(props: RegionEditorProps) {
       const beside = (grounded[(i + 1) % n][1] + grounded[(i - 1 + n) % n][1]) / 2;
       return [x, Math.abs(y - beside) > 6 ? beside : y, z] as Vertex;
     });
+  };
+  /** Every surface height under a zone point, by ray through the zone mesh. */
+  const surfacesUnder = (x: number, y: number, z: number): number[] => {
+    const mesh = zoneMesh;
+    if (!mesh) return [];
+    const ray = new THREE.Raycaster();
+    const from = mesh.localToWorld(new THREE.Vector3(x, y - 60, z));
+    const to = mesh.localToWorld(new THREE.Vector3(x, y + 60, z));
+    ray.set(from, to.clone().sub(from).normalize());
+    ray.far = from.distanceTo(to);
+    return ray.intersectObject(mesh, false).map(h => mesh.worldToLocal(h.point.clone()).y);
+  };
+  /**
+   * Puts a ring on the ground the way the scripted pass does: a vertex with a surface within
+   * GROUND_SNAP moves onto the nearest one, then no vertex may stand more than SPIKE above or
+   * below both its neighbours; such a spike goes between them, onto a surface there if one is
+   * within reach. Returns the ring and how many vertices moved.
+   */
+  const groundRing = (ring: Ring): [Ring, number] => {
+    if (ring.length < 3 || !zoneMesh) return [ring, 0];
+    let moved = 0;
+    const stacks = ring.map(([x, y, z]) => surfacesUnder(x, y, z));
+    const nearest = (st: number[], ref: number) => st.reduce((best, s) => (Math.abs(s - ref) < Math.abs(best - ref) ? s : best), Infinity);
+    const out = ring.map(([x, y, z], i) => {
+      const s = nearest(stacks[i], y);
+      if (Math.abs(s - y) > 0.05 && Math.abs(s - y) <= GROUND_SNAP) {
+        moved++;
+        return [x, +s.toFixed(2), z] as Vertex;
+      }
+      return [x, y, z] as Vertex;
+    });
+    const n = out.length;
+    for (let pass = 0; pass < 4; pass++) {
+      let any = false;
+      for (let i = 0; i < n; i++) {
+        const a = out[(i + n - 1) % n][1], b = out[(i + 1) % n][1], y = out[i][1];
+        if (y >= Math.min(a, b) - SPIKE && y <= Math.max(a, b) + SPIKE) continue;
+        const ref = (a + b) / 2;
+        const s = nearest(stacks[i], ref);
+        out[i] = [out[i][0], +(Math.abs(s - ref) <= SPIKE ? s : ref).toFixed(2), out[i][2]];
+        moved++;
+        any = true;
+      }
+      if (!any) break;
+    }
+    return [out, moved];
   };
   /** The cells the active region's own mobs were recorded in: a ring never takes those, since the
    * data has a mob standing there whatever the mesh says. */
@@ -2754,6 +2814,32 @@ export default function RegionEditor(props: RegionEditorProps) {
                 <path d="M2 12h12" stroke-dasharray="2 1.5" />
               </svg>
               Simplify
+            </button>
+            <button
+              class="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-900/80 hover:bg-slate-800 text-slate-200 disabled:opacity-40"
+              disabled={!active() || !zoneMesh}
+              title={active() ? `Put every vertex of the selected region on the ground: onto a surface within ${GROUND_SNAP} y, and none more than ${SPIKE} y above or below both its neighbours` : "Select a region first"}
+              onClick={() => {
+                const entry = active();
+                if (!entry) return;
+                let moved = 0;
+                const rings = entry.rings.map(ring => {
+                  const [out, m] = groundRing(ring);
+                  moved += m;
+                  return out;
+                });
+                if (!moved) return flash(`${entry.name} is on the ground already`);
+                checkpoint(`ground ${entry.name}`);
+                editActive(r => (r.rings = rings));
+                flash(`${moved} ${moved === 1 ? "vertex" : "vertices"} of ${entry.name} put on the ground`);
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M8 2v8" />
+                <path d="M5 7l3 3 3-3" />
+                <path d="M2 13h12" />
+              </svg>
+              Ground
             </button>
           </div>
         </Show>
