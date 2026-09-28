@@ -91,4 +91,19 @@ assert.ok(obstacleArea(whole[0]) > obstacleArea(walls[0]) + 20, `the climb takes
 assert.ok(obstacleArea(whole[0]) < 60, `but not the floor around it: ${obstacleArea(whole[0])} y2`);
 assert.ok(whole[0].cells.some(([ix, iz]) => ix === 0 && iz === 0), "the centre of the top is in");
 
+// Mobs recorded on top of a rock: the ring must not enclose them, so it opens a corridor to them.
+const onTop = new Set<number>();
+for (let x = -0.5; x <= 0.5; x += 0.5) for (let z = -0.5; z <= 0.5; z += 0.5) onTop.add(cellKey(x, z, 0.5));
+const opened = ringsAround(findObstacles(mesa, { cell: 0.5, join: 1 }), 1, 0.5, onTop);
+const inRingXZ = (ring: Ring, x: number, z: number) => {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, , zi] = ring[i], [xj, , zj] = ring[j];
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+};
+assert.ok(opened.length >= 1, "the rock still gets a ring");
+assert.ok(!opened.some(r => inRingXZ(r, 0, 0)), "the sampled top is outside every ring");
+
 console.log("ok");

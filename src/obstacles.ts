@@ -250,7 +250,83 @@ export function ringsAround(list: Obstacle[], margin: number, cell = 0.5, avoid?
     grown.clear();
     for (const k of reached) grown.set(k, opened.get(k)!);
   }
+  if (avoid?.size) openPockets(grown, avoid);
   return traceCells(grown, cell, list[0]?.foot ?? 0);
+}
+
+/**
+ * A pocket of cells the ring would enclose that holds ground a mob was recorded on gets a
+ * corridor cut out to the open, one cell wide along the shortest way, so the ring wraps around
+ * that ground rather than swallowing it. A pocket with nothing recorded in it stays enclosed:
+ * nothing reaches it, and the traced outline fills it.
+ */
+function openPockets(grown: Map<number, number>, avoid: Set<number>) {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const k of grown.keys()) {
+    const [x, z] = unkey(k);
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minZ = Math.min(minZ, z);
+    maxZ = Math.max(maxZ, z);
+  }
+  // Everything outside the grown cells within a one-cell border, flooded from the border: what
+  // the flood does not reach is a pocket.
+  const outside = new Set<number>();
+  const queue: number[] = [];
+  for (let x = minX - 1; x <= maxX + 1; x++) for (const z of [minZ - 1, maxZ + 1]) queue.push(keyOf(x, z));
+  for (let z = minZ - 1; z <= maxZ + 1; z++) for (const x of [minX - 1, maxX + 1]) queue.push(keyOf(x, z));
+  for (const k of queue) outside.add(k);
+  while (queue.length) {
+    const [x, z] = unkey(queue.pop()!);
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const nx = x + dx, nz = z + dz;
+      if (nx < minX - 1 || nx > maxX + 1 || nz < minZ - 1 || nz > maxZ + 1) continue;
+      const nk = keyOf(nx, nz);
+      if (outside.has(nk) || grown.has(nk)) continue;
+      outside.add(nk);
+      queue.push(nk);
+    }
+  }
+  for (let x = minX; x <= maxX; x++) {
+    for (let z = minZ; z <= maxZ; z++) {
+      const k = keyOf(x, z);
+      if (grown.has(k) || outside.has(k) || !avoid.has(k)) continue;
+      // A recorded cell in a pocket: walk the shortest way out through grown cells and clear it.
+      const parent = new Map<number, number>([[k, -1]]);
+      const wave = [k];
+      let exit = -1;
+      while (wave.length && exit < 0) {
+        const cur = wave.shift()!;
+        const [cx, cz] = unkey(cur);
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nk = keyOf(cx + dx, cz + dz);
+          if (parent.has(nk)) continue;
+          parent.set(nk, cur);
+          if (outside.has(nk)) {
+            exit = nk;
+            break;
+          }
+          wave.push(nk);
+        }
+      }
+      for (let at = exit; at >= 0 && at !== k; at = parent.get(at)!) {
+        grown.delete(at);
+        outside.add(at);
+      }
+      // The pocket itself is open now; mark it so the next recorded cell in it is not walked again.
+      const fill = [k];
+      outside.add(k);
+      while (fill.length) {
+        const [cx, cz] = unkey(fill.pop()!);
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nk = keyOf(cx + dx, cz + dz);
+          if (grown.has(nk) || outside.has(nk)) continue;
+          outside.add(nk);
+          fill.push(nk);
+        }
+      }
+    }
+  }
 }
 
 /**
