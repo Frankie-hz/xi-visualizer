@@ -9,7 +9,7 @@ import { setupBaseScene } from "../graphics/scene";
 import { cleanupNode } from "../graphics/util";
 import { createViewer } from "../graphics/viewer";
 import { ColorKind, colorMesh, createZoneMesh, mapIdPerVertex, prepareMeshData } from "../graphics/ximesh";
-import { cellKey, elongation, findObstacles, obstacleArea, obstacleAt, ringsAround } from "../obstacles";
+import { cellKey, cellOf, elongation, findObstacles, keyOfCell, obstacleArea, obstacleAt, ringsAround, traceCells } from "../obstacles";
 import type { Obstacle } from "../obstacles";
 import { containsXZ, regionAt, regionHue, regionsFromPoints, repairRegion, routeFromTrail, selfIntersects, simplifyRing, validate } from "../regions";
 import type { Finding, Patrol, Region, RegionSet, Ring, Spawn, TrailPoint, Vertex } from "../regions";
@@ -142,6 +142,16 @@ export default function RegionEditor(props: RegionEditorProps) {
    * it: earlier tools could leave a ring twice or one inside another, and deleting one of those
    * left the other showing as if nothing had happened.
    */
+  /** A height to build a ring at near a spot: the nearest vertex of the region. */
+  const lastYOf = (name: string, x: number, z: number) => {
+    const entry = regions().find(r => r.name === name);
+    let best = 0, near = Infinity;
+    for (const [vx, vy, vz] of entry?.rings.flat() ?? []) {
+      const d = (vx - x) ** 2 + (vz - z) ** 2;
+      if (d < near) (near = d, best = vy);
+    }
+    return best;
+  };
   const deleteHole = (name: string, index: number) => {
     const entry = regions().find(r => r.name === name);
     const target = entry?.rings[index];
@@ -162,6 +172,68 @@ export default function RegionEditor(props: RegionEditorProps) {
    * Apply commits it. The merged hole is the convex hull of the group's vertices, since two
    * obstacles a mob cannot pass between are one obstacle to it. Undo brings the pieces back.
    */
+  /**
+   * Growing a hole from the roam data: the ground around a spot that no member mob was recorded
+   * within `clearance` of, as one connected patch, becomes the hole (joined with whatever hole is
+   * already there). It is the data's own answer to "how big is this obstacle": the samples stop
+   * where the mobs stopped. Two steps, like a merge: a plan with a dial, then Apply.
+   */
+  const [grow, setGrow] = createSignal<{ name: string; x: number; z: number; y: number; } | null>(null);
+  const [growClearance, setGrowClearance] = createSignal(1);
+  const growPlan = createMemo(() => {
+    const g = grow();
+    const entry = g && regions().find(r => r.name === g.name);
+    if (!g || !entry || (entry.rings[0]?.length ?? 0) < 3) return null;
+    const cell = OBSTACLE_CELL;
+    const reach = Math.ceil(growClearance() / cell);
+    // Every cell within the clearance of a sample is ground the mobs use.
+    const near = new Set<number>();
+    for (const k of walkedCellsAll()) {
+      const [ix, iz] = cellOf(k);
+      for (let dz = -reach; dz <= reach; dz++) {
+        for (let dx = -reach; dx <= reach; dx++) {
+          if (Math.hypot(dx, dz) * cell <= growClearance() + cell / 2) near.add(keyOfCell(ix + dx, iz + dz));
+        }
+      }
+    }
+    // Flood from the spot over ground inside the outline that no sample comes near. A patch
+    // over a quarter of the region is the outline being wrong, not an obstacle.
+    const outline = entry.rings[0];
+    const budget = Math.abs(ringArea(outline)) * 0.25 / (cell * cell);
+    const start = cellKey(g.x, g.z, cell);
+    if (near.has(start)) return { entry, cells: new Map<number, number>(), ring: null, why: "mobs were recorded right here" };
+    const taken = new Map<number, number>([[start, g.y]]);
+    const queue = [start];
+    while (queue.length) {
+      const [ix, iz] = cellOf(queue.pop()!);
+      for (let dz = -1; dz <= 1; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx && dz) continue; // four-connected, so the patch cannot leak through a corner
+          const nk = keyOfCell(ix + dx, iz + dz);
+          if (taken.has(nk) || near.has(nk)) continue;
+          if (!inRing(outline, (ix + dx + 0.5) * cell, (iz + dz + 0.5) * cell)) continue;
+          taken.set(nk, g.y);
+          queue.push(nk);
+          if (taken.size > budget) return { entry, cells: taken, ring: null, why: "would take over a quarter of the region" };
+        }
+      }
+    }
+    const rings = traceCells(taken, cell, g.y).sort((a, b) => Math.abs(ringArea(b)) - Math.abs(ringArea(a)));
+    return { entry, cells: taken, ring: rings[0] ? onGround(rings[0]) : null, why: rings[0] ? null : "nothing to grow into" };
+  });
+  const growHole = () => {
+    const plan = growPlan();
+    const g = grow();
+    if (!plan || !g || !plan.ring) return flash(plan?.why ?? "nothing to grow");
+    const one = asOne(repairRegion({ rings: [...plan.entry.rings, plan.ring] }), Math.abs(ringArea(plan.entry.rings[0])));
+    if (!one) return flash(`growing here would cut ${g.name} in two`);
+    checkpoint("grow a hole from the roam data");
+    setRegions(rs => rs.map(r => (r.name === g.name ? { name: g.name, rings: one.rings.map(onGround) } : r)));
+    setHoleHover(null);
+    setGrow(null);
+    flash(`hole grown to ${(plan.cells.size * OBSTACLE_CELL * OBSTACLE_CELL).toFixed(0)} y² of unvisited ground`);
+  };
+
   const [merge, setMerge] = createSignal<{ name: string; index: number; } | null>(null);
   const [mergeReach, setMergeReach] = createSignal(2);
   const mergePlan = createMemo(() => {
@@ -208,6 +280,7 @@ export default function RegionEditor(props: RegionEditorProps) {
       & (
         | { kind: "region"; name: string; }
         | { kind: "hole"; name: string; index: number; }
+        | { kind: "ground"; name: string; x0: number; z0: number; }
         | { kind: "spawn"; spawn: Spawn; }
         | { kind: "route"; lead: string; }
       )
@@ -517,16 +590,18 @@ export default function RegionEditor(props: RegionEditorProps) {
    * all leaves those to a deliberate click. */
   const isCliff = (o: Obstacle) => obstacleArea(o, OBSTACLE_CELL) >= 10 && elongation(o, OBSTACLE_CELL) > 2.5;
   const bulk = () => obstacles().filter(o => obstacleArea(o, OBSTACLE_CELL) <= obstacleBulkMax() && !isCliff(o));
-  const memberTrail = createMemo(() => {
+  const memberTrailAll = createMemo(() => {
     const name = activeName();
-    if (!name || mode() !== "obstacles") return [] as TrailPoint[];
+    if (!name) return [] as TrailPoint[];
     return trailPoints(props.spawns.filter(s => assign()[s.id]?.includes(name)).map(s => s.id));
   });
-  const walkedCells = createMemo(() => {
+  const memberTrail = createMemo(() => (mode() === "obstacles" ? memberTrailAll() : ([] as TrailPoint[])));
+  const walkedCellsAll = createMemo(() => {
     const out = new Set<number>();
-    for (const p of memberTrail()) out.add(cellKey(p.x, p.z, OBSTACLE_CELL));
+    for (const p of memberTrailAll()) out.add(cellKey(p.x, p.z, OBSTACLE_CELL));
     return out;
   });
+  const walkedCells = createMemo(() => (mode() === "obstacles" ? walkedCellsAll() : new Set<number>()));
   /** The steep faces inside the active region on the current floor, clustered into obstacles. */
   const scanObstacles = () => {
     const r = active();
@@ -1415,6 +1490,30 @@ export default function RegionEditor(props: RegionEditorProps) {
     });
   });
 
+  // The grow plan: the patch of unvisited ground the hole would become.
+  createEffect(() => {
+    const plan = growPlan();
+    if (!plan?.ring) return;
+    const segments: number[] = [];
+    const ring = plan.ring;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length];
+      segments.push(a[0], a[1] - 0.25, a[2], b[0], b[1] - 0.25, b[2]);
+    }
+    const geo = new LineSegmentsGeometry();
+    geo.setPositions(segments);
+    const mat = materialFor("grow", () => new LineMaterial({ color: 0xc084fc, linewidth: 2.5, depthTest: false })) as LineMaterial;
+    mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
+    obstacleLineMaterials.push(mat);
+    const lines = new LineSegments2(geo, mat);
+    lines.renderOrder = 4;
+    scene().add(lines);
+    onCleanup(() => {
+      scene().remove(lines);
+      geo.dispose();
+    });
+  });
+
   // The merge plan: the hull the group would become, and the holes going into it.
   createEffect(() => {
     const plan = mergePlan();
@@ -1858,6 +1957,9 @@ export default function RegionEditor(props: RegionEditorProps) {
       const act = active();
       const hole = p && act && !props.readOnly ? holeAt(act, p.x, p.z) : 0;
       if (hole) return setMenu({ kind: "hole", name: act!.name, index: hole, x: ev.clientX, y: ev.clientY });
+      if (p && act && !props.readOnly && containsXZ(act, p.x, p.z)) {
+        return setMenu({ kind: "ground", name: act.name, x0: p.x, z0: p.z, x: ev.clientX, y: ev.clientY });
+      }
       const name = p && regionAt(asSet(regions()), p.x, p.z, p.y);
       setMenu(name ? { kind: "region", name, x: ev.clientX, y: ev.clientY } : null);
     };
@@ -2079,7 +2181,8 @@ export default function RegionEditor(props: RegionEditorProps) {
       if (mode() !== "draw") {
         // Not drawing, so there is nothing to finish: Escape backs out of whatever is selected.
         if (ev.key !== "Escape") return;
-        if (merge()) setMerge(null);
+        if (grow()) setGrow(null);
+        else if (merge()) setMerge(null);
         else if (mode() === "obstacles") setMode("select");
         else if (replayId()) setReplayId(null);
         else if (walker()) editWalker(null);
@@ -2462,6 +2565,35 @@ export default function RegionEditor(props: RegionEditorProps) {
             </button>
           </div>
         </Show>
+        <Show when={grow()}>
+          <div class="absolute top-10 right-2 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] uppercase tracking-wide text-slate-500">Hole from roam data</span>
+              <span class="text-slate-400">
+                {growPlan()?.ring ? `${(growPlan()!.cells.size * OBSTACLE_CELL * OBSTACLE_CELL).toFixed(0)} y²` : growPlan()?.why ?? "…"} · esc cancels
+              </span>
+            </div>
+            <label class="flex items-center gap-2" title="Ground within this of a recorded sample is ground the mobs use and stays out of the hole">
+              <span class="w-24 text-slate-300">clearance</span>
+              <input
+                type="range"
+                class="flex-1"
+                min="0.5"
+                max="4"
+                step="0.25"
+                value={growClearance()}
+                onInput={e => setGrowClearance(Number(e.currentTarget.value))}
+              />
+              <span class="w-12 text-right font-mono text-slate-200">{growClearance()}y</span>
+            </label>
+            <div class="flex gap-1">
+              <button class="flex-1 px-2 py-1 bg-violet-700 hover:bg-violet-600 rounded disabled:opacity-40" disabled={!growPlan()?.ring} onClick={growHole}>
+                Apply
+              </button>
+              <button class="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded" onClick={() => setGrow(null)}>Cancel</button>
+            </div>
+          </div>
+        </Show>
         <Show when={mergePlan()}>
           {plan => (
             <div class="absolute top-10 right-2 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
@@ -2663,10 +2795,42 @@ export default function RegionEditor(props: RegionEditorProps) {
                     Merge nearby holes… ({active() ? nearHoles(active()!, hole().index, mergeReach()).length : 0} within {mergeReach()}y)
                   </button>
                   <button
+                    class="block w-full text-left px-3 py-1 hover:bg-slate-700"
+                    title="Grow this hole over the ground around it that no member mob was recorded on"
+                    onClick={() => {
+                      const m = menu()!;
+                      const p = { x: 0, z: 0 };
+                      const ring = active()?.rings[hole().index];
+                      if (ring) (p.x = ring.reduce((t, v) => t + v[0], 0) / ring.length, p.z = ring.reduce((t, v) => t + v[2], 0) / ring.length);
+                      setGrow({ name: hole().name, x: p.x, z: p.z, y: ring?.[0]?.[1] ?? 0 } as any);
+                      setMenu(null);
+                      void m;
+                    }}
+                  >
+                    Grow to roam data…
+                  </button>
+                  <button
                     class="block w-full text-left px-3 py-1 hover:bg-slate-700 text-red-400"
                     onClick={() => (deleteHole(hole().name, hole().index), setMenu(null))}
                   >
                     Delete hole
+                  </button>
+                </>
+              )}
+            </Show>
+            <Show when={menu()!.kind === "ground" ? (menu() as any) as { name: string; x0: number; z0: number; } : null}>
+              {spot => (
+                <>
+                  <div class="px-3 py-1 text-slate-500">{spot().name} · {spot().x0.toFixed(1)}, {spot().z0.toFixed(1)}</div>
+                  <button
+                    class="block w-full text-left px-3 py-1 hover:bg-slate-700"
+                    title="Cut a hole over the ground around this spot that no member mob was recorded on"
+                    onClick={() => {
+                      setGrow({ name: spot().name, x: spot().x0, z: spot().z0, y: lastYOf(spot().name, spot().x0, spot().z0) } as any);
+                      setMenu(null);
+                    }}
+                  >
+                    Hole from roam data…
                   </button>
                 </>
               )}

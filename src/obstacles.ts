@@ -250,22 +250,30 @@ export function ringsAround(list: Obstacle[], margin: number, cell = 0.5, avoid?
     grown.clear();
     for (const k of reached) grown.set(k, opened.get(k)!);
   }
-  // Every cell edge with no occupied neighbour is a boundary edge; shared edges cancel, and what
-  // remains chains into loops. The edge order makes an outer loop wind one way and an enclosed
-  // pocket the other, so the sign of the area tells them apart.
+  return traceCells(grown, cell, list[0]?.foot ?? 0);
+}
+
+/**
+ * The outlines of a set of grid cells (keys from cellKey, each with a height for its corners), as
+ * rings. Every cell edge with no occupied neighbour is a boundary edge; shared edges cancel, and
+ * what remains chains into loops. The edge order makes an outer loop wind one way and an enclosed
+ * pocket the other, so the sign of the area tells them apart, and pockets are dropped: nothing
+ * reaches a pocket inside an obstacle.
+ */
+export function traceCells(cells: Map<number, number>, cell = 0.5, fallbackY = 0): Ring[] {
   const corner = (ix: number, iz: number) => keyOf(ix, iz);
   const edges = new Map<number, number>();
-  const footAt = new Map<number, number>();
-  for (const [k, foot] of grown) {
+  const heightAt = new Map<number, number>();
+  for (const [k, y] of cells) {
     const [x, z] = unkey(k);
     const add = (a: number, b: number) => {
       edges.set(a, b);
-      footAt.set(a, foot);
+      heightAt.set(a, y);
     };
-    if (!grown.has(keyOf(x, z - 1))) add(corner(x, z), corner(x + 1, z));
-    if (!grown.has(keyOf(x + 1, z))) add(corner(x + 1, z), corner(x + 1, z + 1));
-    if (!grown.has(keyOf(x, z + 1))) add(corner(x + 1, z + 1), corner(x, z + 1));
-    if (!grown.has(keyOf(x - 1, z))) add(corner(x, z + 1), corner(x, z));
+    if (!cells.has(keyOf(x, z - 1))) add(corner(x, z), corner(x + 1, z));
+    if (!cells.has(keyOf(x + 1, z))) add(corner(x + 1, z), corner(x + 1, z + 1));
+    if (!cells.has(keyOf(x, z + 1))) add(corner(x + 1, z + 1), corner(x, z + 1));
+    if (!cells.has(keyOf(x - 1, z))) add(corner(x, z + 1), corner(x, z));
   }
   const rings: Ring[] = [];
   while (edges.size) {
@@ -277,7 +285,7 @@ export function ringsAround(list: Obstacle[], margin: number, cell = 0.5, avoid?
       if (next === undefined) break;
       edges.delete(at);
       const [x, z] = unkey(at);
-      ring.push([x * cell, footAt.get(at) ?? list[0].foot, z * cell]);
+      ring.push([x * cell, heightAt.get(at) ?? fallbackY, z * cell]);
       at = next;
       if (at === start) break;
     }
@@ -286,6 +294,10 @@ export function ringsAround(list: Obstacle[], margin: number, cell = 0.5, avoid?
   // The staircase carries nothing a mob would notice; a corner under a cell's area goes.
   return rings.map(r => simplifyRing(r, cell * cell));
 }
+
+/** The [ix, iz] a cell key stands for, the inverse of cellKey. */
+export const cellOf = (key: number): [number, number] => unkey(key);
+export const keyOfCell = (ix: number, iz: number) => keyOf(ix, iz);
 
 /** The one ring around a single obstacle. */
 export function ringAround(o: Obstacle, margin: number, cell = 0.5, avoid?: Set<number>): Ring {
