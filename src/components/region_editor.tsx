@@ -685,7 +685,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     const mesh = zoneMesh;
     if (!mesh) return ring;
     const ray = new THREE.Raycaster();
-    return ring.map(([x, y, z]) => {
+    const grounded = ring.map(([x, y, z]) => {
       // The scene is mirrored (see graphics/scene.ts), so the ray is set up in world space from
       // two zone points: from 30 yalms above the vertex straight down through it.
       const from = mesh.localToWorld(new THREE.Vector3(x, y - 30, z));
@@ -704,6 +704,11 @@ export default function RegionEditor(props: RegionEditorProps) {
       }
       return [x, best, z] as Vertex;
     });
+    // A ring lies on one floor: a vertex that landed on the top of the rock the ring goes round
+    // comes back to the ring's own height.
+    const heights = grounded.map(v => v[1]).sort((a, b) => a - b);
+    const median = heights[Math.floor(heights.length / 2)] ?? 0;
+    return grounded.map(([x, y, z]) => [x, Math.abs(y - median) > 6 ? median : y, z] as Vertex);
   };
   /** The cells the active region's own mobs were recorded in: a ring never takes those, since the
    * data has a mob standing there whatever the mesh says. */
