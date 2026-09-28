@@ -733,7 +733,7 @@ export default function RegionEditor(props: RegionEditorProps) {
    * empty disc. Found alongside the obstacles in carve mode and cut the same way.
    */
   const [gapMinArea, setGapMinArea] = createSignal(6); // square yalms
-  const gaps = createMemo<Ring[]>(() => {
+  const rawGaps = createMemo<Ring[]>(() => {
     const r = active();
     if (mode() !== "obstacles" || !r || (r.rings[0]?.length ?? 0) < 3 || !walkedCells().size) return [];
     const cell = OBSTACLE_CELL;
@@ -757,8 +757,6 @@ export default function RegionEditor(props: RegionEditorProps) {
       maxZ = Math.max(maxZ, z);
     }
     const inside = (ix: number, iz: number) => inRing(outline, (ix + 0.5) * cell, (iz + 0.5) * cell);
-    const { bulk: small, big } = previewRings();
-    const covered = [...small, ...big];
     const seen = new Set<number>();
     const out: Ring[] = [];
     const budget = Math.abs(ringArea(outline)) * 0.25 / (cell * cell);
@@ -795,13 +793,25 @@ export default function RegionEditor(props: RegionEditorProps) {
         const y = sampleFloor((ix + 0.5) * cell, (iz + 0.5) * cell, lastYOf(r.name, (ix + 0.5) * cell, (iz + 0.5) * cell));
         for (const ring of traceCells(patch, cell, y)) {
           if (holes.some(h => ring.every(([x, , z]) => inRing(h, x, z)))) continue;
-          // A gap under a mountain is the mountain: the obstacle ring already covers it.
-          if (covered.some(o => ring.filter(([x, , z]) => inRing(o, x, z)).length >= 0.8 * ring.length)) continue;
           out.push(onGround(ring.map(([x, , z]) => [x, sampleFloor(x, z, y), z] as Vertex)));
         }
       }
     }
     return out;
+  });
+  /** Whether ring `a` lies mostly inside ring `b`, by its vertices. */
+  const mostlyInside = (a: Ring, b: Ring) => a.filter(([x, , z]) => inRing(b, x, z)).length >= 0.8 * a.length;
+  /** Where a gap and an obstacle ring cover the same ground, only the bigger of the two shows:
+   * a gap under a mountain is the mountain, and a rock inside a wide empty patch is the patch. */
+  const gaps = createMemo<Ring[]>(() => {
+    const { bulk: small, big } = previewRings();
+    const rings = [...small, ...big];
+    return rawGaps().filter(g => !rings.some(o => Math.abs(ringArea(o)) >= Math.abs(ringArea(g)) && mostlyInside(g, o)));
+  });
+  const shownPreview = createMemo(() => {
+    const hide = (o: Ring) => rawGaps().some(g => Math.abs(ringArea(g)) > Math.abs(ringArea(o)) && mostlyInside(o, g));
+    const { bulk: small, big } = previewRings();
+    return { bulk: small.filter(o => !hide(o)), big: big.filter(o => !hide(o)) };
   });
   const gapAt = (x: number, z: number) => gaps().find(g => inRing(g, x, z));
   /** Cuts holes for the given rings, each through the clipper on its own, like ringObstacles. */
@@ -1552,7 +1562,7 @@ export default function RegionEditor(props: RegionEditorProps) {
   // The obstacles on offer, each drawn as the ring a click would cut, so the margin is visible
   // before anything is changed.
   createEffect(() => {
-    const { bulk: small, big } = previewRings();
+    const { bulk: small, big } = shownPreview();
     if (!small.length && !big.length) return;
     const added: { lines: LineSegments2; geo: LineSegmentsGeometry; }[] = [];
     // Two colours: what Ring all takes in full amber, what is over its size dimmer.
