@@ -137,10 +137,24 @@ export default function RegionEditor(props: RegionEditorProps) {
   /** Holes of the active region within `reach` yalms of hole `index`, itself excluded. */
   const nearHoles = (r: Region, index: number, reach = 2) =>
     r.rings.map((ring, k) => k).filter(k => k >= 1 && k !== index && r.rings[k].length >= 3 && ringDistance(r.rings[index], r.rings[k]) <= reach);
+  /**
+   * Deletes the hole under the cursor, along with any hole nested inside it or lying on top of
+   * it: earlier tools could leave a ring twice or one inside another, and deleting one of those
+   * left the other showing as if nothing had happened.
+   */
   const deleteHole = (name: string, index: number) => {
-    checkpoint("delete a hole");
-    setRegions(rs => rs.map(r => (r.name === name ? { name, rings: r.rings.filter((_, k) => k !== index) } : r)));
+    const entry = regions().find(r => r.name === name);
+    const target = entry?.rings[index];
+    if (!entry || !target) return;
+    const gone = new Set([index]);
+    for (let k = 1; k < entry.rings.length; k++) {
+      const ring = entry.rings[k];
+      if (k !== index && ring.length >= 3 && ring.every(([x, , z]) => inRing(target, x, z) || target.some(v => v[0] === x && v[2] === z))) gone.add(k);
+    }
+    checkpoint(gone.size === 1 ? "delete a hole" : `delete ${gone.size} holes`);
+    setRegions(rs => rs.map(r => (r.name === name ? { name, rings: r.rings.filter((_, k) => !gone.has(k)) } : r)));
     setHoleHover(null);
+    if (gone.size > 1) flash(`deleted the hole and ${gone.size - 1} nested in it`);
   };
   /**
    * Merging is two steps: the menu opens a plan with a reach dial and a preview of the hull, and
