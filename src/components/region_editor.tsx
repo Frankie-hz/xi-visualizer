@@ -699,6 +699,103 @@ export default function RegionEditor(props: RegionEditorProps) {
     big: ringsAround(obstacles().filter(o => !bulk().includes(o)), obstacleMargin(), OBSTACLE_CELL, walkedCells()).map(onGround),
   }));
   /**
+   * Roam gaps: ground inside the region, enclosed by ground the mobs use, that no member mob was
+   * recorded within the clearance of. The mesh has nothing there (a bush, a fence with no
+   * collision, a spot they simply never stand on), but the data does: a ring of samples around an
+   * empty disc. Found alongside the obstacles in carve mode and cut the same way.
+   */
+  const [gapMinArea, setGapMinArea] = createSignal(6); // square yalms
+  const gaps = createMemo<Ring[]>(() => {
+    const r = active();
+    if (mode() !== "obstacles" || !r || (r.rings[0]?.length ?? 0) < 3 || !walkedCells().size) return [];
+    const cell = OBSTACLE_CELL;
+    const clearance = growClearance();
+    const reach = Math.ceil(clearance / cell);
+    const near = new Set<number>();
+    for (const k of walkedCells()) {
+      const [ix, iz] = cellOf(k);
+      for (let dz = -reach; dz <= reach; dz++) {
+        for (let dx = -reach; dx <= reach; dx++) {
+          if (Math.hypot(dx, dz) * cell <= clearance + cell / 2) near.add(keyOfCell(ix + dx, iz + dz));
+        }
+      }
+    }
+    const outline = r.rings[0];
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const [x, , z] of outline) {
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minZ = Math.min(minZ, z);
+      maxZ = Math.max(maxZ, z);
+    }
+    const inside = (ix: number, iz: number) => inRing(outline, (ix + 0.5) * cell, (iz + 0.5) * cell);
+    const seen = new Set<number>();
+    const out: Ring[] = [];
+    const budget = Math.abs(ringArea(outline)) * 0.25 / (cell * cell);
+    const minCells = gapMinArea() / (cell * cell);
+    for (let ix = Math.floor(minX / cell); ix <= Math.floor(maxX / cell); ix++) {
+      for (let iz = Math.floor(minZ / cell); iz <= Math.floor(maxZ / cell); iz++) {
+        const start = keyOfCell(ix, iz);
+        if (seen.has(start) || near.has(start) || !inside(ix, iz)) continue;
+        // Flood one patch, four-connected; one that reaches the outline is a notch, not a hole,
+        // and is left for the outline tools.
+        const patch = new Map<number, number>();
+        const queue = [start];
+        seen.add(start);
+        let touchesEdge = false;
+        while (queue.length) {
+          const k = queue.pop()!;
+          const [cx, cz] = cellOf(k);
+          patch.set(k, 0);
+          for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+            const nk = keyOfCell(cx + dx, cz + dz);
+            if (seen.has(nk) || near.has(nk)) continue;
+            if (!inside(cx + dx, cz + dz)) {
+              touchesEdge = true;
+              continue;
+            }
+            seen.add(nk);
+            queue.push(nk);
+          }
+          if (patch.size > budget) break;
+        }
+        if (touchesEdge || patch.size < minCells || patch.size > budget) continue;
+        // A patch that already lies inside a hole has nothing left to cut.
+        const holes = r.rings.slice(1).filter(h => h.length >= 3);
+        const y = lastYOf(r.name, (ix + 0.5) * cell, (iz + 0.5) * cell);
+        for (const ring of traceCells(patch, cell, y)) {
+          if (holes.some(h => ring.every(([x, , z]) => inRing(h, x, z)))) continue;
+          out.push(onGround(ring));
+        }
+      }
+    }
+    return out;
+  });
+  const gapAt = (x: number, z: number) => gaps().find(g => inRing(g, x, z));
+  /** Cuts holes for the given rings, each through the clipper on its own, like ringObstacles. */
+  const cutRings = (rings: Ring[], what: string) => {
+    const name = activeName();
+    const entry = regions().find(r => r.name === name);
+    if (!name || !entry || !rings.length) return;
+    let shape: Region = { rings: entry.rings.map(ring => ring.map(v => [...v] as Vertex)) };
+    const outlineArea = Math.abs(ringArea(entry.rings[0]));
+    let done = 0, skipped = 0;
+    for (const ring of rings) {
+      const one = asOne(repairRegion({ rings: [...shape.rings, ring] }), outlineArea);
+      if (!one) {
+        skipped++;
+        continue;
+      }
+      shape = one;
+      done++;
+    }
+    if (done) {
+      checkpoint(done === 1 ? `cut a ${what}` : `cut ${done} ${what}s`);
+      setRegions(rs => rs.map(r => (r.name === name ? { name, rings: shape.rings.map(onGround) } : r)));
+    }
+    if (skipped) flash(`${skipped} ${what}${skipped === 1 ? "" : "s"} would cut ${name} in two; left alone`);
+  };
+  /**
    * Cuts a hole around each obstacle. Every ring goes through the clipper at once, so one that
    * overlaps another ring becomes part of it and one that crosses the outline carves a bay into
    * it rather than being left hanging outside. A ring that would cut the region in two is skipped
@@ -1464,6 +1561,35 @@ export default function RegionEditor(props: RegionEditorProps) {
     });
   });
 
+  // Roam gaps on offer, dashed violet: the data's holes rather than the mesh's.
+  createEffect(() => {
+    const rings = gaps();
+    if (!rings.length) return;
+    const segments: number[] = [];
+    for (const ring of rings) {
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        segments.push(a[0], a[1] - 0.2, a[2], b[0], b[1] - 0.2, b[2]);
+      }
+    }
+    const geo = new LineSegmentsGeometry();
+    geo.setPositions(segments);
+    const mat = materialFor(
+      "gaps",
+      () => new LineMaterial({ color: 0xc084fc, linewidth: 2.5, depthTest: false, dashed: true, dashSize: 1, gapSize: 0.7 }),
+    ) as LineMaterial;
+    mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
+    obstacleLineMaterials.push(mat);
+    const lines = new LineSegments2(geo, mat);
+    lines.computeLineDistances();
+    lines.renderOrder = 3;
+    scene().add(lines);
+    onCleanup(() => {
+      scene().remove(lines);
+      geo.dispose();
+    });
+  });
+
   // The obstacle under the cursor, drawn as the ring a click would cut.
   createEffect(() => {
     const h = obstacleHover();
@@ -2095,6 +2221,10 @@ export default function RegionEditor(props: RegionEditorProps) {
         const p = pickZonePoint(lastY(active()));
         const o = p && obstacleAt(obstacles(), p.x, p.z, obstacleMargin(), OBSTACLE_CELL);
         if (o) ringObstacles([o]);
+        else {
+          const g = p && gapAt(p.x, p.z);
+          if (g) cutRings([g], "roam gap");
+        }
         return;
       }
 
@@ -2726,6 +2856,25 @@ export default function RegionEditor(props: RegionEditorProps) {
                 </label>
               )}
             </For>
+            <div class="border-t border-slate-700 pt-1 text-[10px] uppercase tracking-wide text-slate-500">Roam gaps · {gaps().length} found</div>
+            <label class="flex items-center gap-2" title="Ground within this of a recorded sample is ground the mobs use; what is left, enclosed, is a gap">
+              <span class="w-24 text-slate-300">clearance</span>
+              <input
+                type="range"
+                class="flex-1"
+                min="0.5"
+                max="4"
+                step="0.25"
+                value={growClearance()}
+                onInput={e => setGrowClearance(Number(e.currentTarget.value))}
+              />
+              <span class="w-12 text-right font-mono text-slate-200">{growClearance()}y</span>
+            </label>
+            <label class="flex items-center gap-2" title="A gap smaller than this is sampling noise">
+              <span class="w-24 text-slate-300">gap at least</span>
+              <input type="range" class="flex-1" min="1" max="60" step="1" value={gapMinArea()} onInput={e => setGapMinArea(Number(e.currentTarget.value))} />
+              <span class="w-12 text-right font-mono text-slate-200">{gapMinArea()}y²</span>
+            </label>
             <div class="flex gap-1">
               <button
                 class="flex-1 px-2 py-1 bg-amber-700 hover:bg-amber-600 rounded disabled:opacity-40"
@@ -2734,6 +2883,14 @@ export default function RegionEditor(props: RegionEditorProps) {
                 onClick={() => ringObstacles(bulk())}
               >
                 Ring all ({bulk().length})
+              </button>
+              <button
+                class="flex-1 px-2 py-1 bg-violet-700 hover:bg-violet-600 rounded disabled:opacity-40"
+                disabled={!gaps().length}
+                title="Cut every roam gap as a hole"
+                onClick={() => cutRings(gaps(), "roam gap")}
+              >
+                Cut gaps ({gaps().length})
               </button>
               <button
                 class="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded"
