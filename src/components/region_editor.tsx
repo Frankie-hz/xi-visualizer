@@ -660,11 +660,15 @@ export default function RegionEditor(props: RegionEditorProps) {
     // Height is foot minus top because y points down. An obstacle whose ring already lies inside
     // an existing hole has nothing left to cut.
     const holes = r.rings.slice(1).filter(h => h.length >= 3);
-    const buried = (o: Obstacle) => {
+    // Nothing left to cut: a ring already inside an old hole, or one mostly outside the outline,
+    // which is the wall the region ends at and would only carve a yalm off the border.
+    const spent = (o: Obstacle) => {
       const ring = ringsAround([o], obstacleMargin(), OBSTACLE_CELL, walkedCells())[0];
-      return !!ring && holes.some(h => ring.every(([x, , z]) => inRing(h, x, z)));
+      if (!ring) return true;
+      if (holes.some(h => ring.every(([x, , z]) => inRing(h, x, z)))) return true;
+      return ring.filter(([x, , z]) => inRing(r.rings[0], x, z)).length < 0.3 * ring.length;
     };
-    setObstacles(found.filter(o => o.foot - o.top >= minHeight && obstacleArea(o, OBSTACLE_CELL) >= minArea && !buried(o)));
+    setObstacles(found.filter(o => o.foot - o.top >= minHeight && obstacleArea(o, OBSTACLE_CELL) >= minArea && !spent(o)));
   };
   // Rescans whenever the region itself changes too: a ring just cut, or undone, moves obstacles
   // into or out of a hole, and the list of what is left to ring must follow.
@@ -1566,7 +1570,10 @@ export default function RegionEditor(props: RegionEditorProps) {
     if (!small.length && !big.length) return;
     const added: { lines: LineSegments2; geo: LineSegmentsGeometry; }[] = [];
     // Two colours: what Ring all takes in full amber, what is over its size dimmer.
-    // Two looks: what Ring all takes solid, what is over its size dashed; both full amber.
+    // Two looks: what Ring all takes solid, what is over its size dashed; both full amber. Only
+    // the part of a ring inside the region is drawn: the cut clips to the outline, so the preview
+    // shows the same.
+    const outline = active()?.rings[0] ?? [];
     for (const [rings, key, dashed] of [[small, "obstacles", false], [big, "obstacles-big", true]] as const) {
       if (!rings.length) continue;
       const segments: number[] = [];
@@ -1574,10 +1581,12 @@ export default function RegionEditor(props: RegionEditorProps) {
         for (let i = 0; i < ring.length; i++) {
           const a = ring[i];
           const b = ring[(i + 1) % ring.length];
+          if (outline.length && !inRing(outline, (a[0] + b[0]) / 2, (a[2] + b[2]) / 2)) continue;
           // A hair above the ground so the line is not swallowed by the terrain it lies on.
           segments.push(a[0], a[1] - 0.2, a[2], b[0], b[1] - 0.2, b[2]);
         }
       }
+      if (!segments.length) continue;
       // WebGL draws LineBasicMaterial one pixel wide whatever it is told, so this is a wide line
       // like the selected outline, sized in screen pixels. Segments geometry, not LineGeometry:
       // that one takes a polyline and would join every ring to the next.
