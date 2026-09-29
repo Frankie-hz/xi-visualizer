@@ -84,7 +84,7 @@ export default {
         return json({
           error: "not_allowed",
           error_description: login
-            ? `${login} is not on this editor's list. Ask to be added, or fork LSB and edit the yaml by hand.`
+            ? `${login} is not on this editor's list. Ask its maintainer to be added, or fork LandSandBoat/server and edit the yaml by hand.`
             : "could not identify the account behind this token",
         }, 403, origin);
       }
