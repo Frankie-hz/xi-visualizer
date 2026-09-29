@@ -89,10 +89,14 @@ export default function RegionsDiffPage() {
   const [status, setStatus] = createSignal<string | undefined>();
   const [focus, setFocus] = createSignal<{ name?: string; spawn?: string; } | undefined>();
   const [pasted, setPasted] = createSignal("");
-  // Escape steps back out to the whole zone, from a region or a move.
+  // Escape steps back out to the whole zone, from a region or a move. j and k step through the
+  // changes in the list, [ and ] through the zones, so a review can be read without the mouse.
   onMount(() => {
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape" && !isTyping(ev.target)) setFocus(undefined);
+      if (isTyping(ev.target) || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      if (ev.key === "Escape") return setFocus(undefined);
+      if (ev.key === "j" || ev.key === "k") return stepChange(ev.key === "j" ? 1 : -1);
+      if (ev.key === "]" || ev.key === "[") return stepZone(ev.key === "]" ? 1 : -1);
     };
     window.addEventListener("keydown", onKey);
     onCleanup(() => window.removeEventListener("keydown", onKey));
@@ -230,6 +234,29 @@ export default function RegionsDiffPage() {
       ? [want.spawn]
       : both[both.diff.removed.includes(want.name!) ? "base" : "head"].spawns.filter(s => s.regions?.includes(want.name!)).map(s => s.id);
     return trailOf(data, ids);
+  };
+
+  /** Everything the list offers to pick, in the order it lists it. */
+  const changeList = (): { name?: string; spawn?: string; }[] => {
+    const d = sides()?.diff;
+    if (!d) return [];
+    return [
+      ...[...d.added, ...d.removed, ...d.reshaped.map(c => c.name)].map(name => ({ name })),
+      ...[...d.moved, ...d.rerouted, ...d.relocated].map(m => ({ spawn: m.id })),
+    ];
+  };
+  const stepChange = (dir: 1 | -1) => {
+    const list = changeList();
+    if (!list.length) return;
+    const now = focus();
+    const at = list.findIndex(c => (c.name && c.name === now?.name) || (c.spawn && c.spawn === now?.spawn));
+    setFocus(list[at < 0 ? (dir > 0 ? 0 : list.length - 1) : (at + dir + list.length) % list.length]);
+  };
+  const stepZone = (dir: 1 | -1) => {
+    const list = cmp()?.zones ?? [];
+    if (!list.length) return;
+    const at = list.findIndex(z => z.zone === query.zone);
+    setQuery({ zone: list[at < 0 ? 0 : (at + dir + list.length) % list.length].zone });
   };
 
   const total = (d: RegionsDiff) =>
@@ -383,7 +410,7 @@ export default function RegionsDiffPage() {
         <Show when={cmp()?.zones.length}>
           <div class="w-60 shrink-0 flex flex-col bg-slate-800 rounded-lg p-2 overflow-y-auto text-sm">
             <div class="text-xs uppercase tracking-wide text-slate-500 px-1 pb-1">
-              zones changed ({cmp()!.zones.length})
+              <span title="[ and ] step through the zones, j and k through the changes in one">zones changed ({cmp()!.zones.length})</span>
               <Show when={reviewed().length}>
                 <span class="text-emerald-500">· {cmp()!.zones.filter(z => reviewed().includes(z.zone)).length} reviewed</span>
               </Show>
