@@ -101,6 +101,50 @@ const BTN_PLAIN = `${BTN} bg-slate-700 hover:bg-slate-600 text-white`;
 const BTN_QUIET = `${BTN} bg-slate-600 hover:bg-slate-500 text-white`;
 const BTN_GO = `${BTN} bg-emerald-600 hover:bg-emerald-500 text-white`;
 
+/** What a first visit sees before a zone is picked: what this is for, and how a change gets in. */
+function RegionsIntro() {
+  return (
+    <div class="mt-6 max-w-3xl text-sm text-slate-300 space-y-4">
+      <div>
+        <h2 class="text-lg font-bold text-slate-100">Draw where mobs spawn</h2>
+        <p class="mt-1">
+          In LandSandBoat most mobs spawn on a fixed point. A spawn region is an outline on the map instead: each time the mob spawns, the server picks a spot
+          inside it. The regions here are drawn from recorded roam trails, the cyan dots, which show where each mob was actually seen walking.
+        </p>
+      </div>
+      <div>
+        <h3 class="font-bold text-slate-100">A good region</h3>
+        <ul class="mt-1 list-disc pl-5 space-y-0.5">
+          <li>covers its mobs' trails; the Review tab shows how much of each it covers</li>
+          <li>stays off walls, cliffs and water; cut holes around rocks and trees with Carve holes</li>
+          <li>holds every mob it should, and no more than a few dozen corners</li>
+        </ul>
+      </div>
+      <div>
+        <h3 class="font-bold text-slate-100">Getting a change in</h3>
+        <ol class="mt-1 list-decimal pl-5 space-y-0.5">
+          <li>Pick a zone above, preferably one with no regions yet.</li>
+          <li>
+            Draw a region with <b>+ Region</b>, or have one built from the trails: in the mob list pick <b>Fixed</b>, then <b>Build a region</b>.
+          </li>
+          <li>
+            Put mobs in it: drag a dot inside, or use <b>Assign inside</b>.
+          </li>
+          <li>
+            <b>Save</b>. The first time, you sign in with GitHub and fork LandSandBoat/server; the editor walks you through it and keeps your edits meanwhile.
+          </li>
+          <li>
+            <b>Open pull request</b>. The description links reviewers to a map of what changed.
+          </li>
+        </ol>
+      </div>
+      <p class="text-slate-400">
+        Edits are kept in this browser as you go, so a closed tab loses nothing. On the map, <b>?</b> lists every shortcut.
+      </p>
+    </div>
+  );
+}
+
 /** A zone folder as people know it: "West Ronfaure", not west_ronfaure. */
 const zoneLabel = (folder: string) => zoneOfFolder(folder)?.name ?? folder;
 
@@ -1281,7 +1325,24 @@ export default function RegionsPage() {
         </div>
       </Show>
 
-      <Show when={files()} fallback={<div class="mt-4 text-slate-400">Pick a zone.</div>}>
+      <Show
+        when={files()}
+        fallback={
+          <Show when={params.zone} fallback={<RegionsIntro />}>
+            <div class="mt-4 text-slate-400 flex items-center gap-2">
+              <Show when={error()} fallback={<>Loading {zoneLabel(params.zone!)}…</>}>
+                Could not open {zoneLabel(params.zone!)}.
+                <button
+                  class={BTN_QUIET}
+                  onClick={() => openZone(params.zone!)}
+                >
+                  Retry
+                </button>
+              </Show>
+            </div>
+          </Show>
+        }
+      >
         <Switch>
           <Match when={zoneMesh.loading}>
             <div class="mt-4">Loading... {status()}</div>
