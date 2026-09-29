@@ -628,8 +628,14 @@ export default function RegionsPage() {
   const reconcile = async (
     f: ZoneFiles,
   ): Promise<{ regionsNow: string; mobsNow: string; merged?: ReturnType<typeof mergeZone>; theirSpawns?: Spawn[]; } | undefined> => {
+    // A 404 is an answer (no regions.yaml yet, or a zone new on this side); anything else is a read
+    // that failed, and treating it as an empty file skipped the merge and committed over base.
     const at = (where: string, ref: string, name: string) =>
-      fetch(`https://raw.githubusercontent.com/${where}/${ref}/${ZONES}/${f.folder}/${name}`).then(r => (r.ok ? r.text() : ""));
+      fetch(`https://raw.githubusercontent.com/${where}/${ref}/${ZONES}/${f.folder}/${name}`).then(r => {
+        if (r.ok) return r.text();
+        if (r.status === 404) return "";
+        throw new Error(`could not re-read ${name} from ${where}@${ref} to merge against (HTTP ${r.status}); nothing was committed, try Save again`);
+      });
     const [regionsNow, mobsNow] = await Promise.all([at(repo(), ref(), "regions.yaml"), at(repo(), ref(), "mobs.yaml")]);
     if (!mobsNow) return undefined;
 
