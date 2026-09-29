@@ -4,9 +4,8 @@ Contributors sign in, draw regions, and press Save. Each save puts that zone on 
 own fork**, as exactly one commit. When they are done they click one link, which opens GitHub's pull
 request form already filled in. Nobody needs push access and nobody has to make a token.
 
-Everything funnels into **`sruon/server@regions-master`**: zone data is read from there, pull
-requests are opened against it, and pushing from there up to LandSandBoat is done by hand outside
-this editor.
+Everything goes to **`LandSandBoat/server@base`**: zone data is read from there and pull requests
+are opened against it. A `?repo=owner/name&ref=branch` link reads from somewhere else instead.
 
 ## The shape, and why
 
@@ -121,8 +120,10 @@ rather than counted.
 ## What the allowlist is, and is not
 
 It gates **who gets to use this editor**. It is not a boundary around LSB: nobody can push to `base`
-with or without it, and anyone who wants to can fork and open a pull request by hand today. It
-exists so the sign-in button is not an open door. Two consequences worth knowing:
+with or without it, and anyone who wants to can fork and open a pull request by hand today.
+`ALLOWED_LOGINS=*` lets every GitHub account in, which is how the published editor runs; a comma
+separated list of logins closes it again, and takes effect without a redeploy. Two consequences
+worth knowing:
 
 - It is checked when the token is issued, not on every write. Removing a login stops new sign-ins;
   it does not reach back and invalidate a token somebody already holds. Revoke the app installation
@@ -132,31 +133,38 @@ exists so the sign-in button is not an open door. Two consequences worth knowing
 
 ## What a contributor sees
 
-1. **Install & sign in** → github.com, choose the fork to install on, and back to the editor already
-   signed in. No code to type.
+1. **Sign in with GitHub** → github.com to authorise the app, and back to the editor already signed
+   in, with whatever was on screen restored. No code to type.
 2. If they have no fork, the panel says so and links to **Fork it on GitHub**. One click, then
-   "Done, check again". An app cannot fork on someone's behalf.
+   "Done, check again". An app cannot fork on someone's behalf. A fork under another name, such as
+   `server-1`, is found too.
 3. If they are signed in but the app is not installed on the fork, the panel says *that* and links
    to the install page. This case is worth catching properly: a user access token can read any
    **public** repository whether or not the app was installed, so the fork reads back perfectly and
    then refuses the first write. The editor asks `/user/installations` instead of inferring it from
    a successful read.
-4. The toolbar then shows `→ their-login/server@regions/<date>`, which is where Save goes.
+4. The toolbar then shows `→ their-login/server@regions/<date>`, which is where Save goes. The
+   panel stays open until nothing is left to do, and an expired session signs them out and says so.
 5. **Save** puts the zone on that branch as one commit. The branch covers a sitting: every zone
    touched that day is one commit on it, and saving a zone again rewrites *its* commit rather than
    adding another. Saving unchanged files does nothing at all.
 6. **Open pull request** appears once something is on the branch, and opens GitHub's form against
-   `regions-master` with the description already written, from `src/pr_template.md`.
+   `base` with the description already written, from `src/pr_template.md`. Once the pull request
+   exists it becomes **View pull request #N**, and later saves add to it. When it is merged or
+   closed, including by squash, the next save starts a new branch.
 
 ## How the branch is built
 
 The branch is rebuilt from the staging tip on every save rather than appended to. Each zone already
 on it is replayed as a single commit -- by blob reference, so nothing is re-uploaded -- the saved
-zone's commit is replaced, and the ref is force-moved to the result. Three things fall out of that:
+zone's commit is replaced, and the ref is force-moved to the result. Four things fall out of that:
 
 - one commit per zone stays true however many times a zone is saved;
 - a branch whose work has since been merged compares away to nothing, so the next save starts over
   from the new staging tip instead of dragging merged commits along;
+- a zone already on the branch that `base` has changed since would be reverted by replaying its old
+  files, so the save stops and names it instead; opening that zone and saving it again merges the
+  change in;
 - a save that changes nothing has to be recognised *before* the replay, since commit hashes take in
   the time they were made and a replay would otherwise mint new ones every time. That is why the
   editor computes git's own blob hash locally and compares it against what the branch already has.
