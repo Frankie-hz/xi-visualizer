@@ -7,7 +7,7 @@ import { storedToken } from "../github_auth";
 import { diffRegions, parseMobsYaml, parseRegionsYaml, zoneOfMobId } from "../regions";
 import type { RegionsDiff, ZoneSide } from "../regions";
 import { loadRoam, trailOf } from "../roam";
-import { isTyping } from "../util";
+import { isMissing, isTyping } from "../util";
 import { loadNavMesh, loadZoneMesh } from "../zone_mesh";
 
 /**
@@ -357,12 +357,14 @@ export default function RegionsDiffPage() {
           <span class="text-slate-400">{status()}</span>
         </Show>
         <Show when={zoneId()}>
-          <span class="text-slate-500">{roam.error ? "no roam data for this zone" : roam.loading ? "loading roam data…" : ""}</span>
+          <span class="text-slate-500">
+            {roam.error ? (isMissing(roam.error) ? "no roam data for this zone" : "roam data failed to load") : roam.loading ? "loading roam data…" : ""}
+          </span>
           <label class="flex items-center gap-2 text-slate-400 cursor-pointer" title="Draw the server's navmesh in place of the collision mesh">
             <input type="checkbox" checked={showNav()} onChange={e => setShowNav(e.currentTarget.checked)} />
             navmesh
             <Show when={showNav() && nav.error}>
-              <span class="text-slate-500">none for this zone</span>
+              <span class="text-slate-500">{isMissing(nav.error) ? "none for this zone" : "failed to load"}</span>
             </Show>
           </label>
         </Show>

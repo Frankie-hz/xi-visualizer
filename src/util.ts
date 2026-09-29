@@ -15,7 +15,9 @@ export async function decompress(bytes, format: CompressionFormat = "deflate") {
 export async function fetchProgress(url: string, setProgress: (progress: number) => any): Promise<ArrayBuffer> {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+    const error: any = new Error(`${url.split("/").pop()} → HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
 
   const contentLength = response.headers.get("content-length");
@@ -85,3 +87,6 @@ export const onActivate = (act: () => void) => (ev: KeyboardEvent) => {
   ev.preventDefault();
   act();
 };
+
+/** Whether a failed load means the thing does not exist, as opposed to failing to arrive. */
+export const isMissing = (e: unknown) => (e as { status?: number; })?.status === 404 || /^no navmesh/.test((e as Error)?.message ?? "");

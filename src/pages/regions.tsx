@@ -43,7 +43,7 @@ import {
   zoneOfMobId,
 } from "../regions";
 import type { Patrol, RegionSet, Spawn, ZoneState } from "../regions";
-import { copyText, decompress, fetchProgress } from "../util";
+import { copyText, decompress, fetchProgress, isMissing } from "../util";
 // The wording of a pull request is prose, so it lives in a file that can be edited as prose.
 import prTemplate from "../pr_template.md?raw";
 import { loadRoam } from "../roam";
@@ -1129,7 +1129,11 @@ export default function RegionsPage() {
             roam data
             <Show when={showRoam()}>
               <span class="text-slate-500">
-                {roam.error ? "none for this zone" : roam() ? `${(roam()!.count / 1000).toFixed(0)}k points` : "loading…"}
+                {roam.error
+                  ? (isMissing(roam.error) ? "none for this zone" : "failed to load, untick and tick to retry")
+                  : roam()
+                  ? `${(roam()!.count / 1000).toFixed(0)}k points`
+                  : "loading…"}
               </span>
             </Show>
           </label>
@@ -1137,7 +1141,7 @@ export default function RegionsPage() {
             <input type="checkbox" checked={showNav()} onChange={e => setShowNav(e.currentTarget.checked)} />
             navmesh
             <Show when={showNav() && nav.error}>
-              <span class="text-slate-500">none for this zone</span>
+              <span class="text-slate-500">{isMissing(nav.error) ? "none for this zone" : "failed to load, untick and tick to retry"}</span>
             </Show>
           </label>
         </Show>
