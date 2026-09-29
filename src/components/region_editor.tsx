@@ -3094,19 +3094,16 @@ export default function RegionEditor(props: RegionEditorProps) {
                 {growPlan()?.ring ? `${(growPlan()!.cells.size * OBSTACLE_CELL * OBSTACLE_CELL).toFixed(0)} y²` : growPlan()?.why ?? "…"} · esc cancels
               </span>
             </div>
-            <label class="flex items-center gap-2" title="Ground within this of a recorded sample is ground the mobs use and stays out of the hole">
-              <span class="w-24 text-slate-300">clearance</span>
-              <input
-                type="range"
-                class="flex-1"
-                min="0.5"
-                max="4"
-                step="0.25"
-                value={growClearance()}
-                onInput={e => setGrowClearance(Number(e.currentTarget.value))}
-              />
-              <span class="w-12 text-right font-mono text-slate-200">{growClearance()}y</span>
-            </label>
+            <Dial
+              label="clearance"
+              unit="y"
+              get={growClearance}
+              set={setGrowClearance}
+              min={0.5}
+              max={4}
+              step={0.25}
+              title="Ground within this many yalms of a recorded sample is ground the mobs use and stays out of the hole"
+            />
             <div class="flex gap-1">
               <button class="flex-1 px-2 py-1 bg-violet-700 hover:bg-violet-600 rounded disabled:opacity-40" disabled={!growPlan()?.ring} onClick={growHole}>
                 Apply
@@ -3122,19 +3119,16 @@ export default function RegionEditor(props: RegionEditorProps) {
                 <span class="text-[10px] uppercase tracking-wide text-slate-500">Merge holes</span>
                 <span class="text-slate-400">{plan().group.length} in the group · esc cancels</span>
               </div>
-              <label class="flex items-center gap-2" title="A hole whose edge is within this of the chosen one joins the merge">
-                <span class="w-24 text-slate-300">reach</span>
-                <input
-                  type="range"
-                  class="flex-1"
-                  min="0.25"
-                  max="12"
-                  step="0.25"
-                  value={mergeReach()}
-                  onInput={e => setMergeReach(Number(e.currentTarget.value))}
-                />
-                <span class="w-12 text-right font-mono text-slate-200">{mergeReach()}y</span>
-              </label>
+              <Dial
+                label="reach"
+                unit="y"
+                get={mergeReach}
+                set={setMergeReach}
+                min={0.25}
+                max={12}
+                step={0.25}
+                title="A hole whose edge is within this many yalms of the chosen one joins the merge"
+              />
               <div class="flex gap-1">
                 <button
                   class="flex-1 px-2 py-1 bg-violet-700 hover:bg-violet-600 rounded disabled:opacity-40"
@@ -3448,7 +3442,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             <div class="text-slate-400">
               {Math.abs(ringArea(active()?.rings[holeHover()!.index] ?? [])).toFixed(0)} y² · {active()?.rings[holeHover()!.index]?.length ?? 0} vertices
             </div>
-            <div class="text-slate-500">right-click to delete or merge</div>
+            <div class="text-slate-500">right-click to delete, merge or grow it</div>
           </div>
         </Show>
         <Show when={hover()}>
