@@ -1,5 +1,6 @@
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { Patrol, Spawn } from "../regions";
+import { COLORS, css } from "../theme";
 import { copyText, onActivate } from "../util";
 
 export type MobStatus = "region" | "route" | "fixed" | "nowhere";
@@ -87,8 +88,8 @@ export default function MobList(props: MobListProps) {
   const colorFor = (s: Spawn) => {
     const where = statusOfSpawn(s);
     if (where === "region") return props.colorOf(props.assign[s.id][0]);
-    if (where === "route") return "#a78bfa";
-    return where === "fixed" ? "#94a3b8" : "#f87171";
+    if (where === "route") return css(COLORS.route);
+    return css(where === "fixed" ? COLORS.fixed : COLORS.removed);
   };
 
   const label = (s: Spawn) => {

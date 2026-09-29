@@ -10,6 +10,7 @@ import { createViewer } from "../graphics/viewer";
 import { ColorKind, createZoneMesh, prepareMeshData } from "../graphics/ximesh";
 import { regionDifference } from "../regions";
 import type { Region, RegionsDiff, ZoneSide } from "../regions";
+import { COLORS, css } from "../theme";
 import { copyText } from "../util";
 import type { ZoneData } from "./zone_model";
 
@@ -17,12 +18,7 @@ THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
 THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
-export const STATUS_COLOR = {
-  added: 0x34d399,
-  removed: 0xf87171,
-  reshaped: 0xfbbf24,
-  unchanged: 0x64748b,
-} as const;
+export const STATUS_COLOR = { added: COLORS.added, removed: COLORS.removed, reshaped: COLORS.reshaped, unchanged: COLORS.unchanged } as const;
 
 export type ChangeStatus = keyof typeof STATUS_COLOR;
 
@@ -573,7 +569,7 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
               <div
                 ref={el => labelRefs.set(name, el)}
                 class="absolute top-0 left-0 hidden whitespace-nowrap text-xs font-bold px-1.5 py-0.5 rounded bg-slate-900/80 pointer-events-auto cursor-pointer hover:bg-slate-800"
-                style={{ color: `#${STATUS_COLOR[kind].toString(16)}` }}
+                style={{ color: css(STATUS_COLOR[kind]) }}
                 title={`Look at ${name}`}
                 onClick={() => props.onPick?.(name)}
               >
@@ -596,7 +592,7 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
       <div class="absolute top-2 left-2 flex gap-3 text-xs bg-slate-900/75 rounded px-2 py-1 pointer-events-none">
         <For each={Object.entries(STATUS_COLOR)}>
           {([kind, color]) => (
-            <span style={{ color: `#${color.toString(16).padStart(6, "0")}` }}>
+            <span style={{ color: css(color) }}>
               {kind}
               <Show when={kind === "reshaped"}>
                 <span class="text-slate-500">(dashed = before, red ground = cut away, green = taken in)</span>
@@ -604,7 +600,7 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
             </span>
           )}
         </For>
-        <span style={{ color: `#${STATUS_COLOR.reshaped.toString(16).padStart(6, "0")}` }}>● mob reassigned</span>
+        <span style={{ color: css(STATUS_COLOR.reshaped) }}>● mob reassigned</span>
       </div>
       <Show when={cursor()}>
         <div

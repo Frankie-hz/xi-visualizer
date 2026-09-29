@@ -30,6 +30,7 @@ import { containsXZ, regionAt, regionHue, regionsFromPoints, repairRegion, route
 import type { Finding, Patrol, Region, RegionSet, Ring, Spawn, TrailPoint, Vertex } from "../regions";
 import type { RoamData } from "../roam";
 import { GROUND_SNAP, putOnGround, SPIKE } from "../terrain";
+import { COLORS, css } from "../theme";
 import { copyText, isTyping, onActivate } from "../util";
 import Dial, { type DialSpec } from "./dial";
 import MobList from "./region_mob_list";
@@ -88,7 +89,7 @@ const OBSTACLE_DEFAULTS = {
 };
 
 const GOLDEN = 0.61803398875; // successive regions land far apart on the colour wheel
-const PATH_COLOR = 0xa78bfa; // routes are violet, clear of the region hues and the cyan trails
+const PATH_COLOR = COLORS.route;
 
 export default function RegionEditor(props: RegionEditorProps) {
   let canvasElement: HTMLCanvasElement;
@@ -2720,7 +2721,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                   ref={el => pathLabelRefs.set(group.lead, el)}
                   class="absolute top-0 left-0 hidden whitespace-nowrap text-xs font-bold px-1.5 py-0.5 rounded bg-slate-900/75 cursor-pointer hover:bg-slate-900 hover:ring-1 hover:ring-slate-500"
                   classList={{ "pointer-events-auto": mode() !== "draw", "pointer-events-none": mode() === "draw" }}
-                  style={{ color: `#${PATH_COLOR.toString(16)}` }}
+                  style={{ color: css(PATH_COLOR) }}
                   title={`Edit ${spawn()?.name ?? group.lead}'s route, right-click for more`}
                   onClick={() => selectRoute(group.lead)}
                   onContextMenu={e => (e.preventDefault(), setMenu({ kind: "route", lead: group.lead, x: e.clientX, y: e.clientY }))}
@@ -2755,7 +2756,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             <Show when={walkerSpawn()}>
               {spawn => (
                 <div>
-                  Editing the route of <b style={{ color: `#${PATH_COLOR.toString(16)}` }}>{spawn().name}</b> <span class="text-slate-400">{spawn().id}</span>
+                  Editing the route of <b style={{ color: css(PATH_COLOR) }}>{spawn().name}</b> <span class="text-slate-400">{spawn().id}</span>
                   <Show when={mirror().length}>
                     <span class="text-slate-400">{` and ${mirror().length} more`}</span>
                   </Show>
@@ -2780,7 +2781,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             <Show when={replaySpawn()}>
               {spawn => (
                 <div>
-                  Replaying <b style={{ color: "#fbbf24" }}>{spawn().name}</b>{" "}
+                  Replaying <b style={{ color: css(COLORS.reshaped) }}>{spawn().name}</b>{" "}
                   <span class="text-slate-400">
                     {replayAt()} of {replayTrail().length} points{replayClock() ? `, ${replayClock()}` : ""}
                   </span>{" "}

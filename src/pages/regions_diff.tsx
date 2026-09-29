@@ -7,6 +7,7 @@ import { storedToken } from "../github_auth";
 import { diffRegions, parseMobsYaml, parseRegionsYaml, zoneOfMobId } from "../regions";
 import type { RegionsDiff, ZoneSide } from "../regions";
 import { loadRoam, trailOf } from "../roam";
+import { css } from "../theme";
 import { isMissing, isTyping } from "../util";
 import { loadNavMesh, loadZoneMesh } from "../zone_mesh";
 
@@ -262,7 +263,7 @@ export default function RegionsDiffPage() {
   const total = (d: RegionsDiff) =>
     d.added.length + d.removed.length + d.reshaped.length + d.moved.length + d.rerouted.length + d.relocated.length + d.addedSpawns.length
     + d.removedSpawns.length;
-  const swatch = (kind: keyof typeof STATUS_COLOR) => `#${STATUS_COLOR[kind].toString(16).padStart(6, "0")}`;
+  const swatch = (kind: keyof typeof STATUS_COLOR) => css(STATUS_COLOR[kind]);
 
   // What a maintainer wants off a glance is not the geometry, it is the blast radius: how many mobs
   // this region places and where any of them went. A region that shrank by half with nothing in it
