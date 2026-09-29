@@ -3093,6 +3093,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         <Show when={menu()}>
           <div
             ref={menuElement}
+            role="menu"
             class="fixed z-[100] min-w-44 bg-slate-900 border border-slate-600 rounded shadow-lg py-1 text-xs"
             style={{ left: `${menu()!.x}px`, top: `${menu()!.y}px` }}
           >

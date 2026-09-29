@@ -48,14 +48,12 @@ const text = () => page.evaluate(() => document.body.innerText);
 const rows = () => page.evaluate(() => document.querySelectorAll('div[title*="click to keep its trail"]').length);
 const menu = () =>
   page.evaluate(() => {
-    const el = [...document.querySelectorAll("div")].find(d =>
-      typeof d.className === "string" && d.className.includes("z-50") && d.querySelector("button")
-    );
+    const el = document.querySelector('[role="menu"]');
     return el ? el.innerText.replace(/\n/g, " | ") : null;
   });
 const clickMenu = pattern =>
   page.evaluate(p => {
-    const el = [...document.querySelectorAll("div")].find(d => typeof d.className === "string" && d.className.includes("z-50"));
+    const el = document.querySelector('[role="menu"]');
     [...el.querySelectorAll("button")].find(b => new RegExp(p).test(b.innerText)).click();
   }, pattern);
 const label = name =>
