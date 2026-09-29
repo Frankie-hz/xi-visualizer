@@ -2916,7 +2916,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             </div>
           )}
         </Show>
-        <Show when={mode() === "obstacles" && !props.readOnly && !merge()}>
+        <Show when={mode() === "obstacles" && !props.readOnly && !merge() && !grow()}>
           <div class="absolute top-10 right-2 z-30 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
             <div class="flex items-center justify-between">
               <span class="text-[10px] uppercase tracking-wide text-slate-500">Carve holes</span>
