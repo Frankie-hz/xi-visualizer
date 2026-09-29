@@ -589,7 +589,7 @@ export default function RegionsPage() {
       // The working branch first when it carries this zone, since that is where the newest version
       // of it is; staging otherwise, and always in a local folder.
       const mine = sitting()?.ancestor && branchZones().some(z => z.zone === folder)
-        ? { repo: forkRepo(), ref: branchName() }
+        ? { repo: forkRepo(), ref: sitting()?.head ?? branchName() }
         : { repo: repo(), ref: ref() };
       const url = (name: string) =>
         local()
@@ -928,7 +928,13 @@ export default function RegionsPage() {
         setDirty(false);
         clearDraft(f.folder);
       }
-      setSitting({ ...sitting()!, branch: branchName(), zones: result.zones, ancestor: sitting()?.ancestor ?? "committed" });
+      setSitting({
+        ...sitting()!,
+        branch: branchName(),
+        zones: result.zones,
+        ancestor: sitting()?.ancestor ?? "committed",
+        head: result.sha ?? sitting()?.head,
+      });
       if (result.onBranch) setPushed(true);
     } catch (e) {
       if (refusedForWorkflows(e)) {

@@ -390,6 +390,9 @@ export interface Sitting {
   branch: string;
   /** Absent when the branch does not exist yet, i.e. nothing has been committed this sitting. */
   ancestor?: string;
+  /** The branch's newest commit. Files are read at this rather than by branch name, which GitHub's
+   * raw file cache can serve from before the last save for a few minutes. */
+  head?: string;
   /** What the branch already carries, so a pull request can be opened without saving again. */
   zones: ZoneOnBranch[];
   /** The open pull request for the branch, once there is one: saves go on adding to it. */
@@ -427,9 +430,11 @@ export async function findSitting(
     const pulls: any[] = (await ghMaybe(token, `/repos/${baseRepo}/pulls?head=${owner}:${encodeURIComponent(branch)}&state=all&per_page=10`)) ?? [];
     if (pulls.length && pulls.every(p => p.state === "closed")) continue;
     const open = pulls.find(p => p.state === "open");
+    const head = diff.commits?.at(-1)?.sha;
     return {
       branch,
       ancestor: diff.merge_base_commit?.sha,
+      ...(head ? { head } : {}),
       zones: zonesInCommits(diff.commits),
       ...(open ? { pr: { number: open.number, url: open.html_url } } : {}),
     };

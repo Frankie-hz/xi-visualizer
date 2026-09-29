@@ -192,6 +192,18 @@ fakeGitHub({
 });
 assert.deepStrictEqual(await findSitting("t", FORK, UPSTREAM, "regions-master", TODAY), { branch: `${TODAY}-2`, zones: [] }, "a merged pull request ends it");
 
+// The newest commit comes along, so the zone can be read at it rather than through a cache.
+fakeGitHub({
+  ...sittingRoutes,
+  "/repos/someone/server/git/matching-refs/heads/regions/": [{ ref: `refs/heads/${TODAY}` }],
+  [`/repos/someone/server/compare/base-sha...${TODAY}`]: {
+    ahead_by: 1,
+    merge_base_commit: { sha: "cut-from" },
+    commits: [{ sha: "c1", commit: { message: "a: x" } }, { sha: "c2", commit: { message: "b: y" } }],
+  },
+});
+assert.strictEqual((await findSitting("t", FORK, UPSTREAM, "regions-master", TODAY)).head, "c2");
+
 // Its pull request still open: saves go on adding to it, and the page can say which one.
 fakeGitHub({
   ...sittingRoutes,
