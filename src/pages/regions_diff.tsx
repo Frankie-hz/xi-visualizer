@@ -550,6 +550,9 @@ export default function RegionsDiffPage() {
             </div>
 
             <div class="w-96 flex flex-col bg-slate-800 rounded-lg p-2 overflow-y-auto text-sm">
+              <div class="text-[10px] text-slate-500 px-1 pb-1">
+                <kbd>j</kbd>/<kbd>k</kbd> next or previous change · <kbd>[</kbd>/<kbd>]</kbd> zone · <kbd>esc</kbd> whole zone
+              </div>
               <Show when={total(sides()!.diff) === 0}>
                 <div class="text-emerald-500 p-2">No region or spawn placement changed in this zone.</div>
               </Show>
