@@ -48,6 +48,18 @@ export async function ghPublic(path: string, token?: string): Promise<any> {
   throw error;
 }
 
+/**
+ * The pull request a pasted link, `owner/repo#123`, `#123` or bare number names. A bare number is on
+ * `repo`. Anything else is not a pull request.
+ */
+export function parsePr(input: string, repo = UPSTREAM): { repo: string; number: number; } | undefined {
+  const text = input.trim();
+  const link = text.match(/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/);
+  if (link) return { repo: link[1], number: Number(link[2]) };
+  const short = text.match(/^(?:([\w.-]+\/[\w.-]+)#|#)?(\d+)$/);
+  return short ? { repo: short[1] ?? repo, number: Number(short[2]) } : undefined;
+}
+
 /** Every page of a listing that pages with per_page/page, up to `max` pages. */
 export async function ghPublicPages(path: string, token?: string, max = 30): Promise<any[]> {
   const out: any[] = [];

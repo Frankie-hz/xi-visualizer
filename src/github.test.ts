@@ -14,6 +14,7 @@ import {
   freeBranchName,
   ghPublic,
   ghPublicPages,
+  parsePr,
   prTitle,
   refusedForWorkflows,
   save,
@@ -86,6 +87,13 @@ publicCalls = [];
 };
 assert.strictEqual((await ghPublicPages("/repos/a/b/pulls/1/files")).length, 107);
 assert.strictEqual(publicCalls.length, 2, "stopped at the short page");
+
+// A pull request can arrive as a link, the /files or /changes view of one, or a number.
+assert.deepStrictEqual(parsePr("https://github.com/LandSandBoat/server/pull/11610/changes"), { repo: "LandSandBoat/server", number: 11610 });
+assert.deepStrictEqual(parsePr(" #11610 "), { repo: "LandSandBoat/server", number: 11610 });
+assert.deepStrictEqual(parsePr("11610", "sruon/server"), { repo: "sruon/server", number: 11610 });
+assert.deepStrictEqual(parsePr("someone/server#7"), { repo: "someone/server", number: 7 });
+assert.strictEqual(parsePr("regions/2026-09-01"), undefined, "a branch name is not a pull request");
 
 // --- finding the fork ---
 
