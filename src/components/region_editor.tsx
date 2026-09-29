@@ -1053,67 +1053,57 @@ export default function RegionEditor(props: RegionEditorProps) {
   const gapsWhyNot = () =>
     !props.roam ? "turn on roam data to find them" : !memberTrailAll().length ? "none: no mob in this region has a roam trail" : undefined;
   const gapAt = (x: number, z: number) => gaps().find(g => inRing(g, x, z));
-  /** Cuts holes for the given rings, each through the clipper on its own, like ringObstacles. */
-  const cutRings = (rings: Ring[]) => {
+  /** True while a batch of holes is being cut, which takes the carve controls and map clicks out. */
+  const [cutting, setCutting] = createSignal(false);
+  /**
+   * Cuts a hole for each ring, one at a time through the clipper, so a ring that overlaps an earlier
+   * one becomes part of it and one that crosses the outline carves a bay rather than hanging
+   * outside. A ring that would cut the region in two is skipped and counted, for the person to
+   * handle. It yields every few rings: a few hundred of them is seconds of work, and a page that
+   * stops painting for that long looks like it crashed.
+   */
+  const cutHoles = async (rings: Ring[], [one, many]: [string, string]) => {
     const name = activeName();
     const entry = regions().find(r => r.name === name);
-    if (!name || !entry || !rings.length) return;
+    if (!name || !entry || !rings.length || cutting()) return;
+    setCutting(true);
     let shape: Region = { rings: entry.rings.map(ring => ring.map(v => [...v] as Vertex)) };
     const outlineArea = Math.abs(ringArea(entry.rings[0]));
     let done = 0, skipped = 0;
-    for (const ring of rings) {
-      const one = asOne(repairRegion({ rings: [...shape.rings, ring] }), outlineArea);
-      if (!one) {
-        skipped++;
-        continue;
+    try {
+      for (let i = 0; i < rings.length; i++) {
+        if (i && i % 8 === 0) {
+          flash(`cutting ${i} of ${rings.length} ${many}…`);
+          await new Promise(resolve => setTimeout(resolve));
+        }
+        const joined = asOne(repairRegion({ rings: [...shape.rings, rings[i]] }), outlineArea);
+        if (!joined) {
+          skipped++;
+          continue;
+        }
+        shape = joined;
+        done++;
       }
-      shape = one;
-      done++;
+    } finally {
+      setCutting(false);
     }
     if (done) {
-      checkpoint(done === 1 ? "cut an empty patch" : `cut ${done} empty patches`);
-      setRegions(rs => rs.map(r => (r.name === name ? { name, rings: shape.rings.map(onGround) } : r)));
-      // Settled now rather than in 400ms, so what was just cut drops off the list before a second click can cut it again.
-      setSettled(regions());
-    }
-    if (skipped) flash(`${skipped} empty patch${skipped === 1 ? "" : "es"} would cut ${name} in two; left alone`, "warn");
-  };
-  /**
-   * Cuts a hole around each obstacle. Every ring goes through the clipper at once, so one that
-   * overlaps another ring becomes part of it and one that crosses the outline carves a bay into
-   * it rather than being left hanging outside. A ring that would cut the region in two is skipped
-   * and counted, for the person to handle.
-   */
-  const ringObstacles = (list: Obstacle[]) => {
-    const name = activeName();
-    const entry = regions().find(r => r.name === name);
-    if (!name || !entry || !list.length) return;
-    // One ring per obstacle, so a pocket of sampled ground fenced between two rocks costs only
-    // the ring that closes it, not every ring merged with it; the clipper joins what overlaps.
-    const rings = list.flatMap(o => ringsAround([o], obstacleMargin(), OBSTACLE_CELL, walkedCells())).map(onGround);
-    let shape: Region = { rings: entry.rings.map(ring => ring.map(v => [...v] as Vertex)) };
-    const outlineArea = Math.abs(ringArea(entry.rings[0]));
-    let done = 0;
-    let skipped = 0;
-    for (const ring of rings) {
-      const one = asOne(repairRegion({ rings: [...shape.rings, ring] }), outlineArea);
-      if (!one) {
-        skipped++;
-        continue;
-      }
-      shape = one;
-      done++;
-    }
-    if (done) {
-      checkpoint(done === 1 ? "ring an obstacle" : `ring ${done} obstacles`);
+      checkpoint(done === 1 ? `cut ${one}` : `cut ${done} ${many}`);
       // Where a ring carved a bay, the clipper's new corners borrowed a neighbour's height; every
       // ring goes back onto the terrain so the outline does not dip under it.
       setRegions(rs => rs.map(r => (r.name === name ? { name, rings: shape.rings.map(onGround) } : r)));
-      // Settled now rather than in 400ms, so what was just cut drops off the list before a second click can cut it again.
+      // Settled now rather than in 400ms, so what was just cut leaves the list before a second
+      // click can cut it again.
       setSettled(regions());
+      if (!skipped) flash(done === 1 ? `cut ${one}` : `cut ${done} ${many}`);
     }
-    if (skipped) flash(`${skipped} ring${skipped === 1 ? "" : "s"} would cut ${name} in two; left alone`, "warn");
+    if (skipped) flash(`${skipped} of those would cut ${name} in two, so they were left alone`, "warn");
   };
+  const cutRings = (rings: Ring[]) => cutHoles(rings, ["an empty patch", "empty patches"]);
+  // One ring per obstacle, so a pocket of sampled ground fenced between two rocks costs only the
+  // ring that closes it, not every ring merged with it; the clipper joins what overlaps.
+  const ringObstacles = (list: Obstacle[]) =>
+    cutHoles(list.flatMap(o => ringsAround([o], obstacleMargin(), OBSTACLE_CELL, walkedCells())).map(onGround), ["around an obstacle", "around obstacles"]);
 
   const editActive = (fn: (r: RegionEntry) => void) => {
     const name = activeName();
@@ -2582,7 +2572,7 @@ export default function RegionEditor(props: RegionEditorProps) {
 
       if (mode() === "obstacles") {
         // A grow or merge plan is open over the map: its preview is what is being decided on.
-        if (grow() || merge()) return;
+        if (grow() || merge() || cutting()) return;
         const p = pickZonePoint(lastY(active()));
         const o = p && obstacleAt(obstacles(), p.x, p.z, obstacleMargin(), OBSTACLE_CELL);
         if (o) ringObstacles([o]);
@@ -3213,7 +3203,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             <div class="flex gap-1">
               <button
                 class="flex-1 px-2 py-1 bg-amber-700 hover:bg-amber-600 rounded disabled:opacity-40"
-                disabled={!bulk().length}
+                disabled={!bulk().length || cutting()}
                 title="Ring every obstacle up to the size above; each one goes through the clipper on its own"
                 onClick={() => ringObstacles(bulk())}
               >
@@ -3221,7 +3211,7 @@ export default function RegionEditor(props: RegionEditorProps) {
               </button>
               <button
                 class="flex-1 px-2 py-1 bg-violet-700 hover:bg-violet-600 rounded disabled:opacity-40"
-                disabled={!gaps().length}
+                disabled={!gaps().length || cutting()}
                 title="Cut every empty patch as a hole"
                 onClick={() => cutRings(gaps())}
               >
