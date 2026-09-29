@@ -24,7 +24,7 @@ const SHORTCUTS: { title: string; keys: [string, string][]; }[] = [
   {
     title: "Route",
     keys: [
-      ["right-click", "a mob or a region to make it a patrol"],
+      ["right-click", "a mob or a region to give it a route"],
       ["click", "while drawing, add a leg"],
       ["drag", "a waypoint to move it"],
       ["enter", "finish drawing the legs"],
@@ -32,11 +32,11 @@ const SHORTCUTS: { title: string; keys: [string, string][]; }[] = [
     ],
   },
   {
-    title: "Spawns",
+    title: "Mobs",
     keys: [
-      ["click", "a spawn dot to assign it to the selected region"],
+      ["click", "a mob's dot to put it in the selected region, again to take it out"],
       ["shift+click", "a dot, or + in the Mobs panel on the left, to add the region to the ones it already has"],
-      ["drag", "a spawn dot into a polygon to assign it there"],
+      ["drag", "a mob's dot into a region to put it there"],
       ["hover", "a dot or a list row to show its roam trail"],
       ["right-click", "a mob to replay its trail and see which way it walks"],
       ["click", "a list row to keep that trail on screen"],

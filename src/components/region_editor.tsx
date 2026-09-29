@@ -1186,7 +1186,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     const lead = candidates[0]?.walker ?? members[0];
     const legs = traced?.legs ?? [];
 
-    checkpoint(`${name} to a patrol`);
+    checkpoint(`${name} to a route`);
     setPaths(all => {
       const next = { ...all };
       for (const m of members) next[m.id] = { legs: legs.map(v => [...v] as Vertex) };
@@ -2971,7 +2971,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             <Show when={walkerSpawn()}>
               {spawn => (
                 <div>
-                  Editing patrol for <b style={{ color: `#${PATH_COLOR.toString(16)}` }}>{spawn().name}</b> <span class="text-slate-400">{spawn().id}</span>
+                  Editing the route of <b style={{ color: `#${PATH_COLOR.toString(16)}` }}>{spawn().name}</b> <span class="text-slate-400">{spawn().id}</span>
                   <Show when={mirror().length}>
                     <span class="text-slate-400">{` and ${mirror().length} more`}</span>
                   </Show>
@@ -3252,7 +3252,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                       class="block w-full text-left px-3 py-1 hover:bg-slate-700"
                       onClick={() => (convertToPatrol(name()), setMenu(null))}
                     >
-                      Convert to patrol ({mobs(props.spawns.filter(s => assign()[s.id]?.includes(name())).length)})
+                      Turn into a route ({mobs(props.spawns.filter(s => assign()[s.id]?.includes(name())).length)})
                     </button>
                     <button class="block w-full text-left px-3 py-1 hover:bg-slate-700" onClick={() => (repairShape(name()), setMenu(null))}>
                       Repair the shape
@@ -3331,7 +3331,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                       class="block w-full text-left px-3 py-1 hover:bg-slate-700"
                       onClick={() => (startPath(spawn()), setMenu(null))}
                     >
-                      Trace a patrol route
+                      Trace a route
                     </button>
                   </Show>
                   <button
@@ -3459,7 +3459,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             <div style={{ color: assign()[hover()!.spawn.id]?.length ? cssOf(assign()[hover()!.spawn.id][0]) : "#888" }}>
               {/* "or", not "and": the server picks one of them each time the mob spawns. */}
               {assign()[hover()!.spawn.id]?.join(" or ")
-                ?? (paths()[hover()!.spawn.id] ? "walks a route" : "unassigned or static")}
+                ?? (paths()[hover()!.spawn.id] ? "walks a route" : "no region: stands on its fixed point")}
             </div>
             <Show when={props.roam?.ranges[hover()!.spawn.id]}>
               <div class="text-slate-400">{props.roam!.ranges[hover()!.spawn.id][1]} roam points</div>
@@ -3556,7 +3556,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             <Show when={!walker()}>a route replaces a mob's spawn point, so it walks its legs instead</Show>
           </div>
           <div class="flex-1 overflow-y-auto">
-            <For each={Object.entries(paths())} fallback={<div class="text-slate-500 p-2">No patrol routes yet.</div>}>
+            <For each={Object.entries(paths())} fallback={<div class="text-slate-500 p-2">No routes yet.</div>}>
               {([id, patrol]) => {
                 const spawn = () => props.spawns.find(s => s.id === id);
                 return (
@@ -3679,7 +3679,7 @@ export default function RegionEditor(props: RegionEditorProps) {
 
           <label class="flex items-center gap-2 mb-1 text-xs text-slate-400 cursor-pointer">
             <input type="checkbox" checked={hideAssigned()} onChange={e => setHideAssigned(e.currentTarget.checked)} />
-            hide assigned spawns ({props.spawns.length - Object.keys(assign()).length} left)
+            hide mobs that have a region ({props.spawns.length - Object.keys(assign()).length} left)
           </label>
           <label class="flex items-center gap-2 mb-2 text-xs text-slate-400 cursor-pointer">
             <input type="checkbox" checked={terrainColors()} onChange={e => setTerrainColors(e.currentTarget.checked)} />
@@ -3722,14 +3722,16 @@ export default function RegionEditor(props: RegionEditorProps) {
                     {vertexCount(r)}v{r.rings.length > 1 ? `+${r.rings.length - 1}h` : ""} · {spawnCounts()[r.name] ?? 0}
                   </span>
                   <Show when={coverage()[r.name] !== undefined}>
+                    {/* From the last Review check, and dimmed once the regions have moved on from it. */}
                     <span
                       class="text-xs"
+                      style={{ opacity: reviewStale() ? 0.45 : 1 }}
                       classList={{
                         "text-slate-500": coverage()[r.name] >= 0.9,
                         "text-amber-400": coverage()[r.name] < 0.9 && coverage()[r.name] >= 0.7,
                         "text-red-400": coverage()[r.name] < 0.7,
                       }}
-                      title="Share of its mobs' roam points that fall inside this polygon"
+                      title={`Share of its mobs' roam points inside this region${reviewStale() ? ", as of the last Review check; open Review to recount" : ""}`}
                     >
                       {(coverage()[r.name] * 100).toFixed(0)}%
                     </span>
@@ -3761,7 +3763,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             <div class="border-t border-slate-700 mt-2 pt-2 space-y-2">
               <input
                 type="text"
-                placeholder="Filter spawns (template or id)..."
+                placeholder="Filter mobs (name or id)…"
                 class="w-full px-2 py-1 bg-slate-700 rounded"
                 value={filter()}
                 onInput={e => setFilter(e.currentTarget.value)}

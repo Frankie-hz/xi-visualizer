@@ -90,21 +90,21 @@ try {
   assert.ok(at, "found a region label on the map");
   await page.mouse.click(at.x, at.y, { button: "right" });
   await settle(400);
-  assert.match(await menu(), /Convert to patrol/, "the region menu opened");
-  await clickMenu("Convert to patrol");
+  assert.match(await menu(), /Turn into a route/, "the region menu opened");
+  await clickMenu("Turn into a route");
   await settle(2500);
 
   const after = await tally();
   assert.ok(after.Routes > before.Routes, `the routes exist, got ${after.Routes} from ${before.Routes}`);
   assert.strictEqual(after.Regions, before.Regions - 1, "the region it replaced is gone");
-  assert.match(await text(), /Editing patrol for/, "the banner says what is being edited");
+  assert.match(await text(), /Editing the route of/, "the banner says what is being edited");
 
   await page.keyboard.down("Control");
   await page.keyboard.press("z");
   await page.keyboard.up("Control");
   await settle(800);
   assert.deepStrictEqual(await tally(), before, "undo put the zone back exactly as it was");
-  assert.doesNotMatch(await text(), /Editing patrol for/, "and stopped editing what it removed");
+  assert.doesNotMatch(await text(), /Editing the route of/, "and stopped editing what it removed");
 
   // backing out of a new region leaves neither an empty row nor a step in History
   const press = label => page.evaluate(l => [...document.querySelectorAll("button")].find(b => b.innerText.startsWith(l)).click(), label);
@@ -149,7 +149,7 @@ try {
   await settle(400);
   const offered = await menu();
   assert.match(offered, /Centre on it/, "the region menu opened while reviewing");
-  assert.doesNotMatch(offered, /Convert|Repair|Delete/, "and offers no edits");
+  assert.doesNotMatch(offered, /route|Repair|Delete/, "and offers no edits");
   await page.keyboard.press("Escape");
   await page.mouse.click(seen.x, seen.y);
   await settle(600);
@@ -161,7 +161,7 @@ try {
   const again = await label("e_46");
   await page.mouse.click(again.x, again.y, { button: "right" });
   await settle(400);
-  await clickMenu("Convert to patrol");
+  await clickMenu("Turn into a route");
   await settle(100); // well inside the autosave debounce
   await page.reload({ waitUntil: "domcontentloaded" });
   await settle(ZONE_READY);
