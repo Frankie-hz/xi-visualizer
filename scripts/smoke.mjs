@@ -130,6 +130,19 @@ try {
   await settle(600);
   assert.match(await text(), /Viewing region e_46/, "clicking a label selects the region");
 
+  // an edit made just before leaving is in the draft when the zone opens again
+  await page.goto(URL, { waitUntil: "domcontentloaded" });
+  await settle(ZONE_READY);
+  const again = await label("e_46");
+  await page.mouse.click(again.x, again.y, { button: "right" });
+  await settle(400);
+  await clickMenu("Convert to patrol");
+  await settle(100); // well inside the autosave debounce
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await settle(ZONE_READY);
+  assert.match(await text(), /Unsaved work on west_ronfaure/, "the edit survived the reload");
+  await press("Discard");
+
   assert.deepStrictEqual(errors, [], "no errors on the page");
   console.log("ok");
 } catch (e) {
