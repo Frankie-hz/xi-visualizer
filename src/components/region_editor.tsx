@@ -296,11 +296,17 @@ export default function RegionEditor(props: RegionEditorProps) {
   };
   const asSet = (list: RegionEntry[]): RegionSet => Object.fromEntries(list.map(r => [r.name, { rings: r.rings }]));
 
-  // Colour by position, so each region added is visibly distinct from the last. Regions the list
-  // no longer holds (a spawn pointing at a deleted one) fall back to the name hash.
+  // Colour by the order regions first appeared, so each one added is visibly distinct from the
+  // last, and deleting one does not repaint every region after it. Renaming keeps the colour, and
+  // undoing a delete brings it back in its own. Regions the list no longer holds (a spawn pointing
+  // at a deleted one) fall back to the name hash.
+  const hueSlots = new Map<string, number>();
   const hues = createMemo(() => {
     const map: Record<string, number> = {};
-    regions().forEach((r, i) => (map[r.name] = (i * GOLDEN + 0.11) % 1));
+    for (const r of regions()) {
+      if (!hueSlots.has(r.name)) hueSlots.set(r.name, hueSlots.size);
+      map[r.name] = (hueSlots.get(r.name)! * GOLDEN + 0.11) % 1;
+    }
     return map;
   });
   // Tolerates a missing name: Solid re-runs a Show's children once before tearing them down, so
@@ -1184,6 +1190,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     if (regions().some(r => r.name === to && r.name !== from)) return (flash(`${to} is already a region's name`, "warn"), false);
     if (to === from) return true;
     checkpoint(`rename ${from} to ${to}`);
+    if (!hueSlots.has(to)) hueSlots.set(to, hueSlots.get(from) ?? hueSlots.size);
     setRegions(rs => rs.map(r => (r.name === from ? { ...r, name: to } : r)));
     setAssign(a => Object.fromEntries(Object.entries(a).map(([id, ns]) => [id, ns.map(n => (n === from ? to : n))])));
     if (activeName() === from) setActiveName(to);
