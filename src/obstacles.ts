@@ -1,3 +1,4 @@
+import { segmentDistance, signedArea } from "./geometry.ts";
 import { simplifyRing } from "./regions.ts";
 import type { Ring, Vertex } from "./regions.ts";
 
@@ -392,11 +393,7 @@ function simplifyKeeping(ring: Ring, minArea: number, cell: number, avoid: Set<n
   // cell and not just its centre: a sample sits anywhere in its cell, and a diagonal that clips
   // the cell's corner would put it inside the ring.
   const reach = cell * Math.SQRT1_2;
-  const segDist = (px: number, pz: number, a: Vertex, b: Vertex) => {
-    const dx = b[0] - a[0], dz = b[2] - a[2];
-    const t = dx || dz ? Math.max(0, Math.min(1, ((px - a[0]) * dx + (pz - a[2]) * dz) / (dx * dx + dz * dz))) : 0;
-    return Math.hypot(px - a[0] - t * dx, pz - a[2] - t * dz);
-  };
+  const segDist = (px: number, pz: number, a: Vertex, b: Vertex) => segmentDistance(px, pz, a[0], a[2], b[0], b[2]);
   const covers = (a: Vertex, b: Vertex, c: Vertex) => {
     const minX = Math.min(a[0], b[0], c[0]) - reach, maxX = Math.max(a[0], b[0], c[0]) + reach;
     const minZ = Math.min(a[2], b[2], c[2]) - reach, maxZ = Math.max(a[2], b[2], c[2]) + reach;
@@ -443,16 +440,6 @@ export function ringAround(o: Obstacle, margin: number, cell = 0.5, avoid?: Set<
   const rings = ringsAround([o], margin, cell, avoid);
   return rings.reduce((best, r) => (r.length > best.length ? r : best), [] as Ring);
 }
-
-const signedArea = (ring: Ring) => {
-  let sum = 0;
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i];
-    const b = ring[(i + 1) % ring.length];
-    sum += a[0] * b[2] - b[0] * a[2];
-  }
-  return sum / 2;
-};
 
 /** Area of an obstacle's footprint in square yalms, for telling a trunk from a cliff. */
 export function obstacleArea(o: Obstacle, cell = 0.5): number {

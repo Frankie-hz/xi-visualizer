@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Sh
 import * as THREE from "three";
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { Line2, LineGeometry, LineMaterial, LineSegments2, LineSegmentsGeometry, MapControls } from "three/examples/jsm/Addons.js";
+import { convexHull, inRing, mostlyInside, ringDistance, signedArea, withinRing } from "../geometry";
 import { createMapCamera, fitCameraToContents } from "../graphics/camera";
 import { buildNavMeshGroup, parseNavMesh } from "../graphics/navmesh";
 import { beaconMaterial, cometMaterial, handleMaterial, roamMaterial, spawnMaterial } from "../graphics/region_points";
@@ -104,61 +105,14 @@ export default function RegionEditor(props: RegionEditorProps) {
   const [hover, setHover] = createSignal<{ spawn: Spawn; x: number; y: number; } | null>(null);
   // The hole under the cursor in the active region, for the marker and the context menu.
   const [holeHover, setHoleHover] = createSignal<{ name: string; index: number; x: number; y: number; } | null>(null);
-  const inRing = (ring: Ring, x: number, z: number) => {
-    let inside = false;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-      const [xi, , zi] = ring[i], [xj, , zj] = ring[j];
-      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
-    }
-    return inside;
-  };
   /** Index of the hole ring of `r` that holds x/z, the smallest if they nest, or 0 for none. */
   const holeAt = (r: Region, x: number, z: number) => {
     let best = 0;
     let area = Infinity;
     for (let k = 1; k < r.rings.length; k++) {
       if (r.rings[k].length < 3 || !inRing(r.rings[k], x, z)) continue;
-      const a = Math.abs(ringArea(r.rings[k]));
+      const a = Math.abs(signedArea(r.rings[k]));
       if (a < area) (area = a, best = k);
-    }
-    return best;
-  };
-  const ringArea = (ring: Ring) => {
-    let sum = 0;
-    for (let i = 0; i < ring.length; i++) {
-      const a = ring[i], b = ring[(i + 1) % ring.length];
-      sum += a[0] * b[2] - b[0] * a[2];
-    }
-    return sum / 2;
-  };
-  /** Shortest distance between two rings' edges, on x/z. */
-  const segDist = (px: number, pz: number, ax: number, az: number, bx: number, bz: number) => {
-    const dx = bx - ax, dz = bz - az;
-    const t = dx || dz ? Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz))) : 0;
-    return Math.hypot(px - ax - t * dx, pz - az - t * dz);
-  };
-  /**
-   * Whether a point is inside a ring or on its edge, within half a scan cell. A hole cut from an
-   * obstacle's ring has that ring's own corners on its boundary, and a strict inside test counted
-   * them out, so everything just cut went on being offered as still to cut.
-   */
-  const withinRing = (ring: Ring, x: number, z: number) => {
-    if (inRing(ring, x, z)) return true;
-    for (let i = 0; i < ring.length; i++) {
-      const [ax, , az] = ring[i], [bx, , bz] = ring[(i + 1) % ring.length];
-      if (segDist(x, z, ax, az, bx, bz) <= OBSTACLE_CELL / 2) return true;
-    }
-    return false;
-  };
-  const ringDistance = (a: Ring, b: Ring) => {
-    let best = Infinity;
-    for (const [outer, inner] of [[a, b], [b, a]] as const) {
-      for (const [px, , pz] of outer) {
-        for (let i = 0; i < inner.length; i++) {
-          const [ax, , az] = inner[i], [bx, , bz] = inner[(i + 1) % inner.length];
-          best = Math.min(best, segDist(px, pz, ax, az, bx, bz));
-        }
-      }
     }
     return best;
   };
@@ -227,7 +181,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     // Flood from the spot over ground inside the outline that no sample comes near. A patch
     // over a quarter of the region is the outline being wrong, not an obstacle.
     const outline = entry.rings[0];
-    const budget = Math.abs(ringArea(outline)) * 0.25 / (cell * cell);
+    const budget = Math.abs(signedArea(outline)) * 0.25 / (cell * cell);
     const start = cellKey(g.x, g.z, cell);
     if (near.has(start)) return { entry, cells: new Map<number, number>(), ring: null, why: "mobs were recorded right here" };
     const taken = new Map<number, number>([[start, g.y]]);
@@ -246,7 +200,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         }
       }
     }
-    const rings = traceCells(taken, cell, g.y).sort((a, b) => Math.abs(ringArea(b)) - Math.abs(ringArea(a)));
+    const rings = traceCells(taken, cell, g.y).sort((a, b) => Math.abs(signedArea(b)) - Math.abs(signedArea(a)));
     const ring = rings[0] ? onGround(rings[0].map(([x, , z]) => [x, sampleFloor(x, z, g.y), z] as Vertex)) : null;
     return { entry, cells: taken, ring, why: rings[0] ? null : "nothing to grow into" };
   });
@@ -254,7 +208,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     const plan = growPlan();
     const g = grow();
     if (!plan || !g || !plan.ring) return flash(plan?.why ?? "nothing to grow", "warn");
-    const one = asOne(repairRegion({ rings: [...plan.entry.rings, plan.ring] }), Math.abs(ringArea(plan.entry.rings[0])));
+    const one = asOne(repairRegion({ rings: [...plan.entry.rings, plan.ring] }), Math.abs(signedArea(plan.entry.rings[0])));
     if (!one) return flash(`growing here would cut ${g.name} in two`, "warn");
     checkpoint("grow a hole from the roam data");
     setRegions(rs => rs.map(r => (r.name === g.name ? { name: g.name, rings: one.rings.map(onGround) } : r)));
@@ -278,28 +232,13 @@ export default function RegionEditor(props: RegionEditorProps) {
     if (!plan || !m || !plan.hull) return flash("no other hole within reach", "warn");
     const { entry, group, hull } = plan;
     const rings = [...entry.rings.filter((_, k) => !group.includes(k)), hull];
-    const one = asOne(repairRegion({ rings }), Math.abs(ringArea(entry.rings[0])));
+    const one = asOne(repairRegion({ rings }), Math.abs(signedArea(entry.rings[0])));
     if (!one) return flash(`merging these would cut ${m.name} in two`, "warn");
     checkpoint(`merge ${group.length} holes`);
     setRegions(rs => rs.map(r => (r.name === m.name ? { name: m.name, rings: one.rings.map(onGround) } : r)));
     setHoleHover(null);
     setMerge(null);
     flash(`merged ${group.length} holes`);
-  };
-  const convexHull = (pts: Vertex[]): Ring => {
-    const sorted = [...pts].sort((a, b) => a[0] - b[0] || a[2] - b[2]);
-    const cross = (o: Vertex, a: Vertex, b: Vertex) => (a[0] - o[0]) * (b[2] - o[2]) - (a[2] - o[2]) * (b[0] - o[0]);
-    const lower: Vertex[] = [];
-    for (const p of sorted) {
-      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
-      lower.push(p);
-    }
-    const upper: Vertex[] = [];
-    for (const p of [...sorted].reverse()) {
-      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
-      upper.push(p);
-    }
-    return [...lower.slice(0, -1), ...upper.slice(0, -1)].map(v => [...v] as Vertex);
   };
   const [cursor, setCursor] = createSignal<THREE.Vector3 | undefined>();
   const [toast, setToast] = createSignal<{ text: string; warn: boolean; } | undefined>();
@@ -835,7 +774,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     const spent = (o: Obstacle) => {
       const ring = ringsAround([o], obstacleMargin(), OBSTACLE_CELL, walkedCells())[0];
       if (!ring) return true;
-      if (holes.some(h => ring.every(([x, , z]) => withinRing(h, x, z)))) return true;
+      if (holes.some(h => ring.every(([x, , z]) => withinRing(h, x, z, OBSTACLE_CELL / 2)))) return true;
       return ring.filter(([x, , z]) => inRing(r.rings[0], x, z)).length < 0.3 * ring.length;
     };
     // Height is foot minus top because y points down.
@@ -946,7 +885,7 @@ export default function RegionEditor(props: RegionEditorProps) {
   const asOne = (pieces: Region[], outlineArea: number): Region | null => {
     if (pieces.length === 1) return pieces[0];
     if (!pieces.length) return null;
-    const sized = pieces.map(p => ({ p, area: Math.abs(ringArea(p.rings[0])) })).sort((a, b) => b.area - a.area);
+    const sized = pieces.map(p => ({ p, area: Math.abs(signedArea(p.rings[0])) })).sort((a, b) => b.area - a.area);
     // Every member's trail, whatever the mode: grow and merge are reached from the hole menu
     // outside carve mode, and a pocket with a mob in it is a split there too.
     const trail = memberTrailAll();
@@ -995,7 +934,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     const inside = (ix: number, iz: number) => inRing(outline, (ix + 0.5) * cell, (iz + 0.5) * cell);
     const seen = new Set<number>();
     const out: Ring[] = [];
-    const budget = Math.abs(ringArea(outline)) * 0.25 / (cell * cell);
+    const budget = Math.abs(signedArea(outline)) * 0.25 / (cell * cell);
     const minCells = gapMinArea() / (cell * cell);
     for (let ix = Math.floor(minX / cell); ix <= Math.floor(maxX / cell); ix++) {
       for (let iz = Math.floor(minZ / cell); iz <= Math.floor(maxZ / cell); iz++) {
@@ -1028,24 +967,22 @@ export default function RegionEditor(props: RegionEditorProps) {
         const holes = r.rings.slice(1).filter(h => h.length >= 3);
         const y = sampleFloor((ix + 0.5) * cell, (iz + 0.5) * cell, lastYOf(r.name, (ix + 0.5) * cell, (iz + 0.5) * cell));
         for (const ring of traceCells(patch, cell, y)) {
-          if (holes.some(h => ring.every(([x, , z]) => withinRing(h, x, z)))) continue;
+          if (holes.some(h => ring.every(([x, , z]) => withinRing(h, x, z, OBSTACLE_CELL / 2)))) continue;
           out.push(onGround(ring.map(([x, , z]) => [x, sampleFloor(x, z, y), z] as Vertex)));
         }
       }
     }
     return out;
   });
-  /** Whether ring `a` lies mostly inside ring `b`, by its vertices. */
-  const mostlyInside = (a: Ring, b: Ring) => a.filter(([x, , z]) => inRing(b, x, z)).length >= 0.8 * a.length;
   /** Where a gap and an obstacle ring cover the same ground, only the bigger of the two shows:
    * a gap under a mountain is the mountain, and a rock inside a wide empty patch is the patch. */
   const gaps = createMemo<Ring[]>(() => {
     const { bulk: small, big } = previewRings();
     const rings = [...small, ...big];
-    return rawGaps().filter(g => !rings.some(o => Math.abs(ringArea(o)) >= Math.abs(ringArea(g)) && mostlyInside(g, o)));
+    return rawGaps().filter(g => !rings.some(o => Math.abs(signedArea(o)) >= Math.abs(signedArea(g)) && mostlyInside(g, o)));
   });
   const shownPreview = createMemo(() => {
-    const hide = (o: Ring) => rawGaps().some(g => Math.abs(ringArea(g)) > Math.abs(ringArea(o)) && mostlyInside(o, g));
+    const hide = (o: Ring) => rawGaps().some(g => Math.abs(signedArea(g)) > Math.abs(signedArea(o)) && mostlyInside(o, g));
     const { bulk: small, big } = previewRings();
     return { bulk: small.filter(o => !hide(o)), big: big.filter(o => !hide(o)) };
   });
@@ -1068,7 +1005,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     if (!name || !entry || !rings.length || cutting()) return;
     setCutting(true);
     let shape: Region = { rings: entry.rings.map(ring => ring.map(v => [...v] as Vertex)) };
-    const outlineArea = Math.abs(ringArea(entry.rings[0]));
+    const outlineArea = Math.abs(signedArea(entry.rings[0]));
     let done = 0, skipped = 0;
     try {
       for (let i = 0; i < rings.length; i++) {
@@ -3273,7 +3210,7 @@ export default function RegionEditor(props: RegionEditorProps) {
               {hole => (
                 <>
                   <div class="px-3 py-1 text-slate-500">
-                    {hole().name} · hole {hole().index} · {Math.abs(ringArea(active()?.rings[hole().index] ?? [])).toFixed(0)} y²
+                    {hole().name} · hole {hole().index} · {Math.abs(signedArea(active()?.rings[hole().index] ?? [])).toFixed(0)} y²
                   </div>
                   <button
                     class="block w-full text-left px-3 py-1 hover:bg-slate-700"
@@ -3440,7 +3377,7 @@ export default function RegionEditor(props: RegionEditorProps) {
           >
             <div class="font-bold">hole {holeHover()!.index}</div>
             <div class="text-slate-400">
-              {Math.abs(ringArea(active()?.rings[holeHover()!.index] ?? [])).toFixed(0)} y² · {active()?.rings[holeHover()!.index]?.length ?? 0} vertices
+              {Math.abs(signedArea(active()?.rings[holeHover()!.index] ?? [])).toFixed(0)} y² · {active()?.rings[holeHover()!.index]?.length ?? 0} vertices
             </div>
             <div class="text-slate-500">right-click to delete, merge or grow it</div>
           </div>

@@ -1,6 +1,7 @@
 import { load } from "js-yaml";
 import { difference, union } from "polyclip-ts";
 import type { Geom } from "polyclip-ts";
+import { inRing, signedArea } from "./geometry.ts";
 
 // A vertex is [x, y, z]: earcut triangulates on x/z and carries y through, so the polygon
 // describes the floor surface itself. Stacked floors are told apart by whose floor is nearer.
@@ -434,20 +435,10 @@ export function patchMobsYaml(
 
 // --- geometry ---
 
-function inRingXZ(ring: Ring, x: number, z: number): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, , zi] = ring[i];
-    const [xj, , zj] = ring[j];
-    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
-  }
-  return inside;
-}
-
 /** Inside the outline and not inside a hole. Purely horizontal: floors are told apart by y. */
 export function containsXZ(r: Region, x: number, z: number): boolean {
-  if (!r.rings[0] || r.rings[0].length < 3 || !inRingXZ(r.rings[0], x, z)) return false;
-  return !r.rings.slice(1).some(h => inRingXZ(h, x, z));
+  if (!r.rings[0] || r.rings[0].length < 3 || !inRing(r.rings[0], x, z)) return false;
+  return !r.rings.slice(1).some(h => inRing(h, x, z));
 }
 
 // ponytail: nearest outline vertex, not barycentric interpolation over the triangulation.
@@ -770,15 +761,6 @@ function distanceToRoute(legs: Vertex[], p: TrailPoint): number {
 }
 
 // Positive for an outline, negative for a hole, given the edge order emitted below.
-const signedArea = (ring: Ring) => {
-  let sum = 0;
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i];
-    const b = ring[(i + 1) % ring.length];
-    sum += a[0] * b[2] - b[0] * a[2];
-  }
-  return sum / 2;
-};
 
 /**
  * Builds regions covering a set of roam points: rasterise onto a grid, grow by one cell so gaps
@@ -912,7 +894,7 @@ export function regionsFromPoints(points: TrailPoint[], cell = 6, close = 2): Re
   const smooth = (r: Ring) => simplifyRing(r, cell * cell * 4);
 
   return outlines.map(outline => ({
-    rings: [smooth(outline), ...holes.filter(h => inRingXZ(outline, h[0][0], h[0][2])).map(smooth)],
+    rings: [smooth(outline), ...holes.filter(h => inRing(outline, h[0][0], h[0][2])).map(smooth)],
   }));
 }
 
