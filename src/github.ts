@@ -175,13 +175,6 @@ async function installationFor(
 }
 
 /**
- * Finds the user's fork of `upstream`, and whether it can actually be written to.
- *
- * Both halves matter and they fail differently: no fork at all means go and make one, while a fork
- * without an installation means go and install the app on it. Neither is something the app can do
- * on the user's behalf.
- */
-/**
  * What the installation covering `repo` was granted, as a sentence, for putting in an error.
  *
  * A refusal that says only "Resource not accessible by integration" leaves two very different
@@ -199,6 +192,13 @@ export async function grantedOn(token: string, repo: string): Promise<string> {
   }
 }
 
+/**
+ * Finds the user's fork of `upstream`, and whether it can actually be written to.
+ *
+ * Both halves matter and they fail differently: no fork at all means go and make one, while a fork
+ * without an installation means go and install the app on it. Neither is something the app can do
+ * on the user's behalf.
+ */
 export async function findFork(token: string, upstream: string, login: string, base?: string): Promise<ForkState> {
   // Membership is of the fork *network*, not of one parent. Contributors fork LandSandBoat/server
   // while pull requests target a fork of it, so an immediate-parent test would reject every
@@ -365,15 +365,6 @@ function zoneOfPath(path: string): string | null {
   return parts[0] === "data" && parts[1] === "zones" && parts.length > 3 ? parts[2] : null;
 }
 
-/**
- * Puts this zone on the working branch, as exactly one commit.
- *
- * The branch is rebuilt from the staging tip on every save rather than appended to: each zone
- * already on it is replayed as a single commit, this zone's is replaced, and the ref is moved to
- * the result. That is what keeps "one commit per zone" true no matter how many times a zone is
- * saved, and it means a branch whose work has since been merged quietly starts over rather than
- * carrying the merged commits around.
- */
 /** The zones a set of commits covers, from the `<zone>: <summary>` messages they carry. */
 const zonesInCommits = (commits: any[]): ZoneOnBranch[] => {
   const seen = new Map<string, string>();
@@ -483,6 +474,15 @@ async function changedOnBase(token: string, baseRepo: string, from: string, to: 
 
 const listing = (work: Map<string, ZoneWork>): ZoneOnBranch[] => [...work.keys()].sort().map(zone => ({ zone, summary: summaryOf(work.get(zone)!.message) }));
 
+/**
+ * Puts this zone on the working branch, as exactly one commit.
+ *
+ * The branch is rebuilt from the staging tip on every save rather than appended to: each zone
+ * already on it is replayed as a single commit, this zone's is replaced, and the ref is moved to
+ * the result. That is what keeps "one commit per zone" true no matter how many times a zone is
+ * saved, and it means a branch whose work has since been merged quietly starts over rather than
+ * carrying the merged commits around.
+ */
 export async function save(req: SaveRequest): Promise<SaveResult> {
   const { token, repo, baseRepo, branch, base, zone, files } = req;
 

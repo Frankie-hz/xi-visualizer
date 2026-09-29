@@ -137,11 +137,6 @@ export default function RegionEditor(props: RegionEditorProps) {
   /** Holes of the active region within `reach` yalms of hole `index`, itself excluded. */
   const nearHoles = (r: Region, index: number, reach = 2) =>
     r.rings.map((ring, k) => k).filter(k => k >= 1 && k !== index && r.rings[k].length >= 3 && ringDistance(r.rings[index], r.rings[k]) <= reach);
-  /**
-   * Deletes the hole under the cursor, along with any hole nested inside it or lying on top of
-   * it: earlier tools could leave a ring twice or one inside another, and deleting one of those
-   * left the other showing as if nothing had happened.
-   */
   /** A height to build a ring at near a spot: the nearest vertex of the region. */
   const lastYOf = (name: string, x: number, z: number) => {
     const entry = regions().find(r => r.name === name);
@@ -152,6 +147,11 @@ export default function RegionEditor(props: RegionEditorProps) {
     }
     return best;
   };
+  /**
+   * Deletes the hole under the cursor, along with any hole nested inside it or lying on top of
+   * it: earlier tools could leave a ring twice or one inside another, and deleting one of those
+   * left the other showing as if nothing had happened.
+   */
   const deleteHole = (name: string, index: number) => {
     const entry = regions().find(r => r.name === name);
     const target = entry?.rings[index];
@@ -167,11 +167,6 @@ export default function RegionEditor(props: RegionEditorProps) {
     const left = entry.rings.length - 1 - gone.size;
     flash(gone.size > 1 ? `deleted the hole and ${gone.size - 1} nested in it, ${left} left` : `deleted hole ${index}, ${left} left`);
   };
-  /**
-   * Merging is two steps: the menu opens a plan with a reach dial and a preview of the hull, and
-   * Apply commits it. The merged hole is the convex hull of the group's vertices, since two
-   * obstacles a mob cannot pass between are one obstacle to it. Undo brings the pieces back.
-   */
   /**
    * Growing a hole from the roam data: the ground around a spot that no member mob was recorded
    * within `clearance` of, as one connected patch, becomes the hole (joined with whatever hole is
@@ -211,6 +206,11 @@ export default function RegionEditor(props: RegionEditorProps) {
     flash(`hole grown to ${(plan.cells.size * OBSTACLE_CELL * OBSTACLE_CELL).toFixed(0)} y² of unvisited ground`);
   };
 
+  /**
+   * Merging is two steps: the menu opens a plan with a reach dial and a preview of the hull, and
+   * Apply commits it. The merged hole is the convex hull of the group's vertices, since two
+   * obstacles a mob cannot pass between are one obstacle to it. Undo brings the pieces back.
+   */
   const [merge, setMerge] = createSignal<{ name: string; index: number; } | null>(null);
   const [mergeReach, setMergeReach] = createSignal(OBSTACLE_DEFAULTS.reach);
   const mergePlan = createMemo(() => {
@@ -263,6 +263,13 @@ export default function RegionEditor(props: RegionEditorProps) {
       el.querySelector("button")?.focus({ preventScroll: true });
     });
   });
+
+  type Menu = NonNullable<ReturnType<typeof menu>>;
+  /** The open menu, if it is of this kind, typed as that kind. */
+  const menuAs = <K extends Menu["kind"]>(kind: K) => {
+    const m = menu();
+    return m?.kind === kind ? (m as Extract<Menu, { kind: K; }>) : null;
+  };
 
   // Hovering a dot on the map or a row in the member list picks out that mob's roam trail; clicking
   // the row pins it, so the trail stays put while you reshape the polygon around it.
@@ -678,6 +685,8 @@ export default function RegionEditor(props: RegionEditorProps) {
     if (!name) return [] as TrailPoint[];
     return trailPoints(props.spawns.filter(s => assign()[s.id]?.includes(name)).map(s => s.id));
   });
+  /** The cells the active region's own mobs were recorded in: a ring never takes those, since the
+   * data has a mob standing there whatever the mesh says. */
   const walkedCellsAll = createMemo(() => {
     const out = new Set<number>();
     for (const p of memberTrailAll()) out.add(cellKey(p.x, p.z, OBSTACLE_CELL));
@@ -827,8 +836,6 @@ export default function RegionEditor(props: RegionEditorProps) {
     return ray.intersectObject(mesh, false).map(h => mesh.worldToLocal(h.point.clone()).y);
   };
   const groundRing = (ring: Ring): [Ring, number] => (zoneMesh ? putOnGround(ring, surfacesUnder) : [ring, 0]);
-  /** The cells the active region's own mobs were recorded in: a ring never takes those, since the
-   * data has a mob standing there whatever the mesh says. */
   /**
    * The clipper's answer as one region, or null when the cut genuinely splits it. Two rings that
    * overlap at two points fence off a pocket of ground between them; that pocket comes back as a
@@ -3028,7 +3035,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             class="fixed z-[100] min-w-44 bg-slate-900 border border-slate-600 rounded shadow-lg py-1 text-xs"
             style={{ left: `${menu()!.x}px`, top: `${menu()!.y}px` }}
           >
-            <Show when={menu()!.kind === "region" ? (menu() as any).name : null}>
+            <Show when={menuAs("region")?.name}>
               {name => (
                 <>
                   <div class="px-3 py-1 text-slate-500">{name()}</div>
@@ -3054,7 +3061,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                 </>
               )}
             </Show>
-            <Show when={menu()!.kind === "hole" ? (menu() as any) as { name: string; index: number; } : null}>
+            <Show when={menuAs("hole")}>
               {hole => (
                 <>
                   <div class="px-3 py-1 text-slate-500">
@@ -3070,13 +3077,11 @@ export default function RegionEditor(props: RegionEditorProps) {
                     class="block w-full text-left px-3 py-1 hover:bg-slate-700"
                     title="Grow this hole over the ground around it that no member mob was recorded on"
                     onClick={() => {
-                      const m = menu()!;
                       const p = { x: 0, z: 0 };
                       const ring = active()?.rings[hole().index];
                       if (ring) (p.x = ring.reduce((t, v) => t + v[0], 0) / ring.length, p.z = ring.reduce((t, v) => t + v[2], 0) / ring.length);
-                      setGrow({ name: hole().name, x: p.x, z: p.z, y: ring?.[0]?.[1] ?? 0 } as any);
+                      setGrow({ name: hole().name, x: p.x, z: p.z, y: ring?.[0]?.[1] ?? 0 });
                       setMenu(null);
-                      void m;
                     }}
                   >
                     Grow to roam data…
@@ -3090,7 +3095,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                 </>
               )}
             </Show>
-            <Show when={menu()!.kind === "ground" ? (menu() as any) as { name: string; x0: number; z0: number; } : null}>
+            <Show when={menuAs("ground")}>
               {spot => (
                 <>
                   <div class="px-3 py-1 text-slate-500">{spot().name} · {spot().x0.toFixed(1)}, {spot().z0.toFixed(1)}</div>
@@ -3098,7 +3103,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                     class="block w-full text-left px-3 py-1 hover:bg-slate-700"
                     title="Cut a hole over the ground around this spot that no member mob was recorded on"
                     onClick={() => {
-                      setGrow({ name: spot().name, x: spot().x0, z: spot().z0, y: lastYOf(spot().name, spot().x0, spot().z0) } as any);
+                      setGrow({ name: spot().name, x: spot().x0, z: spot().z0, y: lastYOf(spot().name, spot().x0, spot().z0) });
                       setMenu(null);
                     }}
                   >
@@ -3107,7 +3112,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                 </>
               )}
             </Show>
-            <Show when={menu()!.kind === "spawn" ? (menu() as any).spawn as Spawn : null}>
+            <Show when={menuAs("spawn")?.spawn}>
               {spawn => (
                 <>
                   <div class="px-3 py-1 text-slate-500">{spawn().name} {spawn().id}</div>
@@ -3148,7 +3153,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                 </>
               )}
             </Show>
-            <Show when={menu()!.kind === "route" ? routeGroups().find(g => g.lead === (menu() as any).lead) : null}>
+            <Show when={menuAs("route") && routeGroups().find(g => g.lead === menuAs("route")!.lead)}>
               {group => (
                 <>
                   <div class="px-3 py-1 text-slate-500">

@@ -248,43 +248,29 @@ export default function RegionsPage() {
    */
   const [sitting, setSitting] = createSignal<Sitting | undefined>();
   /** Set by naming a branch by hand, or by starting a new one. Beats whatever is sitting. */
-
   const [branchChosen, setBranchChosen] = createSignal<string | undefined>();
 
   const branchName = () => branchChosen() ?? sitting()?.branch ?? branchForToday();
 
   /** findSitting only looks under regions/, so a branch named outside it would never be found again. */
-
   const asBranch = (raw: string) => {
     const tail = raw.replace(/^regions\//, "").trim().replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
-
     return tail ? `regions/${tail}` : branchForToday();
   };
 
   /**
-
    * Leaves the current branch where it is, with whatever pull request it has, and points the next
-
    * save at a fresh one. Reset is the other half of this pair and throws the branch away instead.
-
    */
-
   const startNewBranch = async () => {
     const where = fork();
-
     if (where?.state !== "ready") return;
-
     setStatus("Naming a new branch…");
-
     try {
       const taken = await listRegionBranches(authToken(), where.repo);
-
       setBranchChosen(freeBranchName(taken, branchForToday()));
-
       setSitting(undefined);
-
       setPushed(false);
-
       setStatus(`Next save starts ${branchName()}`);
     } catch (e) {
       failed(e);
@@ -777,7 +763,6 @@ export default function RegionsPage() {
     );
   };
 
-  /** Commits the open zone to the working branch on the user's fork. */
   /** Deletes the working branch and goes back to reading the zone from staging. */
   const resetBranch = async () => {
     const where = fork();
