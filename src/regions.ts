@@ -235,6 +235,22 @@ export const placementsOf = (spawns: Spawn[]): Placements =>
     s.regions?.length ? { regions: s.regions } : s.path ? { patrol: { legs: s.path, loop: s.loop } } : {},
   ]));
 
+/** Placements as the editor holds them, a region list or a route per spawn, for every spawn given. */
+export const placementsFrom = (spawns: Spawn[], assign: Record<string, string[]>, paths: Record<string, Patrol> = {}): Placements =>
+  Object.fromEntries(spawns.map(s => [
+    s.id,
+    assign[s.id]?.length ? { regions: assign[s.id] } : paths[s.id] ? { patrol: paths[s.id] } : {},
+  ]));
+
+/** The other way round: placements back into the editor's region and route maps. */
+export function splitPlacements(placements: Placements): { assign: Record<string, string[]>; paths: Record<string, Patrol>; } {
+  const entries = Object.entries(placements);
+  return {
+    assign: Object.fromEntries(entries.filter(([, p]) => p.regions?.length).map(([id, p]) => [id, p.regions!])),
+    paths: Object.fromEntries(entries.filter(([, p]) => p.patrol).map(([id, p]) => [id, p.patrol!])),
+  };
+}
+
 // Compared through the canonical emitter rather than field by field, so a ring that was rotated or
 // re-ordered without moving is recognised as unchanged instead of read as somebody's edit.
 const sameRegion = (a?: Region, b?: Region) => (a ? emitRegionsBlock({ r: a }) : "") === (b ? emitRegionsBlock({ r: b }) : "");

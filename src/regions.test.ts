@@ -5,14 +5,15 @@ import {
   containsXZ,
   diffRegions,
   emitRegionsBlock,
-  mergeZone,
-  parsePastedZone,
-  placementsOf,
   floorYAt,
+  mergeZone,
   parseMobsYaml,
+  parsePastedZone,
   parseRegionsYaml,
   patchMobsYaml,
   patchRegionsYaml,
+  placementsFrom,
+  placementsOf,
   regionArea,
   regionAt,
   regionDifference,
@@ -22,6 +23,7 @@ import {
   selfIntersects,
   simplifyLine,
   simplifyRing,
+  splitPlacements,
   validate,
   zoneOfMobId,
 } from "./regions.ts";
@@ -429,7 +431,10 @@ assert.strictEqual(holed.reshaped[0].fromVertices, holed.reshaped[0].toVertices,
 // The title says what was done; the names are underneath, where a reviewer can find them.
 const message = commitMessage("west_ronfaure", before, after);
 assert.strictEqual(message.split("\n")[0], "west_ronfaure: +1 -1 ~1 regions, 2 spawns placed");
-assert.ok(message.includes("\n\nAdded: fresh\nRemoved: gone\nReshaped grown (area +100%)\nPlaced in grown: Bat 2 (was gone)\nPlaced in fresh: Worm 3"), message);
+assert.ok(
+  message.includes("\n\nAdded: fresh\nRemoved: gone\nReshaped grown (area +100%)\nPlaced in grown: Bat 2 (was gone)\nPlaced in fresh: Worm 3"),
+  message,
+);
 assert.strictEqual(commitMessage("z", before, before), "z: regions updated", "nothing to say still gets a title");
 const walked = { ...before, spawns: before.spawns.map(s => (s.id === "3" ? { ...s, path: [[0, 0, 0], [5, 0, 5]] as Vertex[] } : s)) };
 assert.strictEqual(commitMessage("z", before, walked), "z: 1 patrol changed\n\nPatrols: Worm 3", "a route is a change too");
@@ -585,5 +590,25 @@ const placed = placementsOf([
 assert.deepStrictEqual(placed["1"], { regions: ["north"] });
 assert.deepStrictEqual(placed["2"], { patrol: { legs: [[0, 0, 0], [1, 0, 1]], loop: false } });
 assert.deepStrictEqual(placed["3"], {}, "a fixed point is the absence of a placement, not a placement");
+
+// The editor's maps say the same thing placementsOf reads off the file, so a zone nobody touched
+// merges as untouched. Spelling the field "region" once made every assigned spawn look edited,
+// and the merge then dropped their regions whenever base had moved.
+const spawnsHere = [
+  { id: "1", name: "a", x: 0, y: 0, z: 0, regions: ["north"] },
+  { id: "2", name: "b", x: 0, y: 0, z: 0, path: [[0, 0, 0], [1, 0, 1]] as Vertex[], loop: false },
+  { id: "3", name: "c", x: 1, y: 2, z: 3, at: [1, 2, 3] as Vertex },
+];
+const { assign: heldAssign, paths: heldPaths } = splitPlacements(placementsOf(spawnsHere));
+assert.deepStrictEqual(heldAssign, { "1": ["north"] });
+assert.deepStrictEqual(Object.keys(heldPaths), ["2"]);
+assert.deepStrictEqual(placementsFrom(spawnsHere, heldAssign, heldPaths), placementsOf(spawnsHere), "round trip");
+merged = mergeZone(
+  state({}, placementsOf(spawnsHere)),
+  state({}, { ...placementsOf(spawnsHere), "3": { regions: ["south"] } }),
+  state({}, placementsFrom(spawnsHere, heldAssign, heldPaths)),
+);
+assert.deepStrictEqual(merged.conflicts, []);
+assert.deepStrictEqual(splitPlacements(merged.placements).assign, { "1": ["north"], "3": ["south"] }, "ours untouched, theirs taken");
 
 console.log("ok");

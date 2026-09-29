@@ -32,10 +32,12 @@ import {
   parseRegionsYaml,
   patchMobsYaml,
   patchRegionsYaml,
+  placementsFrom,
   placementsOf,
+  splitPlacements,
   zoneOfMobId,
 } from "../regions";
-import type { Patrol, Placements, RegionSet, Spawn, ZoneState } from "../regions";
+import type { Patrol, RegionSet, Spawn, ZoneState } from "../regions";
 import { decompress, fetchProgress } from "../util";
 // The wording of a pull request is prose, so it lives in a file that can be edited as prose.
 import prTemplate from "../pr_template.md?raw";
@@ -529,18 +531,9 @@ export default function RegionsPage() {
       // what arrived on base since stays, and only what this draft changed is taken from it.
       const merged = mergeZone(d.base, loaded, {
         regions: d.regions,
-        placements: Object.fromEntries((spawns() ?? []).map(s => [
-          s.id,
-          d.assign[s.id] ? { regions: d.assign[s.id] } : d.paths?.[s.id] ? { patrol: d.paths[s.id] } : {},
-        ])),
+        placements: placementsFrom(spawns() ?? [], d.assign, d.paths),
       });
-      const placed = Object.entries(merged.placements);
-      d = {
-        at: d.at,
-        regions: merged.regions,
-        assign: Object.fromEntries(placed.filter(([, p]) => p.regions?.length).map(([id, p]) => [id, p.regions!])),
-        paths: Object.fromEntries(placed.filter(([, p]) => p.patrol).map(([id, p]) => [id, p.patrol!])),
-      };
+      d = { at: d.at, regions: merged.regions, ...splitPlacements(merged.placements) };
       setStatus(
         merged.conflicts.length
           ? `Restored onto the current ${f.folder}. ${merged.conflicts.join(", ")} also changed on ${ref()}; your version was kept, check ${
@@ -718,10 +711,7 @@ export default function RegionsPage() {
       { regions: parseRegionsYaml(regionsNow), placements: placementsOf(theirSpawns) },
       {
         regions: pending!.regions,
-        placements: Object.fromEntries((spawns() ?? []).map(s => [
-          s.id,
-          pending!.assign[s.id] ? { region: pending!.assign[s.id] } : pending!.paths[s.id] ? { patrol: pending!.paths[s.id] } : {},
-        ])),
+        placements: placementsFrom(spawns() ?? [], pending!.assign, pending!.paths),
       },
     );
     return { merged, regionsNow, mobsNow, theirSpawns };
@@ -749,15 +739,10 @@ export default function RegionsPage() {
         }
         // Patch what is on the staging branch now, not what was loaded, so anything else that
         // arrived in these files while the zone was open survives.
-        const placements: Placements = staged.merged.placements;
+        const { assign, paths } = splitPlacements(staged.merged.placements);
         next = {
           regionsYaml: patchRegionsYaml(staged.regionsNow, staged.merged.regions),
-          mobsYaml: patchMobsYaml(
-            staged.mobsNow,
-            Object.fromEntries(Object.entries(placements).filter(([, p]) => p.regions?.length).map(([id, p]) => [id, p.regions!])),
-            Object.fromEntries(staged.theirSpawns!.filter(s => s.at).map(s => [s.id, s.at!])),
-            Object.fromEntries(Object.entries(placements).filter(([, p]) => p.patrol).map(([id, p]) => [id, p.patrol!])),
-          ),
+          mobsYaml: patchMobsYaml(staged.mobsNow, assign, Object.fromEntries(staged.theirSpawns!.filter(s => s.at).map(s => [s.id, s.at!])), paths),
         };
       }
       const result = await save({
