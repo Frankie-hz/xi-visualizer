@@ -311,6 +311,8 @@ export default function RegionEditor(props: RegionEditorProps) {
   onCleanup(() => clearTimeout(toastTimer));
 
   const active = () => regions().find(r => r.name === activeName());
+  /** Reviewing: everything for reading a zone works, nothing that changes it is offered. */
+  const canEdit = () => !props.readOnly;
   const matches = (s: Spawn) => {
     const f = filter().toLowerCase();
     return !f || s.name.toLowerCase().includes(f) || s.id.includes(f);
@@ -331,6 +333,14 @@ export default function RegionEditor(props: RegionEditorProps) {
   const cssOf = (name?: string | null) => `hsl(${(hueOf(name) * 360).toFixed(0)} 90% 60%)`;
 
   createEffect(() => props.onChange(asSet(regions()), assign(), paths()));
+  // Switching into review mid-tool would leave that tool taking clicks it is no longer offered for.
+  createEffect(() => {
+    if (canEdit()) return;
+    setMode("select");
+    setGrow(null);
+    setMerge(null);
+    setWalker(null);
+  });
 
   const spawnCounts = createMemo(() => {
     const counts: Record<string, number> = {};
@@ -2221,7 +2231,7 @@ export default function RegionEditor(props: RegionEditorProps) {
       setHover(null);
       aim(ev);
       const handle = pickHandle();
-      if (handle && !handle.mid) {
+      if (handle && !handle.mid && canEdit()) {
         checkpoint("remove a vertex");
         return removeVertex(handle); // midpoints are not stored, so there is nothing to remove
       }
@@ -2230,9 +2240,9 @@ export default function RegionEditor(props: RegionEditorProps) {
       if (spawn) return setMenu({ kind: "spawn", spawn, x: ev.clientX, y: ev.clientY });
       const p = pickZonePoint();
       const act = active();
-      const hole = p && act && !props.readOnly ? holeAt(act, p.x, p.z) : 0;
+      const hole = p && act && canEdit() ? holeAt(act, p.x, p.z) : 0;
       if (hole) return setMenu({ kind: "hole", name: act!.name, index: hole, x: ev.clientX, y: ev.clientY });
-      if (p && act && !props.readOnly && containsXZ(act, p.x, p.z)) {
+      if (p && act && canEdit() && containsXZ(act, p.x, p.z)) {
         return setMenu({ kind: "ground", name: act.name, x0: p.x, z0: p.z, x: ev.clientX, y: ev.clientY });
       }
       const name = p && regionAt(asSet(regions()), p.x, p.z, p.y);
@@ -2241,10 +2251,10 @@ export default function RegionEditor(props: RegionEditorProps) {
 
     const onMouseDown = (ev: MouseEvent) => {
       if (ev.button === 2) rightDownAt = { x: ev.clientX, y: ev.clientY };
-      // Reviewing: the camera, hovering and selection all still work; nothing moves under them.
-      if (props.readOnly) return;
       if (ev.button !== 0) return;
       downAt = { x: ev.clientX, y: ev.clientY };
+      // Reviewing: the camera, hovering and selection all still work; nothing moves under them.
+      if (!canEdit()) return;
       if (ev.altKey) return; // alt is for copying a position, never for dragging something
       aim(ev);
       const handle = pickHandle();
@@ -2293,7 +2303,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     const onMouseMove = (ev: MouseEvent) => {
       aim(ev);
       setCursor(groundPoint());
-      if (!drag && !spawnDrag && mode() === "select") {
+      if (!drag && !spawnDrag && mode() === "select" && canEdit()) {
         const act = active();
         const p = act ? pickZonePoint(lastY(act)) : null;
         const k = p && act ? holeAt(act, p.x, p.z) : 0;
@@ -2354,7 +2364,6 @@ export default function RegionEditor(props: RegionEditorProps) {
     };
 
     const onClick = (ev: MouseEvent) => {
-      if (props.readOnly && mode() === "draw") return;
       setMenu(null);
       if (!downAt || Math.hypot(ev.clientX - downAt.x, ev.clientY - downAt.y) > 3) return;
       aim(ev);
@@ -2364,7 +2373,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         if (p) copy(`!pos ${xyz(p)}`);
         return;
       }
-      if (pickHandle()) return;
+      if (canEdit() && pickHandle()) return;
 
       if (mode() === "obstacles") {
         const p = pickZonePoint(lastY(active()));
@@ -2398,7 +2407,7 @@ export default function RegionEditor(props: RegionEditorProps) {
       // through to picking a region, so a dot can't block selecting the polygon under it.
       const spawn = pickSpawn();
       const name = activeName();
-      if (spawn && name) {
+      if (spawn && name && canEdit()) {
         checkpoint(`assign ${spawn.name}`);
         setAssign(a => {
           const next = { ...a };
@@ -2696,6 +2705,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         visible={spawnOnFloor}
         onBuildRegion={buildFrom}
         canBuild={!!props.roam}
+        readOnly={props.readOnly}
       />
       <div class="flex-1 relative">
         <canvas class="block w-full h-full outline-none" ref={canvasElement!} />
@@ -2776,7 +2786,8 @@ export default function RegionEditor(props: RegionEditorProps) {
             <Show when={!walker() && activeName()}>
               {name => (
                 <div>
-                  Editing region <b style={{ color: cssOf(name()) }}>{name()}</b> <span class="text-slate-400">{`(${mobs(spawnCounts()[name()] ?? 0)})`}</span>
+                  {canEdit() ? "Editing" : "Viewing"} region <b style={{ color: cssOf(name()) }}>{name()}</b>{" "}
+                  <span class="text-slate-400">{`(${mobs(spawnCounts()[name()] ?? 0)})`}</span>
                   <span class="text-slate-400">{mode() === "draw" ? " · click to add vertices, Enter when done" : " · Esc to exit"}</span>
                 </div>
               )}
@@ -3101,21 +3112,25 @@ export default function RegionEditor(props: RegionEditorProps) {
               {name => (
                 <>
                   <div class="px-3 py-1 text-slate-500">{name()}</div>
-                  <button
-                    class="block w-full text-left px-3 py-1 hover:bg-slate-700"
-                    onClick={() => (convertToPatrol(name()), setMenu(null))}
-                  >
-                    Convert to patrol ({mobs(props.spawns.filter(s => assign()[s.id]?.includes(name())).length)})
-                  </button>
-                  <button class="block w-full text-left px-3 py-1 hover:bg-slate-700" onClick={() => (repairShape(name()), setMenu(null))}>
-                    Repair the shape
-                  </button>
+                  <Show when={canEdit()}>
+                    <button
+                      class="block w-full text-left px-3 py-1 hover:bg-slate-700"
+                      onClick={() => (convertToPatrol(name()), setMenu(null))}
+                    >
+                      Convert to patrol ({mobs(props.spawns.filter(s => assign()[s.id]?.includes(name())).length)})
+                    </button>
+                    <button class="block w-full text-left px-3 py-1 hover:bg-slate-700" onClick={() => (repairShape(name()), setMenu(null))}>
+                      Repair the shape
+                    </button>
+                  </Show>
                   <button class="block w-full text-left px-3 py-1 hover:bg-slate-700" onClick={() => (centerOn(name()), setMenu(null))}>
                     Centre on it
                   </button>
-                  <button class="block w-full text-left px-3 py-1 hover:bg-slate-700 text-red-400" onClick={() => (deleteRegion(name()), setMenu(null))}>
-                    Delete region
-                  </button>
+                  <Show when={canEdit()}>
+                    <button class="block w-full text-left px-3 py-1 hover:bg-slate-700 text-red-400" onClick={() => (deleteRegion(name()), setMenu(null))}>
+                      Delete region
+                    </button>
+                  </Show>
                 </>
               )}
             </Show>
@@ -3176,12 +3191,14 @@ export default function RegionEditor(props: RegionEditorProps) {
               {spawn => (
                 <>
                   <div class="px-3 py-1 text-slate-500">{spawn().name} {spawn().id}</div>
-                  <button
-                    class="block w-full text-left px-3 py-1 hover:bg-slate-700"
-                    onClick={() => (startPath(spawn()), setMenu(null))}
-                  >
-                    Trace a patrol route
-                  </button>
+                  <Show when={canEdit()}>
+                    <button
+                      class="block w-full text-left px-3 py-1 hover:bg-slate-700"
+                      onClick={() => (startPath(spawn()), setMenu(null))}
+                    >
+                      Trace a patrol route
+                    </button>
+                  </Show>
                   <button
                     class="block w-full text-left px-3 py-1 hover:bg-slate-700"
                     onClick={() => {
@@ -3193,7 +3210,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                   >
                     {replayId() === spawn().id ? "Stop the replay" : "Replay its trail"}
                   </button>
-                  <Show when={activeName()}>
+                  <Show when={canEdit() && activeName()}>
                     <button
                       class="block w-full text-left px-3 py-1 hover:bg-slate-700"
                       onClick={() => {
@@ -3218,37 +3235,41 @@ export default function RegionEditor(props: RegionEditorProps) {
                     {props.spawns.find(s => s.id === group().lead)?.name ?? group().lead}
                     {group().ids.length > 1 ? ` and ${group().ids.length - 1} more` : ""}
                   </div>
-                  <button class="block w-full text-left px-3 py-1 hover:bg-slate-700" onClick={() => (selectRoute(group().lead), setMenu(null))}>
-                    Edit the legs
-                  </button>
-                  <button class="block w-full text-left px-3 py-1 hover:bg-slate-700" onClick={() => (retrace(group().lead), setMenu(null))}>
-                    Re-trace from the roam trail
-                  </button>
+                  <Show when={canEdit()}>
+                    <button class="block w-full text-left px-3 py-1 hover:bg-slate-700" onClick={() => (selectRoute(group().lead), setMenu(null))}>
+                      Edit the legs
+                    </button>
+                    <button class="block w-full text-left px-3 py-1 hover:bg-slate-700" onClick={() => (retrace(group().lead), setMenu(null))}>
+                      Re-trace from the roam trail
+                    </button>
+                  </Show>
                   <button
                     class="block w-full text-left px-3 py-1 hover:bg-slate-700"
                     onClick={() => (setReplayId(replayId() === group().lead ? null : group().lead), setMenu(null))}
                   >
                     {replayId() === group().lead ? "Stop the replay" : "Replay the trail it came from"}
                   </button>
-                  <button
-                    class="block w-full text-left px-3 py-1 hover:bg-slate-700 text-red-400"
-                    onClick={() => {
-                      // Read the group before dropping it: the accessor is gone the moment the
-                      // routes it was built from are, and reading it then throws.
-                      const ids = [...group().ids];
-                      checkpoint(`drop the route for ${mobs(ids.length)}`);
-                      setPaths(all => {
-                        const next = { ...all };
-                        for (const id of ids) delete next[id];
-                        return next;
-                      });
-                      if (ids.includes(walker() ?? "")) editWalker(null);
-                      flash(`dropped the route for ${mobs(ids.length)}`);
-                      setMenu(null);
-                    }}
-                  >
-                    Drop the route
-                  </button>
+                  <Show when={canEdit()}>
+                    <button
+                      class="block w-full text-left px-3 py-1 hover:bg-slate-700 text-red-400"
+                      onClick={() => {
+                        // Read the group before dropping it: the accessor is gone the moment the
+                        // routes it was built from are, and reading it then throws.
+                        const ids = [...group().ids];
+                        checkpoint(`drop the route for ${mobs(ids.length)}`);
+                        setPaths(all => {
+                          const next = { ...all };
+                          for (const id of ids) delete next[id];
+                          return next;
+                        });
+                        if (ids.includes(walker() ?? "")) editWalker(null);
+                        flash(`dropped the route for ${mobs(ids.length)}`);
+                        setMenu(null);
+                      }}
+                    >
+                      Drop the route
+                    </button>
+                  </Show>
                 </>
               )}
             </Show>
@@ -3402,34 +3423,36 @@ export default function RegionEditor(props: RegionEditorProps) {
                     <span class="flex-1 truncate" title={spawn()?.name}>{spawn()?.name ?? "unknown"}</span>
                     <span class="text-slate-500">{id}</span>
                     <span class="text-slate-400">{patrol.legs.length} legs</span>
-                    <button
-                      class="px-1 text-slate-400 hover:text-white"
-                      title={patrol.loop === false ? "path: walks back along the same legs" : "circuit: closes into a loop"}
-                      onClick={e => {
-                        e.stopPropagation();
-                        checkpoint(`${props.spawns.find(s => s.id === id)?.name ?? id} walks back and forth`);
-                        setPaths(all => ({ ...all, [id]: { ...all[id], loop: all[id].loop === false ? undefined : false } }));
-                      }}
-                    >
-                      {patrol.loop === false ? "↔" : "↻"}
-                    </button>
-                    <button
-                      class="px-1 text-slate-400 hover:text-white"
-                      title="Re-trace from the mob's roam trail"
-                      onClick={e => (e.stopPropagation(), retrace(id))}
-                    >
-                      ⟳
-                    </button>
-                    <button
-                      class="px-1 text-slate-400 hover:text-white"
-                      title="Add more legs"
-                      onClick={e => (e.stopPropagation(), selectRoute(id), setMode("draw"))}
-                    >
-                      ✎
-                    </button>
-                    <button class="text-slate-400 hover:text-red-400" title="Remove the route" onClick={e => (e.stopPropagation(), dropPath(id))}>
-                      ✕
-                    </button>
+                    <Show when={canEdit()}>
+                      <button
+                        class="px-1 text-slate-400 hover:text-white"
+                        title={patrol.loop === false ? "path: walks back along the same legs" : "circuit: closes into a loop"}
+                        onClick={e => {
+                          e.stopPropagation();
+                          checkpoint(`${props.spawns.find(s => s.id === id)?.name ?? id} walks back and forth`);
+                          setPaths(all => ({ ...all, [id]: { ...all[id], loop: all[id].loop === false ? undefined : false } }));
+                        }}
+                      >
+                        {patrol.loop === false ? "↔" : "↻"}
+                      </button>
+                      <button
+                        class="px-1 text-slate-400 hover:text-white"
+                        title="Re-trace from the mob's roam trail"
+                        onClick={e => (e.stopPropagation(), retrace(id))}
+                      >
+                        ⟳
+                      </button>
+                      <button
+                        class="px-1 text-slate-400 hover:text-white"
+                        title="Add more legs"
+                        onClick={e => (e.stopPropagation(), selectRoute(id), setMode("draw"))}
+                      >
+                        ✎
+                      </button>
+                      <button class="text-slate-400 hover:text-red-400" title="Remove the route" onClick={e => (e.stopPropagation(), dropPath(id))}>
+                        ✕
+                      </button>
+                    </Show>
                   </div>
                 );
               }}
@@ -3438,7 +3461,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         </Show>
 
         <Show when={tab() === "review"}>
-          <ReviewList findings={findings()} onJump={jumpTo} onRepair={repairShape} />
+          <ReviewList findings={findings()} onJump={jumpTo} onRepair={canEdit() ? repairShape : undefined} />
         </Show>
 
         <Show when={tab() === "regions"}>
@@ -3518,18 +3541,20 @@ export default function RegionEditor(props: RegionEditorProps) {
                   onContextMenu={e => (e.preventDefault(), setMenu({ kind: "region", name: r.name, x: e.clientX, y: e.clientY }))}
                 >
                   <span class="w-3 h-3 rounded-full shrink-0" style={{ background: cssOf(r.name) }} />
-                  <input
-                    type="text"
-                    class="flex-1 min-w-0 bg-transparent px-1 rounded outline-none hover:bg-slate-600 focus:bg-slate-900"
-                    value={r.name}
-                    title="Click to rename"
-                    onClick={e => e.stopPropagation()}
-                    onFocus={() => setActiveName(r.name)}
-                    onKeyDown={e => e.key === "Enter" && e.currentTarget.blur()}
-                    onChange={e => {
-                      if (!renameRegion(r.name, e.currentTarget.value)) e.currentTarget.value = r.name;
-                    }}
-                  />
+                  <Show when={canEdit()} fallback={<span class="flex-1 min-w-0 truncate px-1">{r.name}</span>}>
+                    <input
+                      type="text"
+                      class="flex-1 min-w-0 bg-transparent px-1 rounded outline-none hover:bg-slate-600 focus:bg-slate-900"
+                      value={r.name}
+                      title="Click to rename"
+                      onClick={e => e.stopPropagation()}
+                      onFocus={() => setActiveName(r.name)}
+                      onKeyDown={e => e.key === "Enter" && e.currentTarget.blur()}
+                      onChange={e => {
+                        if (!renameRegion(r.name, e.currentTarget.value)) e.currentTarget.value = r.name;
+                      }}
+                    />
+                  </Show>
                   <span
                     class="text-xs text-slate-400"
                     title={`${vertexCount(r)} vertices${r.rings.length > 1 ? `, ${r.rings.length - 1} hole${r.rings.length > 2 ? "s" : ""}` : ""}, ${
@@ -3552,7 +3577,11 @@ export default function RegionEditor(props: RegionEditorProps) {
                     </span>
                   </Show>
                   <button class="px-1 text-slate-400 hover:text-white" title="Center" onClick={e => (e.stopPropagation(), centerOn(r.name))}>⌖</button>
-                  <button class="text-slate-400 hover:text-red-400" onClick={e => (e.stopPropagation(), deleteRegion(r.name))}>✕</button>
+                  <Show when={canEdit()}>
+                    <button class="text-slate-400 hover:text-red-400" title="Delete region" onClick={e => (e.stopPropagation(), deleteRegion(r.name))}>
+                      ✕
+                    </button>
+                  </Show>
                 </div>
               )}
             </For>
@@ -3567,22 +3596,24 @@ export default function RegionEditor(props: RegionEditorProps) {
                 value={filter()}
                 onInput={e => setFilter(e.currentTarget.value)}
               />
-              <div class="flex gap-1">
-                <button class="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs" onClick={() => assignInside(false)}>
-                  Assign inside
-                </button>
-                <button class="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs" onClick={() => assignInside(true)}>
-                  Unassign inside
-                </button>
-                <button
-                  class="px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs disabled:opacity-40 disabled:text-slate-300"
-                  disabled={!props.roam}
-                  title="Reshape this region around the roam trails of the mobs in it"
-                  onClick={refitActive}
-                >
-                  Refit
-                </button>
-              </div>
+              <Show when={canEdit()}>
+                <div class="flex gap-1">
+                  <button class="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs" onClick={() => assignInside(false)}>
+                    Assign inside
+                  </button>
+                  <button class="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs" onClick={() => assignInside(true)}>
+                    Unassign inside
+                  </button>
+                  <button
+                    class="px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs disabled:opacity-40 disabled:text-slate-300"
+                    disabled={!props.roam}
+                    title="Reshape this region around the roam trails of the mobs in it"
+                    onClick={refitActive}
+                  >
+                    Refit
+                  </button>
+                </div>
+              </Show>
 
               <div class="text-xs text-slate-400">
                 {spawnCounts()[active()!.name] ?? 0} assigned{filter() && ` · ${members().length} shown`}
@@ -3603,7 +3634,9 @@ export default function RegionEditor(props: RegionEditorProps) {
                       <Show when={s.at} fallback={<span class="px-1 text-slate-600" title="Placed by the region, no fixed point">·</span>}>
                         <button class="px-1 text-slate-400 hover:text-white" title="Center" onClick={() => flyTo(s.x, s.y, s.z)}>⌖</button>
                       </Show>
-                      <button class="text-slate-400 hover:text-red-400" title="Unassign" onClick={() => unassign(s.id)}>✕</button>
+                      <Show when={canEdit()}>
+                        <button class="text-slate-400 hover:text-red-400" title="Unassign" onClick={() => unassign(s.id)}>✕</button>
+                      </Show>
                     </div>
                   )}
                 </For>
@@ -3616,7 +3649,7 @@ export default function RegionEditor(props: RegionEditorProps) {
   );
 }
 
-function ReviewList(props: { findings: Finding[]; onJump: (f: Finding) => void; onRepair: (region: string) => void; }) {
+function ReviewList(props: { findings: Finding[]; onJump: (f: Finding) => void; onRepair?: (region: string) => void; }) {
   const color = { error: "text-red-400", warn: "text-amber-400", info: "text-slate-400" };
   return (
     <div class="flex-1 overflow-y-auto">
@@ -3631,11 +3664,11 @@ function ReviewList(props: { findings: Finding[]; onJump: (f: Finding) => void; 
               </Show>
             </span>
             {/* A crossing ring is the one finding here with a mechanical answer. */}
-            <Show when={f.region && /crosses itself/.test(f.text)}>
+            <Show when={props.onRepair && f.region && /crosses itself/.test(f.text)}>
               <button
                 class="px-1.5 rounded bg-slate-600 hover:bg-slate-500 text-slate-100"
                 title="Rebuild it as valid shapes"
-                onClick={e => (e.stopPropagation(), props.onRepair(f.region!))}
+                onClick={e => (e.stopPropagation(), props.onRepair?.(f.region!))}
               >
                 Repair
               </button>

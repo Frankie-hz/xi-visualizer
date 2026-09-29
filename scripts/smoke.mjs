@@ -108,6 +108,21 @@ try {
   assert.deepStrictEqual(await tally(), before, "undo put the zone back exactly as it was");
   assert.doesNotMatch(await text(), /Editing patrol for/, "and stopped editing what it removed");
 
+  // reviewing: the same menu offers nothing that changes the zone, and a click still selects
+  await page.goto(`${URL}?review=1`, { waitUntil: "domcontentloaded" });
+  await settle(ZONE_READY);
+  const seen = await label("e_46");
+  assert.ok(seen, "found the region label while reviewing");
+  await page.mouse.click(seen.x, seen.y, { button: "right" });
+  await settle(400);
+  const offered = await menu();
+  assert.match(offered, /Centre on it/, "the region menu opened while reviewing");
+  assert.doesNotMatch(offered, /Convert|Repair|Delete/, "and offers no edits");
+  await page.keyboard.press("Escape");
+  await page.mouse.click(seen.x, seen.y);
+  await settle(600);
+  assert.match(await text(), /Viewing region e_46/, "clicking a label selects the region");
+
   assert.deepStrictEqual(errors, [], "no errors on the page");
   console.log("ok");
 } catch (e) {

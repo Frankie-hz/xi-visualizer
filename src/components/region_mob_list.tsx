@@ -37,6 +37,7 @@ interface MobListProps {
   visible: (spawn: Spawn) => boolean;
   onBuildRegion: (spawns: Spawn[]) => void;
   canBuild: boolean;
+  readOnly?: boolean;
 }
 
 /**
@@ -152,7 +153,7 @@ export default function MobList(props: MobListProps) {
         </div>
 
         {/* Only offered on the mobs it would act on, since it reads their trails to find the shape. */}
-        <Show when={status() === "fixed" && shown().length}>
+        <Show when={!props.readOnly && status() === "fixed" && shown().length}>
           <button
             class="w-full px-2 py-1 mb-2 bg-slate-600 hover:bg-slate-500 rounded text-xs disabled:opacity-40 disabled:text-slate-300"
             disabled={!props.canBuild}
@@ -191,7 +192,7 @@ export default function MobList(props: MobListProps) {
                 >
                   {s.id}
                 </span>
-                <Show when={props.activeName && !props.assign[s.id]?.includes(props.activeName)}>
+                <Show when={!props.readOnly && props.activeName && !props.assign[s.id]?.includes(props.activeName)}>
                   <button
                     class="px-1 leading-none text-slate-400 hover:text-white"
                     title={`Assign to ${props.activeName}, shift to add it to the ones it already has`}
