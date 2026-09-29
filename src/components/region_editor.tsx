@@ -1487,7 +1487,8 @@ export default function RegionEditor(props: RegionEditorProps) {
   let zoneMesh: THREE.Mesh | undefined;
   let floorIndex: FloorIndex | undefined;
   let meshPrep: ReturnType<typeof prepareMeshData> | undefined;
-  let drag: { ring: number; idx: number; } | null = null;
+  // `moved` stays false for a press that never became a drag, whose undo step is then dropped.
+  let drag: { ring: number; idx: number; inserted: boolean; moved: boolean; } | null = null;
   let spawnDrag: { spawn: Spawn; line: THREE.Line; } | null = null;
 
   /**
@@ -2333,7 +2334,10 @@ export default function RegionEditor(props: RegionEditorProps) {
       if (!canEdit()) return;
       if (ev.altKey) return; // alt is for copying a position, never for dragging something
       aim(ev);
-      const handle = pickHandle();
+      // Carving: a click near a hole's corner is a click to cut, not a grab. The outline's own
+      // corners stay draggable.
+      const picked = pickHandle();
+      const handle = mode() === "obstacles" && picked && picked.ring > 0 ? null : picked;
 
       if (!handle) {
         // Dragging a spawn dot into a polygon assigns it to that region.
@@ -2349,7 +2353,8 @@ export default function RegionEditor(props: RegionEditorProps) {
         return;
       }
 
-      checkpoint("add a vertex");
+      const what = activePath() ? "leg" : "vertex";
+      checkpoint(handle.mid ? `add a ${what}` : `move a ${what}`);
       if (handle.mid && activePath()) {
         const p = pickZonePoint(activePath()!.legs[handle.idx][1]);
         editPath(legs => {
@@ -2357,7 +2362,7 @@ export default function RegionEditor(props: RegionEditorProps) {
           const b = legs[handle.idx + 1];
           legs.splice(handle.idx + 1, 0, p ? [p.x, p.y, p.z] : [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]);
         });
-        drag = { ring: 0, idx: handle.idx + 1 };
+        drag = { ring: 0, idx: handle.idx + 1, inserted: true, moved: false };
       } else if (handle.mid) {
         const p = pickZonePoint(lastY(active()));
         editActive(r => {
@@ -2367,9 +2372,9 @@ export default function RegionEditor(props: RegionEditorProps) {
           const mid: Vertex = p ? [p.x, p.y, p.z] : [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
           ring.splice(handle.idx + 1, 0, mid);
         });
-        drag = { ring: handle.ring, idx: handle.idx + 1 };
+        drag = { ring: handle.ring, idx: handle.idx + 1, inserted: true, moved: false };
       } else {
-        drag = { ring: handle.ring, idx: handle.idx };
+        drag = { ring: handle.ring, idx: handle.idx, inserted: false, moved: false };
       }
       setHover(null); // otherwise a stale hover keeps overriding the pinned trail mid-drag
       controls!.enabled = false;
@@ -2392,6 +2397,9 @@ export default function RegionEditor(props: RegionEditorProps) {
       } else if (obstacleHover()) setObstacleHover(null);
 
       if (drag) {
+        // A few pixels of wobble on a click is not a move.
+        if (!drag.moved && !drag.inserted && downAt && Math.hypot(ev.clientX - downAt.x, ev.clientY - downAt.y) <= 3) return;
+        drag.moved = true;
         const p = pickZonePoint(activePath()?.legs[drag.idx]?.[1] ?? lastY(active()));
         if (!p) return;
         if (activePath()) editPath(legs => (legs[drag!.idx] = [p.x, p.y, p.z]));
@@ -2435,6 +2443,8 @@ export default function RegionEditor(props: RegionEditorProps) {
 
     const onMouseUp = (ev: MouseEvent) => {
       endSpawnDrag(ev);
+      // Pressed on a corner and let go without moving it: nothing changed, so no step either.
+      if (drag && !drag.inserted && !drag.moved) setUndoStack(steps => steps.slice(0, -1));
       drag = null;
       controls!.enabled = true;
     };
@@ -2449,9 +2459,11 @@ export default function RegionEditor(props: RegionEditorProps) {
         if (p) copy(`!pos ${xyz(p)}`);
         return;
       }
-      if (canEdit() && pickHandle()) return;
+      if (canEdit() && mode() !== "obstacles" && pickHandle()) return;
 
       if (mode() === "obstacles") {
+        // A grow or merge plan is open over the map: its preview is what is being decided on.
+        if (grow() || merge()) return;
         const p = pickZonePoint(lastY(active()));
         const o = p && obstacleAt(obstacles(), p.x, p.z, obstacleMargin(), OBSTACLE_CELL);
         if (o) ringObstacles([o]);
