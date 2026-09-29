@@ -3,15 +3,22 @@ import { createSignal, For, Show } from "solid-js";
 // The chip is the input, the text says what it acts on — no glyph decoding required.
 const SHORTCUTS: { title: string; keys: [string, string][]; }[] = [
   {
-    title: "Polygon",
+    title: "Region",
     keys: [
       ["click", "while drawing, add a vertex"],
       ["drag", "a corner to move that vertex"],
       ["drag", "a small square on an edge to add a vertex"],
       ["right-click", "a corner to remove that vertex"],
-      ["enter / esc", "finish drawing"],
-      ["click", "in Carve holes mode, ring the steep faces under the cursor with a hole at the margin"],
-      ["right-click", "inside a hole of the selected region to delete it or merge it with the holes near it"],
+      ["enter / esc", "finish drawing; a region or hole with under 3 corners goes away"],
+    ],
+  },
+  {
+    title: "Holes",
+    keys: [
+      ["click", "in Carve holes, an amber outline to cut that obstacle out"],
+      ["click", "in Carve holes, a violet outline to cut that empty patch out"],
+      ["right-click", "a hole of the selected region: delete, merge with holes near it, grow to the roam data"],
+      ["right-click", "inside the selected region: cut a hole where no mob was recorded"],
     ],
   },
   {
@@ -33,6 +40,7 @@ const SHORTCUTS: { title: string; keys: [string, string][]; }[] = [
       ["hover", "a dot or a list row to show its roam trail"],
       ["right-click", "a mob to replay its trail and see which way it walks"],
       ["click", "a list row to keep that trail on screen"],
+      ["alt+click", "a row in the Mobs panel to copy its id"],
     ],
   },
   {
@@ -41,7 +49,8 @@ const SHORTCUTS: { title: string; keys: [string, string][]; }[] = [
       ["alt+click", "copy !pos x y z"],
       ["drag", "pan · right-drag rotates · wheel zooms"],
       ["pgdn / pgup", "next / previous region, keeping the view angle, with its first mob held"],
-      ["ctrl+z", "undo · ctrl+shift+z redoes"],
+      ["esc", "close a menu or plan, then leave carving, then drop the selection"],
+      ["ctrl+z", "undo · ctrl+y or ctrl+shift+z redoes"],
     ],
   },
 ];
@@ -50,16 +59,18 @@ const SHORTCUTS: { title: string; keys: [string, string][]; }[] = [
 export default function ShortcutsCard() {
   const [showKeys, setShowKeys] = createSignal(false);
   return (
-    <div class="absolute top-2 right-2 flex flex-col items-end gap-1 text-xs">
+    // Above the carve and plan panels, which share this corner.
+    <div class="absolute top-2 right-2 z-40 flex flex-col items-end gap-1 text-xs max-h-[calc(100%-1rem)]">
       <button
         class="w-6 h-6 rounded bg-slate-900/80 text-slate-300 hover:text-white"
         title={showKeys() ? "Hide shortcuts" : "Show shortcuts"}
+        aria-label={showKeys() ? "Hide shortcuts" : "Show shortcuts"}
         onClick={() => setShowKeys(k => !k)}
       >
         {showKeys() ? "×" : "?"}
       </button>
       <Show when={showKeys()}>
-        <div class="bg-slate-900/85 rounded px-3 py-2 space-y-2 pointer-events-none">
+        <div class="bg-slate-900/95 rounded px-3 py-2 space-y-2 overflow-y-auto">
           <For each={SHORTCUTS}>
             {group => (
               <div class="space-y-1">
