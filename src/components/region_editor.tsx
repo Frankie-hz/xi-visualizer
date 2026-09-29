@@ -1174,7 +1174,48 @@ export default function RegionEditor(props: RegionEditorProps) {
     const name = `region_${n}`;
     setRegions(rs => [...rs, { name, rings: [[]] }]);
     setActiveName(name);
+    startDraw(0);
+  };
+
+  // Which ring of the active region a click in draw mode adds to: the outline, or the hole that
+  // "+ Hole" just started. Always the last ring, as it was, sent Draw on a region with holes into
+  // the newest hole rather than the outline.
+  const [drawRing, setDrawRing] = createSignal(0);
+  const startDraw = (ring: number) => {
+    setDrawRing(ring);
     setMode("draw");
+  };
+  const startHole = () => {
+    const r = active();
+    if (!r) return;
+    checkpoint("start a hole");
+    editActive(c => c.rings.push([]));
+    startDraw(r.rings.length);
+  };
+  /**
+   * Leaves draw mode. A ring too short to be a shape goes, and so does the step that started it,
+   * so backing out of "+ Region" or "+ Hole" leaves neither an empty row nor a no-op in History.
+   */
+  const finishDraw = () => {
+    setMode("select");
+    const id = walker();
+    if (id) {
+      // A route of one leg is not a route; drop it rather than leaving a stub behind.
+      if ((paths()[id]?.legs.length ?? 0) < 2) dropPath(id);
+      return;
+    }
+    const r = active();
+    const k = drawRing();
+    if (!r || (r.rings[k]?.length ?? 3) >= 3) return;
+    const started = undoStack().at(-1)?.label;
+    if (k === 0 && started === "add a region") {
+      setRegions(rs => rs.filter(x => x.name !== r.name));
+      setActiveName(null);
+      setUndoStack(s => s.slice(0, -1));
+    } else if (k > 0) {
+      editActive(c => void c.rings.splice(k, 1));
+      if (started === "start a hole") setUndoStack(s => s.slice(0, -1));
+    }
   };
 
   // Returns false when the new name is empty or taken, so the input can snap back.
@@ -2404,7 +2445,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         const p = pickZonePoint(lastY(r));
         if (!p || !r) return;
         checkpoint("add a vertex");
-        editActive(c => c.rings[c.rings.length - 1].push([p.x, p.y, p.z]));
+        editActive(c => (c.rings[drawRing()] ?? c.rings[0]).push([p.x, p.y, p.z]));
         return;
       }
 
@@ -2484,16 +2525,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         else setActiveName(null);
         return;
       }
-      const id = walker();
-      if (id) {
-        // A route of one leg is not a route; drop it rather than leaving a stub behind.
-        if ((paths()[id]?.legs.length ?? 0) < 2) dropPath(id);
-      } else {
-        editActive(r => {
-          if (r.rings.length > 1 && r.rings[r.rings.length - 1].length < 3) r.rings.pop();
-        });
-      }
-      setMode("select");
+      finishDraw();
     };
 
     canvasElement.addEventListener("mousedown", onMouseDown);
@@ -3480,12 +3512,8 @@ export default function RegionEditor(props: RegionEditorProps) {
               <button
                 class="px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded disabled:opacity-40 disabled:text-slate-300"
                 disabled={!active()}
-                onClick={() => {
-                  checkpoint("start a hole");
-                  editActive(r => r.rings.push([]));
-                  setMode("draw");
-                }}
-                title="Cut a hole in the active region"
+                onClick={startHole}
+                title="Cut a hole in the active region: click its corners on the map, Enter when done"
               >
                 + Hole
               </button>
@@ -3493,7 +3521,8 @@ export default function RegionEditor(props: RegionEditorProps) {
                 class="px-2 py-1 rounded disabled:opacity-40 disabled:text-slate-300"
                 classList={{ "bg-emerald-600 hover:bg-emerald-500": mode() === "draw", "bg-slate-600 hover:bg-slate-500": mode() !== "draw" }}
                 disabled={!active()}
-                onClick={() => setMode(m => (m === "draw" ? "select" : "draw"))}
+                title={mode() === "draw" ? "Stop adding vertices" : "Click on the map to add vertices to the outline, after its last one"}
+                onClick={() => (mode() === "draw" ? finishDraw() : startDraw(0))}
               >
                 {mode() === "draw" ? "Done" : "Draw"}
               </button>

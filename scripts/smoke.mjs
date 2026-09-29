@@ -58,9 +58,7 @@ const clickMenu = pattern =>
   }, pattern);
 const label = name =>
   page.evaluate(n => {
-    const el = [...document.querySelectorAll('div[title*="right-click for more"]')].find(d =>
-      d.style.display === "block" && d.innerText.startsWith(n)
-    );
+    const el = [...document.querySelectorAll('div[title*="right-click for more"]')].find(d => d.style.display === "block" && d.innerText.startsWith(n));
     if (!el) return null;
     const r = el.getBoundingClientRect();
     return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
@@ -107,6 +105,15 @@ try {
   await settle(800);
   assert.deepStrictEqual(await tally(), before, "undo put the zone back exactly as it was");
   assert.doesNotMatch(await text(), /Editing patrol for/, "and stopped editing what it removed");
+
+  // backing out of a new region leaves neither an empty row nor a step in History
+  const press = label => page.evaluate(l => [...document.querySelectorAll("button")].find(b => b.innerText.startsWith(l)).click(), label);
+  await press("Regions (");
+  await press("+ Region");
+  await settle(300);
+  await page.keyboard.press("Escape");
+  await settle(300);
+  assert.deepStrictEqual(await tally(), before, "Esc on an undrawn region took it away again");
 
   // reviewing: the same menu offers nothing that changes the zone, and a click still selects
   await page.goto(`${URL}?review=1`, { waitUntil: "domcontentloaded" });
