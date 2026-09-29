@@ -717,7 +717,11 @@ export default function RegionsPage() {
     return { merged, regionsNow, mobsNow, theirSpawns };
   };
 
-  const saveToBranch = async () => {
+  /** What the last save found changed on both sides, until the person decides about it. */
+  const [conflicts, setConflicts] = createSignal<string[] | undefined>();
+
+  const saveToBranch = async (keepMine = false) => {
+    setConflicts(undefined);
     const f = files();
     let next = patched();
     const where = fork();
@@ -729,12 +733,15 @@ export default function RegionsPage() {
     try {
       const staged = await reconcile(f);
       if (staged?.merged) {
-        if (staged.merged.conflicts.length) {
+        // Everything else merged; these few were changed on both sides. Saving anyway keeps this
+        // side's version of them, which is a decision for the person, not something to do quietly.
+        if (staged.merged.conflicts.length && !keepMine) {
           setStatus(undefined);
+          setConflicts(staged.merged.conflicts);
           return setError(
-            `${f.folder} changed on ${ref()} while you were editing, and ${
-              staged.merged.conflicts.join(", ")
-            } cannot be merged automatically. Reload the zone and redo that part.`,
+            `${f.folder} changed on ${ref()} while you were editing. Everything merged except ${staged.merged.conflicts.join(", ")}, which ${
+              staged.merged.conflicts.length === 1 ? "was" : "were"
+            } changed there too.`,
           );
         }
         // Patch what is on the staging branch now, not what was loaded, so anything else that
@@ -885,7 +892,7 @@ export default function RegionsPage() {
             <button
               class={BTN}
               classList={{ "bg-emerald-600 hover:bg-emerald-500 text-white": dirty(), "bg-slate-700 text-slate-400": !dirty() }}
-              onClick={local() ? saveLocal : saveToBranch}
+              onClick={() => (local() ? saveLocal() : saveToBranch())}
               title={local() ? "Write both files back to the local folder" : `Commit both files to ${branchName()} on your fork`}
             >
               {dirty() ? "Save" : local() ? "Saved" : pushed() ? "Committed" : "No changes"}
@@ -959,6 +966,15 @@ export default function RegionsPage() {
         </Show>
         <Show when={error()}>
           <span class="text-red-500">{error()}</span>
+        </Show>
+        <Show when={conflicts()}>
+          <button
+            class={BTN_QUIET}
+            title={`Commit with your version of ${conflicts()!.join(", ")}, replacing what changed on ${ref()}. The pull request diff will show it.`}
+            onClick={() => saveToBranch(true)}
+          >
+            Save, keeping mine
+          </button>
         </Show>
         <Show when={fork()?.state === "ready" && !reviewing()}>
           <span class="text-slate-500 flex items-center gap-1" title="Where Save commits to">
