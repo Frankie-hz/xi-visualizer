@@ -26,7 +26,16 @@ function fakeGitHub(routes: Record<string, any>) {
     const hit = routes[`${method} ${path}`] ?? routes[path];
     const value = typeof hit === "function" ? hit(calls) : hit;
     if (value === undefined) return { ok: false, status: 404, headers: noHeaders, text: async () => "no such thing" };
-    if (value?.$noBody) return { ok: true, status: 204, headers: noHeaders, json: async () => { throw new Error("no body"); } };
+    if (value?.$noBody) {
+      return {
+        ok: true,
+        status: 204,
+        headers: noHeaders,
+        json: async () => {
+          throw new Error("no body");
+        },
+      };
+    }
     if (value?.$status) {
       return { ok: false, status: value.$status, headers: value.$headers ?? noHeaders, text: async () => value.$body ?? "" };
     }
@@ -166,7 +175,13 @@ const branchAt = sha => ({ [`/repos/someone/server/git/ref/heads/${SITTING}`]: {
 // first save of a sitting: the branch is cut straight from the staging tip
 let calls = fakeGitHub({ ...commonRoutes });
 let result = await save({ ...saving, ...thisZone });
-assert.deepStrictEqual(result, { sha: "commit-1", unchanged: false, created: true, onBranch: true, zones: [{ zone: ZONE, summary: "3 regions, 42 spawns placed" }] });
+assert.deepStrictEqual(result, {
+  sha: "commit-1",
+  unchanged: false,
+  created: true,
+  onBranch: true,
+  zones: [{ zone: ZONE, summary: "3 regions, 42 spawns placed" }],
+});
 assert.ok(
   calls.some(c => c.path === "/repos/sruon/server/git/ref/heads/regions-master"),
   "cut from the staging branch itself, which forks in a network can point a ref at",
@@ -232,6 +247,28 @@ calls = fakeGitHub({
 });
 result = await save({ ...saving, ...thisZone });
 assert.deepStrictEqual(result.zones, [{ zone: ZONE, summary: "3 regions, 42 spawns placed" }], "only the zone being saved is left");
+
+// A zone already on the branch that base has changed since: replaying its old blob would revert
+// that change, so the save refuses and names the zone rather than committing.
+const eastOnBranch = {
+  ...commonRoutes,
+  ...branchAt("branch-sha"),
+  [`PATCH /repos/someone/server/git/refs/heads/${SITTING}`]: {},
+  "/repos/someone/server/compare/base-sha...branch-sha": {
+    merge_base_commit: { sha: "cut-sha" },
+    commits: [{ commit: { message: "east_ronfaure: 1 region, 8 spawns placed" } }],
+    files: [{ filename: "data/zones/east_ronfaure/mobs.yaml", sha: "blob-east", status: "modified" }],
+  },
+  "/repos/sruon/server/git/trees/cut-sha:data/zones/east_ronfaure": { tree: [{ path: "mobs.yaml", sha: "mobs-then" }] },
+};
+calls = fakeGitHub({ ...eastOnBranch, "/repos/sruon/server/git/trees/base-sha:data/zones/east_ronfaure": { tree: [{ path: "mobs.yaml", sha: "mobs-now" }] } });
+await assert.rejects(save({ ...saving, ...thisZone }), (e: any) => e.status === "stale" && e.zones.join() === "east_ronfaure", "names the zone base changed");
+assert.ok(!calls.some(c => c.method === "POST" || c.method === "PATCH"), "and writes nothing");
+
+// the same, with base untouched there: the replay is safe and goes ahead
+calls = fakeGitHub({ ...eastOnBranch, "/repos/sruon/server/git/trees/base-sha:data/zones/east_ronfaure": { tree: [{ path: "mobs.yaml", sha: "mobs-then" }] } });
+result = await save({ ...saving, ...thisZone });
+assert.strictEqual(result.unchanged, false, "an untouched zone replays as before");
 
 // nothing to commit and no branch either: no pull request to offer, which is what onBranch says
 calls = fakeGitHub({ ...commonRoutes, "POST /repos/someone/server/git/trees": { sha: "tree-old" } });
@@ -344,14 +381,24 @@ assert.strictEqual(
   fillTemplate("drawn with {{editor}} against `{{base}}`", { editor: "the editor", base: "base" }),
   "drawn with the editor against `base`",
 );
-assert.strictEqual(fillTemplate("{{ zone }} and {{zone}}", { zone: "west_ronfaure" }), "west_ronfaure and west_ronfaure", "spacing inside the braces does not matter");
+assert.strictEqual(
+  fillTemplate("{{ zone }} and {{zone}}", { zone: "west_ronfaure" }),
+  "west_ronfaure and west_ronfaure",
+  "spacing inside the braces does not matter",
+);
 assert.strictEqual(fillTemplate("{{typo}} here", { zone: "x" }), "{{typo}} here", "an unknown name is left alone, not blanked");
 assert.strictEqual(fillTemplate("nothing to fill", {}), "nothing to fill");
 
 // and the template that actually ships has to be fillable by what the editor passes it
 const template = readFileSync(new URL("./pr_template.md", import.meta.url), "utf8");
 const filled = fillTemplate(template, {
-  editor: "E", zone: "Z", base: "B", diff: "D", regions: "1", spawns: "2", zones: "- [Z](D)",
+  editor: "E",
+  zone: "Z",
+  base: "B",
+  diff: "D",
+  regions: "1",
+  spawns: "2",
+  zones: "- [Z](D)",
 });
 assert.doesNotMatch(filled, /\{\{/, `pr_template.md has a placeholder nothing fills: ${filled.match(/\{\{\w+\}\}/g)}`);
 // The body a sitting actually produces: one line per zone with its own diff link, since a pull

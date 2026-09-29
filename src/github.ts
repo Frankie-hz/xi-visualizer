@@ -358,6 +358,17 @@ export async function deleteBranch(token: string, repo: string, branch: string):
   await gh(token, `/repos/${repo}/git/refs/heads/${branch}`, { method: "DELETE" });
 }
 
+/** The zones among `work` with a file whose content on `baseRepo` differs between two commits. */
+async function changedOnBase(token: string, baseRepo: string, from: string, to: string, work: [string, ZoneWork][]): Promise<string[]> {
+  const blobs = async (sha: string, zone: string) =>
+    new Map<string, string>(((await ghMaybe(token, `/repos/${baseRepo}/git/trees/${sha}:data/zones/${zone}`))?.tree ?? []).map((e: any) => [e.path, e.sha]));
+  const stale = await Promise.all(work.map(async ([zone, { entries }]) => {
+    const [before, now] = await Promise.all([blobs(from, zone), blobs(to, zone)]);
+    return entries.some(e => before.get(e.path.split("/").pop()!) !== now.get(e.path.split("/").pop()!)) ? zone : null;
+  }));
+  return stale.filter((z): z is string => !!z).sort();
+}
+
 const listing = (work: Map<string, ZoneWork>): ZoneOnBranch[] => [...work.keys()].sort().map(zone => ({ zone, summary: summaryOf(work.get(zone)!.message) }));
 
 export async function save(req: SaveRequest): Promise<SaveResult> {
@@ -371,8 +382,10 @@ export async function save(req: SaveRequest): Promise<SaveResult> {
   // What the branch already carries, per zone. Comparing against the *current* staging tip is what
   // makes merged work disappear from this set on its own.
   const work = new Map<string, ZoneWork>();
+  let cutFrom: string | undefined;
   if (head && head !== baseSha) {
     const diff = await gh(token, `/repos/${repo}/compare/${baseSha}...${head}`);
+    cutFrom = diff.merge_base_commit?.sha;
     const messages = new Map<string, string>();
     for (const entry of diff.commits ?? []) {
       const message = String(entry.commit?.message ?? "");
@@ -397,6 +410,22 @@ export async function save(req: SaveRequest): Promise<SaveResult> {
   }
 
   work.set(zone, { message: req.message, entries: files.map(f => ({ path: f.path, content: f.content })) });
+
+  // Every other zone is replayed by blob, which replaces its files whole. One that base changed
+  // since the branch was cut would be quietly reverted by that, so the save stops and says which.
+  // The zone being saved has already been merged against base by the editor.
+  if (cutFrom && cutFrom !== baseSha) {
+    const stale = await changedOnBase(token, baseRepo, cutFrom, baseSha, [...work].filter(([name]) => name !== zone));
+    if (stale.length) {
+      const error: any = new Error(
+        `${stale.join(", ")} changed on ${base} after ${stale.length === 1 ? "it was" : "they were"} saved to this branch, and saving `
+          + `now would undo that. Open ${stale.length === 1 ? "it" : "each"} and save again, which merges the change in, then save this zone.`,
+      );
+      error.status = "stale";
+      error.zones = stale;
+      throw error;
+    }
+  }
 
   // Replay: one commit per zone, in a stable order so the branch reads the same way every time.
   let parent = baseSha;
