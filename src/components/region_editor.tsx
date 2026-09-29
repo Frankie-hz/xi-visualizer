@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import * as THREE from "three";
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { Line2, LineGeometry, LineMaterial, LineSegments2, LineSegmentsGeometry, MapControls } from "three/examples/jsm/Addons.js";
@@ -3040,23 +3040,22 @@ export default function RegionEditor(props: RegionEditorProps) {
                 <>
                   <div class="px-3 py-1 text-slate-500">{name()}</div>
                   <Show when={canEdit()}>
-                    <button
-                      class="block w-full text-left px-3 py-1 hover:bg-slate-700"
+                    <MenuItem
                       onClick={() => (convertToPatrol(name()), setMenu(null))}
                     >
                       Turn into a route ({mobs(props.spawns.filter(s => assign()[s.id]?.includes(name())).length)})
-                    </button>
-                    <button class="block w-full text-left px-3 py-1 hover:bg-slate-700" onClick={() => (repairShape(name()), setMenu(null))}>
+                    </MenuItem>
+                    <MenuItem onClick={() => (repairShape(name()), setMenu(null))}>
                       Repair the shape
-                    </button>
+                    </MenuItem>
                   </Show>
-                  <button class="block w-full text-left px-3 py-1 hover:bg-slate-700" onClick={() => (centerOn(name()), setMenu(null))}>
+                  <MenuItem onClick={() => (centerOn(name()), setMenu(null))}>
                     Centre on it
-                  </button>
+                  </MenuItem>
                   <Show when={canEdit()}>
-                    <button class="block w-full text-left px-3 py-1 hover:bg-slate-700 text-red-400" onClick={() => (deleteRegion(name()), setMenu(null))}>
+                    <MenuItem danger onClick={() => (deleteRegion(name()), setMenu(null))}>
                       Delete region
-                    </button>
+                    </MenuItem>
                   </Show>
                 </>
               )}
@@ -3067,14 +3066,12 @@ export default function RegionEditor(props: RegionEditorProps) {
                   <div class="px-3 py-1 text-slate-500">
                     {hole().name} · hole {hole().index} · {Math.abs(signedArea(active()?.rings[hole().index] ?? [])).toFixed(0)} y²
                   </div>
-                  <button
-                    class="block w-full text-left px-3 py-1 hover:bg-slate-700"
+                  <MenuItem
                     onClick={() => (setMerge({ name: hole().name, index: hole().index }), setMenu(null))}
                   >
                     Merge nearby holes… ({active() ? nearHoles(active()!, hole().index, mergeReach()).length : 0} within {mergeReach()}y)
-                  </button>
-                  <button
-                    class="block w-full text-left px-3 py-1 hover:bg-slate-700"
+                  </MenuItem>
+                  <MenuItem
                     title="Grow this hole over the ground around it that no member mob was recorded on"
                     onClick={() => {
                       const p = { x: 0, z: 0 };
@@ -3085,13 +3082,13 @@ export default function RegionEditor(props: RegionEditorProps) {
                     }}
                   >
                     Grow to roam data…
-                  </button>
-                  <button
-                    class="block w-full text-left px-3 py-1 hover:bg-slate-700 text-red-400"
+                  </MenuItem>
+                  <MenuItem
+                    danger
                     onClick={() => (deleteHole(hole().name, hole().index), setMenu(null))}
                   >
                     Delete hole
-                  </button>
+                  </MenuItem>
                 </>
               )}
             </Show>
@@ -3099,8 +3096,7 @@ export default function RegionEditor(props: RegionEditorProps) {
               {spot => (
                 <>
                   <div class="px-3 py-1 text-slate-500">{spot().name} · {spot().x0.toFixed(1)}, {spot().z0.toFixed(1)}</div>
-                  <button
-                    class="block w-full text-left px-3 py-1 hover:bg-slate-700"
+                  <MenuItem
                     title="Cut a hole over the ground around this spot that no member mob was recorded on"
                     onClick={() => {
                       setGrow({ name: spot().name, x: spot().x0, z: spot().z0, y: lastYOf(spot().name, spot().x0, spot().z0) });
@@ -3108,7 +3104,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                     }}
                   >
                     Hole from roam data…
-                  </button>
+                  </MenuItem>
                 </>
               )}
             </Show>
@@ -3117,15 +3113,13 @@ export default function RegionEditor(props: RegionEditorProps) {
                 <>
                   <div class="px-3 py-1 text-slate-500">{spawn().name} {spawn().id}</div>
                   <Show when={canEdit()}>
-                    <button
-                      class="block w-full text-left px-3 py-1 hover:bg-slate-700"
+                    <MenuItem
                       onClick={() => (startPath(spawn()), setMenu(null))}
                     >
                       Trace a route
-                    </button>
+                    </MenuItem>
                   </Show>
-                  <button
-                    class="block w-full text-left px-3 py-1 hover:bg-slate-700"
+                  <MenuItem
                     onClick={() => {
                       setMenu(null);
                       if (replayId() === spawn().id) return setReplayId(null);
@@ -3134,10 +3128,9 @@ export default function RegionEditor(props: RegionEditorProps) {
                     }}
                   >
                     {replayId() === spawn().id ? "Stop the replay" : "Replay its trail"}
-                  </button>
+                  </MenuItem>
                   <Show when={canEdit() && activeName()}>
-                    <button
-                      class="block w-full text-left px-3 py-1 hover:bg-slate-700"
+                    <MenuItem
                       onClick={() => {
                         checkpoint(`assign ${spawn().name} to ${activeName()}`);
                         setAssign(a => ({ ...a, [spawn().id]: [activeName()!] }));
@@ -3145,11 +3138,11 @@ export default function RegionEditor(props: RegionEditorProps) {
                       }}
                     >
                       Assign to {activeName()}
-                    </button>
+                    </MenuItem>
                   </Show>
-                  <button class="block w-full text-left px-3 py-1 hover:bg-slate-700" onClick={() => (flyTo(spawn().x, spawn().y, spawn().z), setMenu(null))}>
+                  <MenuItem onClick={() => (flyTo(spawn().x, spawn().y, spawn().z), setMenu(null))}>
                     Centre on it
-                  </button>
+                  </MenuItem>
                 </>
               )}
             </Show>
@@ -3161,22 +3154,21 @@ export default function RegionEditor(props: RegionEditorProps) {
                     {group().ids.length > 1 ? ` and ${group().ids.length - 1} more` : ""}
                   </div>
                   <Show when={canEdit()}>
-                    <button class="block w-full text-left px-3 py-1 hover:bg-slate-700" onClick={() => (selectRoute(group().lead), setMenu(null))}>
+                    <MenuItem onClick={() => (selectRoute(group().lead), setMenu(null))}>
                       Edit the legs
-                    </button>
-                    <button class="block w-full text-left px-3 py-1 hover:bg-slate-700" onClick={() => (retrace(group().lead), setMenu(null))}>
+                    </MenuItem>
+                    <MenuItem onClick={() => (retrace(group().lead), setMenu(null))}>
                       Re-trace from the roam trail
-                    </button>
+                    </MenuItem>
                   </Show>
-                  <button
-                    class="block w-full text-left px-3 py-1 hover:bg-slate-700"
+                  <MenuItem
                     onClick={() => (setReplayId(replayId() === group().lead ? null : group().lead), setMenu(null))}
                   >
                     {replayId() === group().lead ? "Stop the replay" : "Replay the trail it came from"}
-                  </button>
+                  </MenuItem>
                   <Show when={canEdit()}>
-                    <button
-                      class="block w-full text-left px-3 py-1 hover:bg-slate-700 text-red-400"
+                    <MenuItem
+                      danger
                       onClick={() => {
                         // Read the group before dropping it: the accessor is gone the moment the
                         // routes it was built from are, and reading it then throws.
@@ -3193,7 +3185,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                       }}
                     >
                       Drop the route
-                    </button>
+                    </MenuItem>
                   </Show>
                 </>
               )}
@@ -3627,5 +3619,20 @@ export default function RegionEditor(props: RegionEditorProps) {
         </Show>
       </div>
     </div>
+  );
+}
+
+/** One entry in the map's context menu. `danger` for the ones that delete something. */
+function MenuItem(props: { danger?: boolean; title?: string; onClick: () => void; children: JSX.Element; }) {
+  return (
+    <button
+      role="menuitem"
+      class="block w-full text-left px-3 py-1 hover:bg-slate-700 focus:bg-slate-700 outline-none"
+      classList={{ "text-red-400": props.danger }}
+      title={props.title}
+      onClick={() => props.onClick()}
+    >
+      {props.children}
+    </button>
   );
 }
