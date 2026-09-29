@@ -1,7 +1,7 @@
 import { useSearchParams } from "@solidjs/router";
 import { createEffect, createResource, createSignal, ErrorBoundary, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import RegionDiffViewer, { STATUS_COLOR } from "../components/region_diff_viewer";
-import zones from "../data/zones";
+import zones, { zoneOfFolder } from "../data/zones";
 import { ghPublic, ghPublicPages, parsePr, rawUrl, UPSTREAM, UPSTREAM_BASE, ZONES_DIR } from "../github";
 import { storedToken } from "../github_auth";
 import { diffRegions, parseMobsYaml, parseRegionsYaml, zoneOfMobId } from "../regions";
@@ -29,12 +29,6 @@ async function side(repo: string, sha: string, zone: string, required: boolean):
   }
   return { regions: regionsYaml ? parseRegionsYaml(regionsYaml) : {}, spawns: parseMobsYaml(mobsYaml) };
 }
-
-/** A zone folder's id, for when neither side has a spawn to read it off. */
-const zoneIdOfFolder = (folder: string) => {
-  const norm = (s: string) => s.toLowerCase().replace(/['#()[\]]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-  return Object.values(zones).find(z => norm(z.name) === folder)?.id;
-};
 
 interface ZoneChange {
   zone: string;
@@ -217,7 +211,7 @@ export default function RegionsDiffPage() {
 
   const zoneId = () => {
     const first = sides()?.head.spawns[0] ?? sides()?.base.spawns[0];
-    return first ? zoneOfMobId(first.id) : sides() && query.zone ? zoneIdOfFolder(query.zone) : undefined;
+    return first ? zoneOfMobId(first.id) : sides() && query.zone ? zoneOfFolder(query.zone)?.id : undefined;
   };
   const [mesh] = createResource(zoneId, id => loadZoneMesh(id, setStatus));
   // The navmesh is what the server walks mobs on, so a vertex that looks fine on the collision

@@ -3,7 +3,7 @@ import { createEffect, createMemo, createResource, createSignal, For, Match, onC
 import RegionEditor from "../components/region_editor";
 import YamlView from "../components/yaml_view";
 import type { ZoneData } from "../components/zone_model";
-import zones from "../data/zones";
+import zones, { zoneOfFolder } from "../data/zones";
 import {
   compareUrl,
   deleteBranch,
@@ -100,6 +100,9 @@ const BTN = "px-2 py-1 rounded no-underline whitespace-nowrap";
 const BTN_PLAIN = `${BTN} bg-slate-700 hover:bg-slate-600 text-white`;
 const BTN_QUIET = `${BTN} bg-slate-600 hover:bg-slate-500 text-white`;
 const BTN_GO = `${BTN} bg-emerald-600 hover:bg-emerald-500 text-white`;
+
+/** A zone folder as people know it: "West Ronfaure", not west_ronfaure. */
+const zoneLabel = (folder: string) => zoneOfFolder(folder)?.name ?? folder;
 
 /** "1 region", "3 regions" -- these end up in commit messages and pull request bodies. */
 const count = (n: number, thing: string) => `${n} ${thing}${n === 1 ? "" : "s"}`;
@@ -344,6 +347,8 @@ export default function RegionsPage() {
   const [showSignIn, setShowSignIn] = createSignal(false);
   const [local, setLocal] = createSignal(false);
   const [folders, setFolders] = createSignal<string[]>([]);
+  // Zones that already have a regions.yaml, so nobody starts one somebody else has done.
+  const [started, setStarted] = createSignal(new Set<string>());
   const [files, setFiles] = createSignal<ZoneFiles | undefined>();
   const [error, setError] = createSignal<string | undefined>();
   const [status, setStatus] = createSignal<string | undefined>();
@@ -495,7 +500,8 @@ export default function RegionsPage() {
       const names = (json.tree ?? [])
         .map(e => e.path.match(wanted)?.[1])
         .filter((n): n is string => !!n)
-        .sort();
+        .sort((a, b) => zoneLabel(a).localeCompare(zoneLabel(b)));
+      setStarted(new Set((json.tree ?? []).map(e => e.path.match(/^([^/]+)\/regions\.yaml$/)?.[1]).filter((n): n is string => !!n)));
       setFolders(names);
       setStatus(undefined);
       setError(names.length ? undefined : `No ${ZONES}/<zone>/mobs.yaml in ${repo()}@${ref()} yet`);
@@ -950,7 +956,14 @@ export default function RegionsPage() {
           onChange={e => navigate(zoneHref(e.currentTarget.value))}
         >
           <option value="">{folders().length ? `${folders().length} zones, pick one` : "no zones"}</option>
-          <For each={folders()}>{f => <option value={f}>{f}</option>}</For>
+          <Show when={started().size} fallback={<For each={folders()}>{f => <option value={f}>{zoneLabel(f)}</option>}</For>}>
+            <optgroup label="No regions yet">
+              <For each={folders().filter(f => !started().has(f))}>{f => <option value={f}>{zoneLabel(f)}</option>}</For>
+            </optgroup>
+            <optgroup label="Has regions">
+              <For each={folders().filter(f => started().has(f))}>{f => <option value={f}>{zoneLabel(f)}</option>}</For>
+            </optgroup>
+          </Show>
         </select>
         <button
           class={BTN_PLAIN}
