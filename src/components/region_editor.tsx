@@ -334,6 +334,14 @@ export default function RegionEditor(props: RegionEditorProps) {
   const cssOf = (name?: string | null) => `hsl(${(hueOf(name) * 360).toFixed(0)} 90% 60%)`;
 
   createEffect(() => props.onChange(asSet(regions()), assign(), paths()));
+  // Carving and its plans act on the selected region; with none selected every click would do
+  // nothing under a panel that says "0 found".
+  createEffect(() => {
+    if (active()) return;
+    if (mode() === "obstacles") setMode("select");
+    setGrow(null);
+    setMerge(null);
+  });
   // Switching into review mid-tool would leave that tool taking clicks it is no longer offered for.
   createEffect(() => {
     if (canEdit()) return;
@@ -515,7 +523,6 @@ export default function RegionEditor(props: RegionEditorProps) {
     activeName: string | null;
     walker: string | null;
     mirror: string[];
-    mode: Mode;
   }
   interface Step {
     label: string;
@@ -531,7 +538,6 @@ export default function RegionEditor(props: RegionEditorProps) {
     activeName: activeName(),
     walker: walker(),
     mirror: mirror(),
-    mode: mode(),
   });
   const restore = (s: Snapshot) => {
     setRegions(s.regions);
@@ -542,7 +548,9 @@ export default function RegionEditor(props: RegionEditorProps) {
     setActiveName(s.activeName && s.regions.some(r => r.name === s.activeName) ? s.activeName : null);
     setWalker(s.walker && s.paths[s.walker] ? s.walker : null);
     setMirror(s.mirror.filter(id => s.paths[id]));
-    setMode(s.mode);
+    // The tool in hand stays in hand: undoing a cut after leaving carve mode is not a request to go
+    // back into it. Drawing is the exception, since the ring being drawn may be what was undone.
+    if (mode() === "draw") setMode("select");
   };
 
   // Snapshots are taken at operation boundaries, so a whole vertex drag collapses into one step.
