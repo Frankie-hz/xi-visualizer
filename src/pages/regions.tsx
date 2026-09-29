@@ -1,4 +1,4 @@
-import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
+import { useBeforeLeave, useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import RegionEditor from "../components/region_editor";
 import YamlView from "../components/yaml_view";
@@ -106,6 +106,9 @@ const count = (n: number, thing: string) => `${n} ${thing}${n === 1 ? "" : "s"}`
  * folder's, an LSB checkout's -- so a stale draft from one source was silently restored over
  * another and the page showed different geometry depending on when it was last reloaded.
  */
+/** Session flag naming the zone whose edits went out with the sign-in redirect. */
+const RESUME = "xi-visualizer:regions-resume";
+
 const draftKey = (folder: string, source: string) => `xi-visualizer:regions-draft:${folder}:${source}`;
 
 /** Cheap non-cryptographic digest, only needs to tell one version of a file from another. */
@@ -265,6 +268,8 @@ export default function RegionsPage() {
     setError(undefined);
     setSigningIn(true);
     try {
+      // The draft carries the edits across the redirect, and the zone restores it on the way back.
+      if (dirty() && flushDraft()) sessionStorage.setItem(RESUME, files()!.folder);
       await beginSignIn(location.hash || "#/regions");
     } catch (e) {
       setError(`${e}`);
@@ -345,26 +350,50 @@ export default function RegionsPage() {
     edited = true;
     // Keyed now, not when the timer fires: by then another zone can be open, and this zone's
     // edits would be written into its slot.
-    const key = draftKey(f.folder, source());
-    const snapshot = pending;
-    const base = loaded;
+    const write = writerFor(f.folder);
     draftTimer = setTimeout(() => {
-      if (!snapshot) return;
       try {
-        localStorage.setItem(key, JSON.stringify({ at: Date.now(), ...snapshot, base }));
+        write();
       } catch (e) {
         setError(`autosave failed: ${e}`);
       }
     }, 700);
   };
 
+  /** Writes what is on screen into the draft slot for the zone it belongs to, as of now. */
+  const writerFor = (folder: string) => {
+    const key = draftKey(folder, source());
+    const snapshot = pending;
+    const base = loaded;
+    return () => snapshot && localStorage.setItem(key, JSON.stringify({ at: Date.now(), ...snapshot, base }));
+  };
+
+  /**
+   * Writes the draft now instead of in 700ms, before anything that takes the page away: another
+   * zone, another page, the sign-in redirect, a branch being discarded. Returns false only when
+   * there was unsaved work and it could not be written.
+   */
+  const flushDraft = () => {
+    clearTimeout(draftTimer);
+    const f = files();
+    if (!f || !dirty()) return true;
+    try {
+      writerFor(f.folder)();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  useBeforeLeave(() => void flushDraft());
+
   onMount(() => {
     listZones();
     if (isCallback()) finishSignIn().finally(() => setAuthSettled(true));
     else if (authToken()) locateFork().finally(() => setAuthSettled(true));
     else setAuthSettled(true);
+    // With the draft written there is nothing to warn about, including on the way out to sign in.
     const guard = (e: BeforeUnloadEvent) => {
-      if (dirty()) e.preventDefault();
+      if (!flushDraft()) e.preventDefault();
     };
     window.addEventListener("beforeunload", guard);
     onCleanup(() => {
@@ -379,7 +408,10 @@ export default function RegionsPage() {
     // Waiting costs a moment; not waiting reads the zone from staging and shows work already
     // committed as missing.
     if (!authSettled()) return;
-    if (zone && zone !== untrack(files)?.folder) openZone(zone);
+    if (zone && zone !== untrack(files)?.folder) {
+      untrack(flushDraft);
+      openZone(zone);
+    }
   });
 
   // Parsed once when the zone is opened and never re-derived from a patched file: assigning a
@@ -515,6 +547,11 @@ export default function RegionsPage() {
     setSource(stamp);
     loaded = { regions: regionSet, placements: placementsOf(parsed) };
     setDraft(findDraft(next.folder, stamp));
+    // Back from signing in with edits that were on screen when they left: put them straight back.
+    if (sessionStorage.getItem(RESUME) === next.folder && draft()) {
+      sessionStorage.removeItem(RESUME);
+      restoreDraft();
+    }
     // Keyed on the content, not the name: re-opening the same zone from a different branch used to
     // leave the key unchanged, so the editor was never rebuilt and went on showing the files it
     // first mounted with while every signal underneath it held the newer ones.
@@ -656,14 +693,17 @@ export default function RegionsPage() {
   const resetBranch = async () => {
     const where = fork();
     if (where?.state !== "ready" || !sitting()?.ancestor) return;
-    setStatus(`Deleting ${branchName()}…`);
+    const doomed = branchName();
+    // The zone is re-read below, and anything unsaved would otherwise go with the old version.
+    flushDraft();
+    setStatus(`Deleting ${doomed}…`);
     try {
-      await deleteBranch(authToken(), where.repo, branchName());
+      await deleteBranch(authToken(), where.repo, doomed);
       setSitting(undefined);
       setPushed(false);
       setBranchChosen(undefined);
       setConfirmReset(false);
-      setStatus(`Deleted ${branchName()}`);
+      setStatus(`Deleted ${doomed}`);
       const showing = files()?.folder;
       if (showing) await openZone(showing); // back to staging's version of it
     } catch (e) {
