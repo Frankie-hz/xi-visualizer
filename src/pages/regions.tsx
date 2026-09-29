@@ -35,7 +35,7 @@ import {
   placementsOf,
   zoneOfMobId,
 } from "../regions";
-import type { Patrol, Placements, RegionSet, Spawn } from "../regions";
+import type { Patrol, Placements, RegionSet, Spawn, ZoneState } from "../regions";
 import { decompress, fetchProgress } from "../util";
 // The wording of a pull request is prose, so it lives in a file that can be edited as prose.
 import prTemplate from "../pr_template.md?raw";
@@ -59,6 +59,17 @@ interface Draft {
   regions: RegionSet;
   assign: Record<string, string[]>;
   paths?: Record<string, Patrol>;
+  /** The zone as it was loaded when the draft was taken, so a draft that outlives those files can
+   * still be merged onto newer ones rather than thrown away. Absent on drafts from before this. */
+  base?: ZoneState;
+}
+
+/** A draft found for the zone being opened, and whether it was taken from these very files. */
+interface FoundDraft {
+  key: string;
+  draft: Draft;
+  /** Taken from an older version of the zone's files: base has moved on since. */
+  stale: boolean;
 }
 
 // Everything funnels into one staging repository: contributors open pull requests against it, and
@@ -107,22 +118,32 @@ function fingerprint(...texts: string[]): string {
   return (h >>> 0).toString(36);
 }
 
-function readDraft(folder: string, source: string): Draft | undefined {
+function readDraftAt(key: string): Draft | undefined {
   try {
-    return JSON.parse(localStorage.getItem(draftKey(folder, source)) ?? "null") ?? undefined;
+    return JSON.parse(localStorage.getItem(key) ?? "null") ?? undefined;
   } catch {
     return undefined;
   }
 }
 
-/** Drops draft slots for this zone that no longer match the files in front of us. */
-function dropStaleDrafts(folder: string, source: string) {
-  const keep = draftKey(folder, source);
-  const prefix = `xi-visualizer:regions-draft:${folder}`;
-  for (let i = localStorage.length - 1; i >= 0; i--) {
+/**
+ * The draft to offer for this zone: the one taken from these exact files, else the newest taken
+ * from an older version of them. Those used to be deleted on sight, which lost an evening's work
+ * every time somebody else's change to the zone was merged.
+ */
+function findDraft(folder: string, source: string): FoundDraft | undefined {
+  const exact = draftKey(folder, source);
+  const here = readDraftAt(exact);
+  if (here) return { key: exact, draft: here, stale: false };
+  const prefix = `xi-visualizer:regions-draft:${folder}:`;
+  let best: FoundDraft | undefined;
+  for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
-    if (k && k !== keep && (k === prefix || k.startsWith(`${prefix}:`))) localStorage.removeItem(k);
+    if (!k?.startsWith(prefix)) continue;
+    const d = readDraftAt(k);
+    if (d && (!best || d.at > best.draft.at)) best = { key: k, draft: d, stale: true };
   }
+  return best;
 }
 
 export default function RegionsPage() {
@@ -291,7 +312,9 @@ export default function RegionsPage() {
   // Bumped on every edit so the yaml panel can follow along. Patching is a few milliseconds, and
   // this only runs while the panel is open.
   const [edits, setEdits] = createSignal(0);
-  const [draft, setDraft] = createSignal<Draft | undefined>();
+  const [draft, setDraft] = createSignal<FoundDraft | undefined>();
+  // The zone as opened, which is what a draft taken now is a change to.
+  let loaded: ZoneState | undefined;
   const [restored, setRestored] = createSignal<Draft | undefined>();
   // Fingerprint of the files currently open, so a draft belongs to the version it was taken from.
   const [source, setSource] = createSignal("");
@@ -304,6 +327,8 @@ export default function RegionsPage() {
 
   const clearDraft = (folder: string) => {
     localStorage.removeItem(draftKey(folder, source()));
+    const offered = draft();
+    if (offered) localStorage.removeItem(offered.key);
     setDraft(undefined);
   };
 
@@ -316,10 +341,15 @@ export default function RegionsPage() {
     // dirty" as soon as it mounts, which would otherwise wipe the draft before it can be offered.
     if (!isDirty) return edited && clearDraft(f.folder);
     edited = true;
+    // Keyed now, not when the timer fires: by then another zone can be open, and this zone's
+    // edits would be written into its slot.
+    const key = draftKey(f.folder, source());
+    const snapshot = pending;
+    const base = loaded;
     draftTimer = setTimeout(() => {
-      if (!pending) return;
+      if (!snapshot) return;
       try {
-        localStorage.setItem(draftKey(f.folder, source()), JSON.stringify({ at: Date.now(), ...pending }));
+        localStorage.setItem(key, JSON.stringify({ at: Date.now(), ...snapshot, base }));
       } catch (e) {
         setError(`autosave failed: ${e}`);
       }
@@ -481,8 +511,8 @@ export default function RegionsPage() {
     setRestored(undefined);
     const stamp = fingerprint(next.regionsYaml, next.mobsYaml);
     setSource(stamp);
-    dropStaleDrafts(next.folder, stamp);
-    setDraft(readDraft(next.folder, stamp));
+    loaded = { regions: regionSet, placements: placementsOf(parsed) };
+    setDraft(findDraft(next.folder, stamp));
     // Keyed on the content, not the name: re-opening the same zone from a different branch used to
     // leave the key unchanged, so the editor was never rebuilt and went on showing the files it
     // first mounted with while every signal underneath it held the newer ones.
@@ -490,10 +520,41 @@ export default function RegionsPage() {
   };
 
   const restoreDraft = () => {
-    const d = draft();
-    if (!d) return;
+    const found = draft();
+    const f = files();
+    if (!found || !f) return;
+    let d = found.draft;
+    if (found.stale && d.base && loaded) {
+      // The draft is a change to an older version of the zone. Merged onto the current one, so
+      // what arrived on base since stays, and only what this draft changed is taken from it.
+      const merged = mergeZone(d.base, loaded, {
+        regions: d.regions,
+        placements: Object.fromEntries((spawns() ?? []).map(s => [
+          s.id,
+          d.assign[s.id] ? { regions: d.assign[s.id] } : d.paths?.[s.id] ? { patrol: d.paths[s.id] } : {},
+        ])),
+      });
+      const placed = Object.entries(merged.placements);
+      d = {
+        at: d.at,
+        regions: merged.regions,
+        assign: Object.fromEntries(placed.filter(([, p]) => p.regions?.length).map(([id, p]) => [id, p.regions!])),
+        paths: Object.fromEntries(placed.filter(([, p]) => p.patrol).map(([id, p]) => [id, p.patrol!])),
+      };
+      setStatus(
+        merged.conflicts.length
+          ? `Restored onto the current ${f.folder}. ${merged.conflicts.join(", ")} also changed on ${ref()}; your version was kept, check ${
+            merged.conflicts.length === 1 ? "it" : "them"
+          } before saving.`
+          : `Restored onto the current ${f.folder}, keeping what changed on ${ref()} since.`,
+      );
+    } else if (found.stale) {
+      setStatus(`Restored as it was. ${f.folder} has changed since, so check nothing added on ${ref()} went missing before saving.`);
+    }
     setRestored(d);
-    setEditorKey(`${files()!.folder}:${d.at}`);
+    setEditorKey(`${f.folder}:${d.at}`);
+    // The restored work is autosaved under this version's slot from the next edit on.
+    if (found.stale) localStorage.removeItem(found.key);
     setDraft(undefined);
   };
 
@@ -1088,8 +1149,12 @@ export default function RegionsPage() {
       <Show when={draft()}>
         <div class="mt-3 flex items-center gap-3 text-sm bg-amber-900/40 border border-amber-700 rounded px-3 py-2">
           <span>
-            Unsaved work on {files()!.folder} from {new Date(draft()!.at).toLocaleString()}: {Object.keys(draft()!.regions).length} regions,{" "}
-            {Object.keys(draft()!.assign).length} assignments.
+            Unsaved work on {files()!.folder} from {new Date(draft()!.draft.at).toLocaleString()}:{" "}
+            {count(Object.keys(draft()!.draft.regions).length, "region")}, {count(Object.keys(draft()!.draft.assign).length, "assignment")}.
+            <Show when={draft()!.stale}>
+              {" "}
+              {files()!.folder} has changed on {ref()} since; Restore merges your edits onto the current version.
+            </Show>
           </span>
           <button class={`${BTN} bg-amber-600 hover:bg-amber-500 text-white`} onClick={restoreDraft}>Restore</button>
           <button class={BTN_QUIET} onClick={() => clearDraft(files()!.folder)}>Discard</button>
