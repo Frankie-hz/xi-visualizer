@@ -1,4 +1,4 @@
-import { segmentDistance, signedArea } from "./geometry.ts";
+import { inRing, segmentDistance, signedArea } from "./geometry.ts";
 import { simplifyRing } from "./regions.ts";
 import type { Ring, Vertex } from "./regions.ts";
 
@@ -460,4 +460,82 @@ export function elongation(o: Obstacle, cell = 0.5): number {
   }
   const longest = (Math.max(maxX - minX, maxZ - minZ) + 1) * cell;
   return longest / Math.sqrt(obstacleArea(o, cell));
+}
+
+/** Every cell within `clearance` yalms of a walked cell: ground the mobs use. */
+export function groundNear(walked: Iterable<number>, clearance: number, cell = 0.5): Set<number> {
+  const reach = Math.ceil(clearance / cell);
+  const near = new Set<number>();
+  for (const k of walked) {
+    const [ix, iz] = unkey(k);
+    for (let dz = -reach; dz <= reach; dz++) {
+      for (let dx = -reach; dx <= reach; dx++) {
+        if (Math.hypot(dx, dz) * cell <= clearance + cell / 2) near.add(keyOf(ix + dx, iz + dz));
+      }
+    }
+  }
+  return near;
+}
+
+export interface Patch {
+  cells: Set<number>;
+  /** It ran into the outline: a notch in the region's edge, not an enclosed patch. */
+  touchesEdge: boolean;
+  /** It stopped at the budget, so it is bigger than `cells`. */
+  overBudget: boolean;
+}
+
+/**
+ * The cells four-connected to `start` that lie inside the outline and are not `blocked`, up to
+ * `budget` of them. Four-connected so a patch cannot leak through a diagonal gap between two
+ * blocked cells. Cells reached are added to `seen`, so a scan can skip them afterwards.
+ */
+export function floodPatch(start: number, blocked: Set<number>, outline: Ring, cell: number, budget: number, seen = new Set<number>()): Patch {
+  const inside = (ix: number, iz: number) => inRing(outline, (ix + 0.5) * cell, (iz + 0.5) * cell);
+  const cells = new Set<number>([start]);
+  seen.add(start);
+  const queue = [start];
+  let touchesEdge = false;
+  while (queue.length) {
+    const [cx, cz] = unkey(queue.pop()!);
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const nk = keyOf(cx + dx, cz + dz);
+      if (seen.has(nk) || blocked.has(nk)) continue;
+      if (!inside(cx + dx, cz + dz)) {
+        touchesEdge = true;
+        continue;
+      }
+      seen.add(nk);
+      cells.add(nk);
+      queue.push(nk);
+      if (cells.size > budget) return { cells, touchesEdge, overBudget: true };
+    }
+  }
+  return { cells, touchesEdge, overBudget: false };
+}
+
+/**
+ * Ground inside the outline, enclosed by ground the mobs use, that none of them came near: each
+ * patch as its cells. One that reaches the outline is a notch and left for the outline tools; one
+ * outside `minCells`..`maxCells` is sampling noise, or the outline being wrong.
+ */
+export function emptyPatches(outline: Ring, near: Set<number>, cell: number, minCells: number, maxCells: number): Set<number>[] {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const [x, , z] of outline) {
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minZ = Math.min(minZ, z);
+    maxZ = Math.max(maxZ, z);
+  }
+  const seen = new Set<number>();
+  const out: Set<number>[] = [];
+  for (let ix = Math.floor(minX / cell); ix <= Math.floor(maxX / cell); ix++) {
+    for (let iz = Math.floor(minZ / cell); iz <= Math.floor(maxZ / cell); iz++) {
+      const start = keyOf(ix, iz);
+      if (seen.has(start) || near.has(start) || !inRing(outline, (ix + 0.5) * cell, (iz + 0.5) * cell)) continue;
+      const patch = floodPatch(start, near, outline, cell, maxCells, seen);
+      if (!patch.touchesEdge && !patch.overBudget && patch.cells.size >= minCells) out.push(patch.cells);
+    }
+  }
+  return out;
 }

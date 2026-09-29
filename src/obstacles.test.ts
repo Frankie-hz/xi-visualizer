@@ -1,6 +1,6 @@
 // node src/obstacles.test.ts
 import assert from "node:assert";
-import { cellKey, findObstacles, obstacleArea, obstacleAt, ringAround, ringsAround } from "./obstacles.ts";
+import { cellKey, emptyPatches, findObstacles, floodPatch, groundNear, obstacleArea, obstacleAt, ringAround, ringsAround } from "./obstacles.ts";
 import type { Ring } from "./regions.ts";
 
 // A square trunk one yalm across standing on flat ground: four vertical quads (two triangles
@@ -128,5 +128,23 @@ assert.ok(!opened.some(r => inRingXZ(r, 0, 0)), "the sampled top is outside ever
 // A minimum span keeps the tall faces: a 4-yalm trunk passes at 2, not at 6.
 assert.strictEqual(findObstacles(new Float32Array([...floor, ...trunk(0, 0, 0.5, 4)]), { cell: 0.5, minSpan: 2 }).length, 1);
 assert.strictEqual(findObstacles(new Float32Array([...floor, ...trunk(0, 0, 0.5, 4)]), { cell: 0.5, minSpan: 6 }).length, 0);
+
+// --- empty patches ---
+{
+  const outline: Ring = [[0, 0, 0], [20, 0, 0], [20, 0, 20], [0, 0, 20]];
+  // Mobs recorded on a ring around the middle, never in it: the middle is an enclosed patch.
+  const walked: number[] = [];
+  for (let a = 0; a < 360; a += 3) walked.push(cellKey(10 + 5 * Math.cos((a * Math.PI) / 180), 10 + 5 * Math.sin((a * Math.PI) / 180)));
+  const near = groundNear(walked, 1);
+  assert.ok(near.has(cellKey(10 + 5.9, 10)), "within a yalm of a sample is ground the mobs use");
+  assert.ok(!near.has(cellKey(10, 10)), "the middle is not");
+  const found = emptyPatches(outline, near, 0.5, 4, 400);
+  assert.strictEqual(found.length, 1, "the middle, and not the ground outside the ring, which reaches the outline");
+  assert.ok(found[0].has(cellKey(10, 10)));
+  // From a spot, the same flood: bounded, and it knows when it ran into the outline.
+  assert.ok(!floodPatch(cellKey(10, 10), near, outline, 0.5, 400).touchesEdge);
+  assert.ok(floodPatch(cellKey(1, 1), near, outline, 0.5, 4000).touchesEdge);
+  assert.ok(floodPatch(cellKey(1, 1), near, outline, 0.5, 10).overBudget, "and stops at its budget");
+}
 
 console.log("ok");

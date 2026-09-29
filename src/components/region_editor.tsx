@@ -10,7 +10,20 @@ import { setupBaseScene } from "../graphics/scene";
 import { cleanupNode } from "../graphics/util";
 import { createViewer } from "../graphics/viewer";
 import { ColorKind, colorMesh, createZoneMesh, mapIdPerVertex, prepareMeshData } from "../graphics/ximesh";
-import { cellKey, cellOf, elongation, findObstacles, keyOfCell, obstacleArea, obstacleAt, ringsAround, traceCells } from "../obstacles";
+import {
+  cellKey,
+  cellOf,
+  elongation,
+  emptyPatches,
+  findObstacles,
+  floodPatch,
+  groundNear,
+  keyOfCell,
+  obstacleArea,
+  obstacleAt,
+  ringsAround,
+  traceCells,
+} from "../obstacles";
 import type { Obstacle } from "../obstacles";
 import { containsXZ, regionAt, regionHue, regionsFromPoints, repairRegion, routeFromTrail, selfIntersects, simplifyRing, validate } from "../regions";
 import type { Finding, Patrol, Region, RegionSet, Ring, Spawn, TrailPoint, Vertex } from "../regions";
@@ -167,39 +180,15 @@ export default function RegionEditor(props: RegionEditorProps) {
     const entry = g && regions().find(r => r.name === g.name);
     if (!g || !entry || (entry.rings[0]?.length ?? 0) < 3) return null;
     const cell = OBSTACLE_CELL;
-    const reach = Math.ceil(growClearance() / cell);
-    // Every cell within the clearance of a sample is ground the mobs use.
-    const near = new Set<number>();
-    for (const k of walkedCellsAll()) {
-      const [ix, iz] = cellOf(k);
-      for (let dz = -reach; dz <= reach; dz++) {
-        for (let dx = -reach; dx <= reach; dx++) {
-          if (Math.hypot(dx, dz) * cell <= growClearance() + cell / 2) near.add(keyOfCell(ix + dx, iz + dz));
-        }
-      }
-    }
-    // Flood from the spot over ground inside the outline that no sample comes near. A patch
-    // over a quarter of the region is the outline being wrong, not an obstacle.
+    // Every cell within the clearance of a sample is ground the mobs use. From the spot, the rest
+    // inside the outline; a patch over a quarter of the region is the outline being wrong.
+    const near = groundNear(walkedCellsAll(), growClearance(), cell);
     const outline = entry.rings[0];
-    const budget = Math.abs(signedArea(outline)) * 0.25 / (cell * cell);
     const start = cellKey(g.x, g.z, cell);
     if (near.has(start)) return { entry, cells: new Map<number, number>(), ring: null, why: "mobs were recorded right here" };
-    const taken = new Map<number, number>([[start, g.y]]);
-    const queue = [start];
-    while (queue.length) {
-      const [ix, iz] = cellOf(queue.pop()!);
-      for (let dz = -1; dz <= 1; dz++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (dx && dz) continue; // four-connected, so the patch cannot leak through a corner
-          const nk = keyOfCell(ix + dx, iz + dz);
-          if (taken.has(nk) || near.has(nk)) continue;
-          if (!inRing(outline, (ix + dx + 0.5) * cell, (iz + dz + 0.5) * cell)) continue;
-          taken.set(nk, g.y);
-          queue.push(nk);
-          if (taken.size > budget) return { entry, cells: taken, ring: null, why: "would take over a quarter of the region" };
-        }
-      }
-    }
+    const patch = floodPatch(start, near, outline, cell, Math.abs(signedArea(outline)) * 0.25 / (cell * cell));
+    const taken = new Map([...patch.cells].map(k => [k, g.y]));
+    if (patch.overBudget) return { entry, cells: taken, ring: null, why: "would take over a quarter of the region" };
     const rings = traceCells(taken, cell, g.y).sort((a, b) => Math.abs(signedArea(b)) - Math.abs(signedArea(a)));
     const ring = rings[0] ? onGround(rings[0].map(([x, , z]) => [x, sampleFloor(x, z, g.y), z] as Vertex)) : null;
     return { entry, cells: taken, ring, why: rings[0] ? null : "nothing to grow into" };
@@ -912,64 +901,18 @@ export default function RegionEditor(props: RegionEditorProps) {
     const r = active();
     if (mode() !== "obstacles" || !r || (r.rings[0]?.length ?? 0) < 3 || !walkedCells().size) return [];
     const cell = OBSTACLE_CELL;
-    const clearance = growClearance();
-    const reach = Math.ceil(clearance / cell);
-    const near = new Set<number>();
-    for (const k of walkedCells()) {
-      const [ix, iz] = cellOf(k);
-      for (let dz = -reach; dz <= reach; dz++) {
-        for (let dx = -reach; dx <= reach; dx++) {
-          if (Math.hypot(dx, dz) * cell <= clearance + cell / 2) near.add(keyOfCell(ix + dx, iz + dz));
-        }
-      }
-    }
     const outline = r.rings[0];
-    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-    for (const [x, , z] of outline) {
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
-      minZ = Math.min(minZ, z);
-      maxZ = Math.max(maxZ, z);
-    }
-    const inside = (ix: number, iz: number) => inRing(outline, (ix + 0.5) * cell, (iz + 0.5) * cell);
-    const seen = new Set<number>();
+    const near = groundNear(walkedCells(), growClearance(), cell);
+    const patches = emptyPatches(outline, near, cell, gapMinArea() / (cell * cell), Math.abs(signedArea(outline)) * 0.25 / (cell * cell));
+    // A patch that already lies inside a hole has nothing left to cut.
+    const holes = r.rings.slice(1).filter(h => h.length >= 3);
     const out: Ring[] = [];
-    const budget = Math.abs(signedArea(outline)) * 0.25 / (cell * cell);
-    const minCells = gapMinArea() / (cell * cell);
-    for (let ix = Math.floor(minX / cell); ix <= Math.floor(maxX / cell); ix++) {
-      for (let iz = Math.floor(minZ / cell); iz <= Math.floor(maxZ / cell); iz++) {
-        const start = keyOfCell(ix, iz);
-        if (seen.has(start) || near.has(start) || !inside(ix, iz)) continue;
-        // Flood one patch, four-connected; one that reaches the outline is a notch, not a hole,
-        // and is left for the outline tools.
-        const patch = new Map<number, number>();
-        const queue = [start];
-        seen.add(start);
-        let touchesEdge = false;
-        while (queue.length) {
-          const k = queue.pop()!;
-          const [cx, cz] = cellOf(k);
-          patch.set(k, 0);
-          for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-            const nk = keyOfCell(cx + dx, cz + dz);
-            if (seen.has(nk) || near.has(nk)) continue;
-            if (!inside(cx + dx, cz + dz)) {
-              touchesEdge = true;
-              continue;
-            }
-            seen.add(nk);
-            queue.push(nk);
-          }
-          if (patch.size > budget) break;
-        }
-        if (touchesEdge || patch.size < minCells || patch.size > budget) continue;
-        // A patch that already lies inside a hole has nothing left to cut.
-        const holes = r.rings.slice(1).filter(h => h.length >= 3);
-        const y = sampleFloor((ix + 0.5) * cell, (iz + 0.5) * cell, lastYOf(r.name, (ix + 0.5) * cell, (iz + 0.5) * cell));
-        for (const ring of traceCells(patch, cell, y)) {
-          if (holes.some(h => ring.every(([x, , z]) => withinRing(h, x, z, OBSTACLE_CELL / 2)))) continue;
-          out.push(onGround(ring.map(([x, , z]) => [x, sampleFloor(x, z, y), z] as Vertex)));
-        }
+    for (const cells of patches) {
+      const [ix, iz] = cellOf(cells.values().next().value!);
+      const y = sampleFloor((ix + 0.5) * cell, (iz + 0.5) * cell, lastYOf(r.name, (ix + 0.5) * cell, (iz + 0.5) * cell));
+      for (const ring of traceCells(new Map([...cells].map(k => [k, y])), cell, y)) {
+        if (holes.some(h => ring.every(([x, , z]) => withinRing(h, x, z, OBSTACLE_CELL / 2)))) continue;
+        out.push(onGround(ring.map(([x, , z]) => [x, sampleFloor(x, z, y), z] as Vertex)));
       }
     }
     return out;
