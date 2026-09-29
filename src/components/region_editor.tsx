@@ -290,6 +290,20 @@ export default function RegionEditor(props: RegionEditorProps) {
     | null
   >(null);
 
+  // The menu opens at the cursor, which near the right or bottom edge put half of it off screen.
+  // Pulled back inside once it has a size, and focused so the keyboard can reach it.
+  createEffect(() => {
+    if (!menu()) return;
+    requestAnimationFrame(() => {
+      const el = menuElement;
+      if (!el) return;
+      const box = el.getBoundingClientRect();
+      if (box.right > innerWidth - 4) el.style.left = `${Math.max(4, innerWidth - box.width - 4)}px`;
+      if (box.bottom > innerHeight - 4) el.style.top = `${Math.max(4, innerHeight - box.height - 4)}px`;
+      el.querySelector("button")?.focus({ preventScroll: true });
+    });
+  });
+
   // Hovering a dot on the map or a row in the member list picks out that mob's roam trail; clicking
   // the row pins it, so the trail stays put while you reshape the polygon around it.
   const focusId = () => hover()?.spawn.id ?? rowFocus() ?? pinnedId();
