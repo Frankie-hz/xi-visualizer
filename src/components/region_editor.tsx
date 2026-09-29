@@ -666,7 +666,9 @@ export default function RegionEditor(props: RegionEditorProps) {
     // A blob past the bulk size, or shaped like a cliff, is trees and rocks chained together
     // through the low faces between them: roots, a bank. Its tall faces, the trunks and rock
     // walls, are found again on their own and offered as parts.
-    const blobs = found.filter(o => obstacleArea(o, OBSTACLE_CELL) > obstacleBulkMax() || (obstacleArea(o, OBSTACLE_CELL) >= 10 && elongation(o, OBSTACLE_CELL) > 2.5));
+    const blobs = found.filter(o =>
+      obstacleArea(o, OBSTACLE_CELL) > obstacleBulkMax() || (obstacleArea(o, OBSTACLE_CELL) >= 10 && elongation(o, OBSTACLE_CELL) > 2.5)
+    );
     if (blobs.length) {
       const inBlob = new Set(blobs.flatMap(o => o.cells.map(([ix, iz]) => keyOfCell(ix, iz))));
       for (const part of findObstacles(pos, { ...scan, minSpan: TALL_FACE })) {
@@ -689,7 +691,20 @@ export default function RegionEditor(props: RegionEditorProps) {
   // Rescans whenever the region itself changes too: a ring just cut, or undone, moves obstacles
   // into or out of a hole, and the list of what is left to ring must follow.
   createEffect(on(
-    [mode, activeName, floor, regions, obstacleSlope, obstacleJoin, obstacleClimb, obstacleMinHeight, obstacleMinArea, obstacleMargin, obstacleBulkMax, walkedCells],
+    [
+      mode,
+      activeName,
+      floor,
+      regions,
+      obstacleSlope,
+      obstacleJoin,
+      obstacleClimb,
+      obstacleMinHeight,
+      obstacleMinArea,
+      obstacleMargin,
+      obstacleBulkMax,
+      walkedCells,
+    ],
     () => (mode() === "obstacles" ? scanObstacles() : setObstacles([])),
   ));
   /**
@@ -2832,7 +2847,9 @@ export default function RegionEditor(props: RegionEditorProps) {
             <button
               class="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-900/80 hover:bg-slate-800 text-slate-200 disabled:opacity-40"
               disabled={!active() || !zoneMesh}
-              title={active() ? `Put every vertex of the selected region on the ground: onto a surface within ${GROUND_SNAP} y, and none more than ${SPIKE} y above or below both its neighbours` : "Select a region first"}
+              title={active()
+                ? `Put every vertex of the selected region on the ground: onto a surface within ${GROUND_SNAP} y, and none more than ${SPIKE} y above or below both its neighbours`
+                : "Select a region first"}
               onClick={() => {
                 const entry = active();
                 if (!entry) return;

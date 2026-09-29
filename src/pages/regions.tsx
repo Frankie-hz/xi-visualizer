@@ -4,11 +4,38 @@ import RegionEditor from "../components/region_editor";
 import YamlView from "../components/yaml_view";
 import type { ZoneData } from "../components/zone_model";
 import zones from "../data/zones";
-import { compareUrl, deleteBranch, fillTemplate, findFork, findSitting, type ForkState, forkUrl, freeBranchName, grantedOn, installUrl, listRegionBranches, prTitle, save, type Sitting, whoAmI } from "../github";
-import { canSignIn, completeSignIn, isCallback, signOut, startSignIn as beginSignIn, storedToken } from "../github_auth";
-import { commitMessage, emitRegionsBlock, mergeZone, parseMobsYaml, parsePastedZone, parseRegionsYaml, patchMobsYaml, patchRegionsYaml, placementsOf, zoneOfMobId } from "../regions";
-import type { Patrol, Placements, RegionSet, Spawn } from "../regions";
+import {
+  compareUrl,
+  deleteBranch,
+  fillTemplate,
+  findFork,
+  findSitting,
+  type ForkState,
+  forkUrl,
+  freeBranchName,
+  grantedOn,
+  installUrl,
+  listRegionBranches,
+  prTitle,
+  save,
+  type Sitting,
+  whoAmI,
+} from "../github";
 import type { ZoneOnBranch } from "../github";
+import { canSignIn, completeSignIn, isCallback, signOut, startSignIn as beginSignIn, storedToken } from "../github_auth";
+import {
+  commitMessage,
+  emitRegionsBlock,
+  mergeZone,
+  parseMobsYaml,
+  parsePastedZone,
+  parseRegionsYaml,
+  patchMobsYaml,
+  patchRegionsYaml,
+  placementsOf,
+  zoneOfMobId,
+} from "../regions";
+import type { Patrol, Placements, RegionSet, Spawn } from "../regions";
 import { decompress, fetchProgress } from "../util";
 // The wording of a pull request is prose, so it lives in a file that can be edited as prose.
 import prTemplate from "../pr_template.md?raw";
@@ -146,19 +173,13 @@ export default function RegionsPage() {
 
   const branchName = () => branchChosen() ?? sitting()?.branch ?? branchForToday();
 
-
-
   /** findSitting only looks under regions/, so a branch named outside it would never be found again. */
 
   const asBranch = (raw: string) => {
-
     const tail = raw.replace(/^regions\//, "").trim().replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
 
     return tail ? `regions/${tail}` : branchForToday();
-
   };
-
-
 
   /**
 
@@ -169,7 +190,6 @@ export default function RegionsPage() {
    */
 
   const startNewBranch = async () => {
-
     const where = fork();
 
     if (where?.state !== "ready") return;
@@ -177,7 +197,6 @@ export default function RegionsPage() {
     setStatus("Naming a new branch…");
 
     try {
-
       const taken = await listRegionBranches(authToken(), where.repo);
 
       setBranchChosen(freeBranchName(taken, branchForToday()));
@@ -187,15 +206,11 @@ export default function RegionsPage() {
       setPushed(false);
 
       setStatus(`Next save starts ${branchName()}`);
-
     } catch (e) {
-
       setStatus(undefined);
 
       setError(`${e}`);
-
     }
-
   };
   /** The zones sitting on the working branch, so the pull request can name what it actually holds. */
   const branchZones = () => sitting()?.zones ?? [];
@@ -697,7 +712,11 @@ export default function RegionsPage() {
           { path: `${ZONES}/${f.folder}/mobs.yaml`, content: next.mobsYaml },
         ],
       });
-      setStatus(result.unchanged ? (result.onBranch ? "Already committed" : "Nothing to commit") : `Committed, ${count(result.zones.length, "zone")} on ${branchName()}`);
+      setStatus(
+        result.unchanged
+          ? (result.onBranch ? "Already committed" : "Nothing to commit")
+          : `Committed, ${count(result.zones.length, "zone")} on ${branchName()}`,
+      );
       if (!result.unchanged) {
         // It is on a branch now, so this is as safe as saving to disk.
         setFiles({ ...f, ...next });
@@ -811,14 +830,14 @@ export default function RegionsPage() {
             {zones[zoneId()!]?.name ?? "?"} ({zoneId()}) · {spawns()?.length ?? 0} spawns
           </span>
           <Show when={!reviewing()}>
-          <button
-            class={BTN}
-            classList={{ "bg-emerald-600 hover:bg-emerald-500 text-white": dirty(), "bg-slate-700 text-slate-400": !dirty() }}
-            onClick={local() ? saveLocal : saveToBranch}
-            title={local() ? "Write both files back to the local folder" : `Commit both files to ${branchName()} on your fork`}
-          >
-            {dirty() ? "Save" : local() ? "Saved" : pushed() ? "Committed" : "No changes"}
-          </button>
+            <button
+              class={BTN}
+              classList={{ "bg-emerald-600 hover:bg-emerald-500 text-white": dirty(), "bg-slate-700 text-slate-400": !dirty() }}
+              onClick={local() ? saveLocal : saveToBranch}
+              title={local() ? "Write both files back to the local folder" : `Commit both files to ${branchName()} on your fork`}
+            >
+              {dirty() ? "Save" : local() ? "Saved" : pushed() ? "Committed" : "No changes"}
+            </button>
           </Show>
           <button class={BTN_PLAIN} onClick={copyPatched}>Copy YAML</button>
           <Show when={!reviewing()}>
@@ -945,8 +964,9 @@ export default function RegionsPage() {
               {signingIn() ? "Off to GitHub…" : "Install & sign in"}
             </button>
             <span class="text-slate-400">
-              Takes you to GitHub to install this app on your fork of {repo()}, and signs you in on the way back. Saves then
-              commit to <b>{branchName()}</b> there, and nothing else is touched until you open the pull request yourself.
+              Takes you to GitHub to install this app on your fork of {repo()}, and signs you in on the way back. Saves then commit to <b>{branchName()}</b>
+              {" "}
+              there, and nothing else is touched until you open the pull request yourself.
             </span>
           </Show>
 
@@ -961,34 +981,39 @@ export default function RegionsPage() {
             <button class={BTN_QUIET} onClick={locateFork}>Done, check again</button>
           </Show>
 
-          {/* Writable, but the first branch would carry a thousand unrelated commits into the fork,
+          {
+            /* Writable, but the first branch would carry a thousand unrelated commits into the fork,
               some of them touching .github/workflows, which an app may not do without Workflows
-              (write). Syncing the fork removes the difference and needs no extra permission. */}
+              (write). Syncing the fork removes the difference and needs no extra permission. */
+          }
           <Show when={fork()?.state === "needs_sync"}>
             <span>
-              Your fork <b>{forkRepo()}</b> is behind <b>{repo()}</b>, far enough that the first commit would carry workflow
-              changes into it, which GitHub does not let an app do. Either fixes it:
+              Your fork <b>{forkRepo()}</b> is behind{" "}
+              <b>{repo()}</b>, far enough that the first commit would carry workflow changes into it, which GitHub does not let an app do. Either fixes it:
             </span>
             <a class={BTN_GO} href={`https://github.com/${forkRepo()}`} target="_blank" rel="noreferrer">
               Sync fork
             </a>
-            {/* The other way: accepting the app's permissions covers it however far behind the fork
+            {
+              /* The other way: accepting the app's permissions covers it however far behind the fork
                 is. Changing an app's permissions leaves a request the installation's owner has to
-                accept -- signing in again does not do it, since that only issues a new token. */}
+                accept -- signing in again does not do it, since that only issues a new token. */
+            }
             <a class={BTN_PLAIN} href="https://github.com/settings/installations" target="_blank" rel="noreferrer">
               or accept the app's permissions
             </a>
             <button class={BTN_QUIET} onClick={locateFork}>Done, check again</button>
           </Show>
 
-          {/* Installed, but on terms that cannot commit. GitHub keeps an installation on the
+          {
+            /* Installed, but on terms that cannot commit. GitHub keeps an installation on the
               permissions it was created with until its owner accepts a newer set, so this looks
-              exactly like a working setup right up to the first commit. */}
+              exactly like a working setup right up to the first commit. */
+          }
           <Show when={fork()?.state === "needs_permission"}>
             <span>
-              The app is installed on <b>{forkRepo()}</b> but was only granted{" "}
-              <b>{(fork() as { granted?: string; })?.granted}</b>, and committing needs <b>contents: write</b>. Accept the
-              updated permissions and it will work.
+              The app is installed on <b>{forkRepo()}</b> but was only granted <b>{(fork() as { granted?: string; })?.granted}</b>, and committing needs{" "}
+              <b>contents: write</b>. Accept the updated permissions and it will work.
             </span>
             <a class={BTN_GO} href="https://github.com/settings/installations" target="_blank" rel="noreferrer">
               Review permissions
@@ -996,13 +1021,14 @@ export default function RegionsPage() {
             <button class={BTN_QUIET} onClick={locateFork}>Done, check again</button>
           </Show>
 
-          {/* Signing in authorises the app; it does not install it, and only an installation can
+          {
+            /* Signing in authorises the app; it does not install it, and only an installation can
               write. The token reads the fork perfectly either way, so this has to be asked about
-              rather than waited for. */}
+              rather than waited for. */
+          }
           <Show when={fork()?.state === "not_installed"}>
             <span>
-              Signed in, but the app is not installed on <b>{forkRepo()}</b> yet. Installing is what lets it commit; signing in
-              only proved who you are.
+              Signed in, but the app is not installed on <b>{forkRepo()}</b> yet. Installing is what lets it commit; signing in only proved who you are.
             </span>
             <a
               class={BTN_GO}
@@ -1018,8 +1044,8 @@ export default function RegionsPage() {
           {/* Nothing to offer without a relay, and saying so beats an empty box. */}
           <Show when={!canSignIn()}>
             <span class="text-slate-400">
-              Sign-in is not configured on this copy of the editor. Use <b>Copy YAML</b> and commit the files yourself, or see
-              docs/github-sign-in.md to point a build at a relay.
+              Sign-in is not configured on this copy of the editor. Use <b>Copy YAML</b>{" "}
+              and commit the files yourself, or see docs/github-sign-in.md to point a build at a relay.
             </span>
           </Show>
         </div>
@@ -1036,8 +1062,8 @@ export default function RegionsPage() {
       <Show when={pasting()}>
         <div class="mt-3 flex flex-col gap-2 text-sm bg-slate-800 border border-slate-600 rounded px-3 py-2">
           <span class="text-slate-400">
-            Paste what <b>Copy YAML</b> gave you, or a regions.yaml on its own. It loads into{" "}
-            <b>{files()?.folder}</b> without committing anything, so Save is still what puts it anywhere.
+            Paste what <b>Copy YAML</b> gave you, or a regions.yaml on its own. It loads into <b>{files()?.folder}</b>{" "}
+            without committing anything, so Save is still what puts it anywhere.
           </span>
           <textarea
             class="w-full h-40 px-2 py-1 bg-slate-900 rounded font-mono text-xs"

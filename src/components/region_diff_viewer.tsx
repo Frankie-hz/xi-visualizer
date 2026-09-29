@@ -3,10 +3,10 @@ import * as THREE from "three";
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { Line2, LineGeometry, LineMaterial, MapControls } from "three/examples/jsm/Addons.js";
 import { createMapCamera, fitCameraToContents } from "../graphics/camera";
+import { buildNavMeshGroup, parseNavMesh } from "../graphics/navmesh";
 import { setupBaseScene } from "../graphics/scene";
 import { cleanupNode } from "../graphics/util";
 import { createViewer } from "../graphics/viewer";
-import { buildNavMeshGroup, parseNavMesh } from "../graphics/navmesh";
 import { ColorKind, createZoneMesh, prepareMeshData } from "../graphics/ximesh";
 import { regionDifference } from "../regions";
 import type { Region, RegionsDiff, ZoneSide } from "../regions";
@@ -375,10 +375,12 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
     const stalk = new THREE.BufferGeometry().setFromPoints([at, at.clone().setY(at.y + 30)]);
     group.add(new THREE.Line(stalk, new THREE.LineBasicMaterial({ color: colour, depthTest: false })));
     const dot = new THREE.BufferGeometry().setFromPoints([at]);
-    group.add(new THREE.Points(
-      dot,
-      new THREE.PointsMaterial({ color: colour, size: 12, sizeAttenuation: false, depthTest: false, map: roundDot(), transparent: true }),
-    ));
+    group.add(
+      new THREE.Points(
+        dot,
+        new THREE.PointsMaterial({ color: colour, size: 12, sizeAttenuation: false, depthTest: false, map: roundDot(), transparent: true }),
+      ),
+    );
     return group;
   };
 
@@ -426,10 +428,12 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
         for (const { at: to, name: toName } of tos) {
           labels.push(`${move?.name ?? want.spawn} · ${fromName} → ${toName}`);
           // The path it took, faint, so the route is there even between passes of the dot.
-          marker.add(new THREE.Line(
-            new THREE.BufferGeometry().setFromPoints([from.clone().setY(from.y + 20), to.clone().setY(to.y + 20)]),
-            new THREE.LineBasicMaterial({ color: 0xfff066, depthTest: false, transparent: true, opacity: 0.35 }),
-          ));
+          marker.add(
+            new THREE.Line(
+              new THREE.BufferGeometry().setFromPoints([from.clone().setY(from.y + 20), to.clone().setY(to.y + 20)]),
+              new THREE.LineBasicMaterial({ color: 0xfff066, depthTest: false, transparent: true, opacity: 0.35 }),
+            ),
+          );
           const dot = new THREE.Points(
             new THREE.BufferGeometry().setFromPoints([new THREE.Vector3()]),
             new THREE.PointsMaterial({ color: 0xfff066, size: 16, sizeAttenuation: false, depthTest: false, map: roundDot(), transparent: true }),
@@ -557,8 +561,10 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
   return (
     <div class="relative h-full">
       <canvas class="block w-full h-full outline-none" ref={canvasElement!} />
-      {/* The layer ignores the mouse so the camera still drags through it; the labels take it
-          back, since a name on the map is the most obvious thing to click. */}
+      {
+        /* The layer ignores the mouse so the camera still drags through it; the labels take it
+          back, since a name on the map is the most obvious thing to click. */
+      }
       <div class="absolute inset-0 overflow-hidden pointer-events-none">
         <For each={labelled()}>
           {([name, kind]) => {

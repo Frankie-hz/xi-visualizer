@@ -53,8 +53,7 @@ export function zoneOfMobId(mobId: string | number): number {
  * drawn regions for yet is exactly that: regions.yaml is absent for almost every zone, and reads
  * back as "". Absent is an answer here, not a parse failure. Real syntax errors still throw.
  */
-const hasNoDocument = (text: string) =>
-  text.split("\n").every(line => !line.trim() || line.trimStart().startsWith("#"));
+const hasNoDocument = (text: string) => text.split("\n").every(line => !line.trim() || line.trimStart().startsWith("#"));
 
 export function parseRegionsYaml(text: string): RegionSet {
   if (hasNoDocument(text)) return {};
@@ -85,8 +84,7 @@ export function parseMobsYaml(text: string): Spawn[] {
   }));
 }
 
-const legsOf = (v: any): Vertex[] | undefined =>
-  Array.isArray(v) ? v.map((p: any) => [Number(p[0]), Number(p[1]), Number(p[2])] as Vertex) : undefined;
+const legsOf = (v: any): Vertex[] | undefined => Array.isArray(v) ? v.map((p: any) => [Number(p[0]), Number(p[1]), Number(p[2])] as Vertex) : undefined;
 
 // --- emitting ---
 
@@ -239,8 +237,7 @@ export const placementsOf = (spawns: Spawn[]): Placements =>
 
 // Compared through the canonical emitter rather than field by field, so a ring that was rotated or
 // re-ordered without moving is recognised as unchanged instead of read as somebody's edit.
-const sameRegion = (a?: Region, b?: Region) =>
-  (a ? emitRegionsBlock({ r: a }) : "") === (b ? emitRegionsBlock({ r: b }) : "");
+const sameRegion = (a?: Region, b?: Region) => (a ? emitRegionsBlock({ r: a }) : "") === (b ? emitRegionsBlock({ r: b }) : "");
 
 const samePlacement = (a?: Placement, b?: Placement) => JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
 
@@ -310,9 +307,11 @@ const REGIONS_HEADER = "# yaml-language-server: $schema=../../schemas/regions.sc
 /** Replaces (or appends) the top-level `regions:` block. Writes the whole file when there is none. */
 export function patchRegionsYaml(text: string, regions: RegionSet): string {
   if (!text.trim()) {
-    return Object.keys(regions).length ? `${REGIONS_HEADER}
+    return Object.keys(regions).length
+      ? `${REGIONS_HEADER}
 
-${emitRegionsBlock(regions)}` : "";
+${emitRegionsBlock(regions)}`
+      : "";
   }
   const { lines, eol } = splitLines(text);
   const block = emitRegionsBlock(regions).split("\n").slice(0, -1);

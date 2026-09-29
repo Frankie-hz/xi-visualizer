@@ -165,8 +165,7 @@ export async function findFork(token: string, upstream: string, login: string, b
  * exactly the question, and costs two reads.
  */
 async function wouldCarryWorkflows(token: string, fork: string, baseRepo: string, base: string): Promise<boolean> {
-  const treeOf = async (repo: string, ref: string) =>
-    (await ghMaybe(token, `/repos/${repo}/git/trees/${ref}:.github/workflows`))?.sha as string | undefined;
+  const treeOf = async (repo: string, ref: string) => (await ghMaybe(token, `/repos/${repo}/git/trees/${ref}:.github/workflows`))?.sha as string | undefined;
   const [mine, theirs] = await Promise.all([
     treeOf(fork, (await gh(token, `/repos/${fork}`)).default_branch),
     treeOf(baseRepo, base),
@@ -359,8 +358,7 @@ export async function deleteBranch(token: string, repo: string, branch: string):
   await gh(token, `/repos/${repo}/git/refs/heads/${branch}`, { method: "DELETE" });
 }
 
-const listing = (work: Map<string, ZoneWork>): ZoneOnBranch[] =>
-  [...work.keys()].sort().map(zone => ({ zone, summary: summaryOf(work.get(zone)!.message) }));
+const listing = (work: Map<string, ZoneWork>): ZoneOnBranch[] => [...work.keys()].sort().map(zone => ({ zone, summary: summaryOf(work.get(zone)!.message) }));
 
 export async function save(req: SaveRequest): Promise<SaveResult> {
   const { token, repo, baseRepo, branch, base, zone, files } = req;

@@ -5,8 +5,8 @@ import zones from "../data/zones";
 import { diffRegions, parseMobsYaml, parseRegionsYaml, zoneOfMobId } from "../regions";
 import type { RegionsDiff, ZoneSide } from "../regions";
 import { loadRoam, trailOf } from "../roam";
-import { loadNavMesh, loadZoneMesh } from "../zone_mesh";
 import { isTyping } from "../util";
+import { loadNavMesh, loadZoneMesh } from "../zone_mesh";
 
 const DEFAULT_REPO = "sruon/server";
 const DEFAULT_BASE = "regions-master";
@@ -189,8 +189,7 @@ export default function RegionsDiffPage() {
   const pickedIn = () => pair()?.diff.moved.filter(m => names(m.to).includes(picked()!)) ?? [];
   const pickedOut = () => pair()?.diff.moved.filter(m => names(m.from).includes(picked()!)) ?? [];
   const pickedWentTo = () => [...new Set(pickedOut().map(m => m.to ?? "no region"))];
-  const pickedVertices = () =>
-    pair()?.[pickedKind() === "removed" ? "base" : "head"].regions[picked() ?? ""]?.rings[0]?.length ?? 0;
+  const pickedVertices = () => pair()?.[pickedKind() === "removed" ? "base" : "head"].regions[picked() ?? ""]?.rings[0]?.length ?? 0;
 
   createEffect(() => {
     if (baseBranches.error) setError(`${repo()}: ${baseBranches.error}`);
@@ -231,8 +230,10 @@ export default function RegionsDiffPage() {
           <span class="text-slate-400">
             {zones[zoneId()!]?.name ?? "?"} · {total(pair()!.diff) || "no"} changes
           </span>
-          {/* The diff says what moved; the editor says whether it should have. Roam trails are the
-              evidence the regions were drawn from, and they are only over there. */}
+          {
+            /* The diff says what moved; the editor says whether it should have. Roam trails are the
+              evidence the regions were drawn from, and they are only over there. */
+          }
           <a
             class="px-2 py-1 rounded no-underline whitespace-nowrap bg-slate-700 hover:bg-slate-600 text-white"
             href={`#/regions/${query.zone}?repo=${headRepo()}&ref=${query.head}&review=1`}
@@ -260,15 +261,17 @@ export default function RegionsDiffPage() {
       </div>
 
       <div class="flex gap-4 mt-4" style={{ height: "78vh" }}>
-        {/* What the comparison touches, in one place. A reviewer arrives knowing a pull request
+        {
+          /* What the comparison touches, in one place. A reviewer arrives knowing a pull request
             changed something and not where, and picking from every zone in the repository asked
-            them to already know. Ordered by size, so the biggest change is the first thing read. */}
+            them to already know. Ordered by size, so the biggest change is the first thing read. */
+        }
         <Show when={changed()?.length}>
           <div class="w-60 shrink-0 flex flex-col bg-slate-800 rounded-lg p-2 overflow-y-auto text-sm">
             <div class="text-xs uppercase tracking-wide text-slate-500 px-1 pb-1">
               zones changed ({changed()!.length})
               <Show when={reviewed().length}>
-                <span class="text-emerald-500"> · {changed()!.filter(z => reviewed().includes(z.zone)).length} reviewed</span>
+                <span class="text-emerald-500">· {changed()!.filter(z => reviewed().includes(z.zone)).length} reviewed</span>
               </Show>
             </div>
             <For each={changed()}>
@@ -315,10 +318,12 @@ export default function RegionsDiffPage() {
               nav={showNav() && !nav.loading && !nav.error ? nav() : undefined}
               onPick={name => setFocus({ name })}
             />
-            {/* What a maintainer wants off a glance is not the geometry, it is the blast radius:
+            {
+              /* What a maintainer wants off a glance is not the geometry, it is the blast radius:
                 how many mobs this region places and where any of them went. A region that shrank by
                 half with nothing in it is nothing; one that lost nine mobs to no region at all is
-                the thing worth stopping on. */}
+                the thing worth stopping on. */
+            }
             <Show when={picked()}>
               <div class="absolute top-2 left-2 bg-slate-900/90 rounded px-3 py-2 text-sm max-w-96">
                 <div class="flex items-baseline gap-2">
@@ -354,7 +359,7 @@ export default function RegionsDiffPage() {
                       <>
                         held <b>{pickedHeld("base")}</b> mob{pickedHeld("base") === 1 ? "" : "s"}
                         <Show when={pickedWentTo().length}>
-                          <span class="text-slate-400">, now in </span>
+                          <span class="text-slate-400">, now in</span>
                           <span style={{ color: swatch("added") }}>{pickedWentTo().join(", ")}</span>
                         </Show>
                       </>
@@ -386,7 +391,7 @@ export default function RegionsDiffPage() {
                   <span class="text-slate-300">{found().name}</span> <span class="text-slate-500">{found().id}</span>
                   <div class="mt-1">
                     <span style={{ color: swatch("removed") }}>{found().from ?? "no region"}</span>
-                    <span class="text-slate-400"> → </span>
+                    <span class="text-slate-400">→</span>
                     <span style={{ color: swatch("added") }}>{found().to ?? "no region"}</span>
                   </div>
                   <Show when={roam() && !roam()!.ranges[found().id]}>
@@ -420,10 +425,11 @@ export default function RegionsDiffPage() {
             <For each={pair()!.diff.reshaped}>
               {change => (
                 <DiffRow color={swatch("reshaped")} mark="~" onClick={() => setFocus({ name: change.name })}>
-                  <b>{change.name}</b>{" "}
-                  {/* Say the thing that changed. An outline untouched to the vertex with a hole cut
+                  <b>{change.name}</b> {
+                    /* Say the thing that changed. An outline untouched to the vertex with a hole cut
                       out of it used to read "33 to 33 vertices, area +0%", which is a way of saying
-                      nothing at all. */}
+                      nothing at all. */
+                  }
                   <Show
                     when={change.fromVertices !== change.toVertices || Math.abs(change.areaRatio - 1) > 0.005}
                     fallback={<>outline unchanged</>}
