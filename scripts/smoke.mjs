@@ -143,6 +143,16 @@ try {
   assert.match(await text(), /Unsaved work on west_ronfaure/, "the edit survived the reload");
   await press("Discard");
 
+  // the diff page opens a pull request by number, lists the zones it touched, and draws one
+  await page.goto(`http://localhost:${PORT}/xi-visualizer/#/regions-diff?pr=11610`, { waitUntil: "domcontentloaded" });
+  await settle(6000);
+  assert.match(await text(), /Implement Spawn Region for Barge Mobs/, "the pull request was found");
+  assert.match(await text(), /zones changed \(1\)/i, "and the zone it touched is listed");
+  await page.evaluate(() => [...document.querySelectorAll("div")].find(d => d.title?.endsWith("changed") && d.innerText.includes("phanauet_channel")).click());
+  await settle(ZONE_READY);
+  assert.match(await text(), /Phanauet Channel · \d+ changes/, "the zone's changes were counted");
+  assert.ok(await page.evaluate(() => !!document.querySelector("canvas")), "and drawn");
+
   assert.deepStrictEqual(errors, [], "no errors on the page");
   console.log("ok");
 } catch (e) {
