@@ -319,6 +319,27 @@ export default function RegionsPage() {
     setError((e as Error)?.message ?? String(e));
   };
 
+  const [checking, setChecking] = createSignal(false);
+  /** "Done, check again": says it is looking, and says so when nothing has changed yet. */
+  const checkAgain = async () => {
+    const was = fork()?.state;
+    setChecking(true);
+    setStatus(undefined);
+    try {
+      await locateFork();
+    } finally {
+      setChecking(false);
+    }
+    if (fork()?.state === was && was !== "ready") {
+      setStatus(was === "missing" ? "Still no fork. GitHub can take a minute to make one; try again shortly." : "Nothing has changed on GitHub yet.");
+    }
+  };
+  const CheckAgain = () => (
+    <button class={`${BTN_QUIET} disabled:opacity-60`} disabled={checking()} onClick={checkAgain}>
+      {checking() ? "Checking…" : "Done, check again"}
+    </button>
+  );
+
   const locateFork = async () => {
     const t = authToken();
     if (!t) return setFork(undefined);
@@ -1212,7 +1233,7 @@ export default function RegionsPage() {
             <a class={BTN_GO} href={forkUrl(repo())} target="_blank" rel="noreferrer">
               Fork it on GitHub
             </a>
-            <button class={BTN_QUIET} onClick={locateFork}>Done, check again</button>
+            <CheckAgain />
           </Show>
 
           {
@@ -1228,6 +1249,9 @@ export default function RegionsPage() {
             <a class={BTN_GO} href={`https://github.com/${forkRepo()}`} target="_blank" rel="noreferrer">
               Sync fork
             </a>
+            <span class="text-slate-400">
+              (on its page: <b>Sync fork</b>, then <b>Update branch</b>)
+            </span>
             {
               /* The other way: accepting the app's permissions covers it however far behind the fork
                 is. Changing an app's permissions leaves a request the installation's owner has to
@@ -1236,7 +1260,7 @@ export default function RegionsPage() {
             <a class={BTN_PLAIN} href="https://github.com/settings/installations" target="_blank" rel="noreferrer">
               or accept the app's permissions
             </a>
-            <button class={BTN_QUIET} onClick={locateFork}>Done, check again</button>
+            <CheckAgain />
           </Show>
 
           {
@@ -1252,7 +1276,7 @@ export default function RegionsPage() {
             <a class={BTN_GO} href="https://github.com/settings/installations" target="_blank" rel="noreferrer">
               Review permissions
             </a>
-            <button class={BTN_QUIET} onClick={locateFork}>Done, check again</button>
+            <CheckAgain />
           </Show>
 
           {
@@ -1262,7 +1286,9 @@ export default function RegionsPage() {
           }
           <Show when={fork()?.state === "not_installed"}>
             <span>
-              Signed in, but the app is not installed on <b>{forkRepo()}</b> yet. Installing is what lets it commit; signing in only proved who you are.
+              Signed in, but the app is not installed on <b>{forkRepo()}</b>{" "}
+              yet. Installing is what lets it commit; signing in only proved who you are. On GitHub's page pick <b>Only select repositories</b> and choose{" "}
+              <b>{forkRepo()}</b>; it needs nothing else of yours. Then come back to this tab.
             </span>
             <a
               class={BTN_GO}
@@ -1272,7 +1298,7 @@ export default function RegionsPage() {
             >
               Install it on {forkRepo()}
             </a>
-            <button class={BTN_QUIET} onClick={locateFork}>Done, check again</button>
+            <CheckAgain />
           </Show>
 
           {/* Nothing to offer without a relay, and saying so beats an empty box. */}
