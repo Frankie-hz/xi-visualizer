@@ -14,6 +14,7 @@ import type { Obstacle } from "../obstacles";
 import { containsXZ, regionAt, regionHue, regionsFromPoints, repairRegion, routeFromTrail, selfIntersects, simplifyRing, validate } from "../regions";
 import type { Finding, Patrol, Region, RegionSet, Ring, Spawn, TrailPoint, Vertex } from "../regions";
 import type { RoamData } from "../roam";
+import { isTyping } from "../util";
 import MobList from "./region_mob_list";
 import ShortcutsCard from "./region_shortcuts";
 import type { ZoneData } from "./zone_model";
@@ -2429,7 +2430,9 @@ export default function RegionEditor(props: RegionEditorProps) {
     };
 
     const onKeyDown = (ev: KeyboardEvent) => {
-      if ((ev.target as HTMLElement)?.tagName === "INPUT") return;
+      // Hidden behind the YAML view: an undo there would change regions nobody can see.
+      if (isTyping(ev.target) || canvasElement.offsetParent === null) return;
+      if (ev.key === "Escape" && menu()) return setMenu(null);
       if (ev.ctrlKey || ev.metaKey) {
         const key = ev.key.toLowerCase();
         if (key === "z" && !ev.shiftKey) return (ev.preventDefault(), undo());

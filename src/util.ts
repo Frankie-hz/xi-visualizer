@@ -41,3 +41,11 @@ export async function fetchProgress(url: string, setProgress: (progress: number)
   setProgress(undefined);
   return await blob.arrayBuffer();
 }
+
+/**
+ * Whether a key went into something being typed in. Such keys are the field's, not shortcuts.
+ * Sliders and checkboxes are inputs too, but nothing types into them, so they do not count.
+ */
+export const isTyping = (target: EventTarget | null) =>
+  target instanceof HTMLElement
+  && (target.isContentEditable || target.matches("textarea, select, input:not([type=range], [type=checkbox], [type=radio], [type=button])"));

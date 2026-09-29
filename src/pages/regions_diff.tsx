@@ -6,6 +6,7 @@ import { diffRegions, parseMobsYaml, parseRegionsYaml, zoneOfMobId } from "../re
 import type { RegionsDiff, ZoneSide } from "../regions";
 import { loadRoam, trailOf } from "../roam";
 import { loadNavMesh, loadZoneMesh } from "../zone_mesh";
+import { isTyping } from "../util";
 
 const DEFAULT_REPO = "sruon/server";
 const DEFAULT_BASE = "regions-master";
@@ -37,7 +38,7 @@ export default function RegionsDiffPage() {
   // Escape steps back out to the whole zone, from a region or a move.
   onMount(() => {
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape" && (ev.target as HTMLElement)?.tagName !== "INPUT") setFocus(undefined);
+      if (ev.key === "Escape" && !isTyping(ev.target)) setFocus(undefined);
     };
     window.addEventListener("keydown", onKey);
     onCleanup(() => window.removeEventListener("keydown", onKey));
