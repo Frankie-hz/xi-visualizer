@@ -2,7 +2,6 @@ import { useBeforeLeave, useNavigate, useParams, useSearchParams } from "@solidj
 import { createEffect, createMemo, createResource, createSignal, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import RegionEditor from "../components/region_editor";
 import YamlView from "../components/yaml_view";
-import type { ZoneData } from "../components/zone_model";
 import zones, { zoneOfFolder } from "../data/zones";
 import {
   compareUrl,
@@ -43,11 +42,11 @@ import {
   zoneOfMobId,
 } from "../regions";
 import type { Patrol, RegionSet, Spawn, ZoneState } from "../regions";
-import { copyText, decompress, fetchProgress, isMissing } from "../util";
+import { copyText, isMissing } from "../util";
 // The wording of a pull request is prose, so it lives in a file that can be edited as prose.
 import prTemplate from "../pr_template.md?raw";
 import { loadRoam } from "../roam";
-import { loadNavMesh } from "../zone_mesh";
+import { loadNavMesh, loadZoneMesh } from "../zone_mesh";
 
 // data/zones/<zone>/{regions.yaml,mobs.yaml} straight out of the LSB checkout.
 interface ZoneFiles {
@@ -997,26 +996,7 @@ export default function RegionsPage() {
   const [showNav, setShowNav] = createSignal(false);
   const [nav] = createResource(() => (showNav() ? zoneId() : undefined), id => loadNavMesh(id, setStatus));
 
-  const [zoneMesh] = createResource(zoneId, async id => {
-    const zone = zones[id];
-    if (!zone) throw new Error(`unknown zone id ${id}`);
-    const filename = zone.name
-      .replaceAll(" - ", "-")
-      .replaceAll(" ", "_")
-      .replaceAll("'", "")
-      .replaceAll("(", "")
-      .replaceAll(")", "")
-      .replaceAll("#", "");
-
-    setStatus("Downloading mesh...");
-    const compressed = await fetchProgress(`${import.meta.env.BASE_URL}/ximeshes/${filename}.ximesh`, progress => {
-      if (progress !== undefined) setStatus(`Downloading mesh ${(progress * 100).toFixed(0)}%`);
-    });
-    setStatus("Decompressing mesh...");
-    const mesh = await decompress(compressed);
-    setStatus(undefined);
-    return { id, name: zone.name, mesh } as ZoneData;
-  });
+  const [zoneMesh] = createResource(zoneId, id => loadZoneMesh(id, setStatus));
 
   return (
     <section class="p-8">

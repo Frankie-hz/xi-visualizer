@@ -2,18 +2,16 @@ import type { ZoneData } from "./components/zone_model";
 import zones from "./data/zones";
 import { decompress, fetchProgress } from "./util";
 
+/** How a zone's name is spelled in the ximesh and navmesh file names. */
+const meshFileName = (name: string) =>
+  name.replaceAll(" - ", "-").replaceAll(" ", "_").replaceAll("'", "").replaceAll("(", "").replaceAll(")", "").replaceAll("#", "");
+
 /** Downloads and decompresses a zone's ximesh, reporting progress as it goes. */
 export async function loadZoneMesh(id: number, onStatus: (message?: string) => void): Promise<ZoneData> {
   const zone = zones[id];
   if (!zone) throw new Error(`unknown zone id ${id}`);
 
-  const filename = zone.name
-    .replaceAll(" - ", "-")
-    .replaceAll(" ", "_")
-    .replaceAll("'", "")
-    .replaceAll("(", "")
-    .replaceAll(")", "")
-    .replaceAll("#", "");
+  const filename = meshFileName(zone.name);
 
   onStatus("Downloading mesh...");
   const compressed = await fetchProgress(`${import.meta.env.BASE_URL}/ximeshes/${filename}.ximesh`, progress => {
@@ -34,13 +32,7 @@ export async function loadZoneMesh(id: number, onStatus: (message?: string) => v
 export async function loadNavMesh(id: number, onStatus: (message?: string) => void): Promise<ArrayBuffer> {
   const zone = zones[id];
   if (!zone) throw new Error(`unknown zone id ${id}`);
-  const base = zone.name
-    .replaceAll(" - ", "-")
-    .replaceAll(" ", "_")
-    .replaceAll("'", "")
-    .replaceAll("(", "")
-    .replaceAll(")", "")
-    .replaceAll("#", "");
+  const base = meshFileName(zone.name);
   onStatus("Downloading navmesh...");
   for (const name of [base.replaceAll("[", "").replaceAll("]", ""), base]) {
     const res = await fetch(`https://raw.githubusercontent.com/LandSandBoat/xiNavmeshes/master/${encodeURIComponent(name)}.nav`);
