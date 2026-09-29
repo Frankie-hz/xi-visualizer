@@ -88,5 +88,10 @@ export const onActivate = (act: () => void) => (ev: KeyboardEvent) => {
   act();
 };
 
-/** Whether a failed load means the thing does not exist, as opposed to failing to arrive. */
-export const isMissing = (e: unknown) => (e as { status?: number; })?.status === 404 || /^no navmesh/.test((e as Error)?.message ?? "");
+/**
+ * Whether a failed load means the thing does not exist, as opposed to failing to arrive. The roam
+ * data's host answers a missing file with a 404 carrying no CORS headers, which the browser turns
+ * into the same bare TypeError as a dropped connection, so that has to count as missing too.
+ */
+export const isMissing = (e: unknown) =>
+  (e as { status?: number; })?.status === 404 || e instanceof TypeError || /^no navmesh/.test((e as Error)?.message ?? "");
