@@ -1172,7 +1172,11 @@ export interface Finding {
   spawnId?: string;
 }
 
-export function validate(regions: RegionSet, spawns: Spawn[], assign: Record<string, string[]>): Finding[] {
+/**
+ * What is wrong with a zone as it stands. `paths` is the routes as edited; without it the routes
+ * the spawns were loaded with are checked, which after any route edit is checking the wrong thing.
+ */
+export function validate(regions: RegionSet, spawns: Spawn[], assign: Record<string, string[]>, paths?: Record<string, Patrol>): Finding[] {
   const findings: Finding[] = [];
   const counts: Record<string, number> = {};
   // A spawn naming several regions counts towards each: it can be in any of them.
@@ -1189,12 +1193,13 @@ export function validate(regions: RegionSet, spawns: Spawn[], assign: Record<str
   }
 
   for (const s of spawns) {
-    if (s.path && s.path.length < 2) {
-      findings.push({ level: "error", spawnId: s.id, text: `${s.name} has a patrol route with ${s.path.length} legs` });
+    const legs = paths ? paths[s.id]?.legs : s.path;
+    if (legs && legs.length < 2) {
+      findings.push({ level: "error", spawnId: s.id, text: `${s.name} has a route with ${legs.length} legs` });
     }
     const named = assign[s.id] ?? [];
-    if (s.path && named.length) {
-      findings.push({ level: "error", spawnId: s.id, text: `${s.name} has both a region and a patrol route` });
+    if (legs && named.length) {
+      findings.push({ level: "error", spawnId: s.id, text: `${s.name} has both a region and a route` });
     }
     if (!named.length) continue;
 

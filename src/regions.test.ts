@@ -372,8 +372,18 @@ const routeFindings = validate({}, [
   { id: "1", name: "Guard", x: 0, y: 0, z: 0, path: [[0, 0, 0]] },
   { id: "2", name: "Patrol", x: 0, y: 0, z: 0, path: [[0, 0, 0], [1, 0, 1]], regions: ["somewhere"] },
 ], { "2": ["somewhere"] });
-assert.ok(routeFindings.some(f => f.text.includes("patrol route with 1 legs")), "a one-leg route is not a route");
-assert.ok(routeFindings.some(f => f.text.includes("both a region and a patrol route")), "two placements at once");
+assert.ok(routeFindings.some(f => f.text.includes("route with 1 legs")), "a one-leg route is not a route");
+assert.ok(routeFindings.some(f => f.text.includes("both a region and a route")), "two placements at once");
+// The routes as edited are what count: a route dropped in the editor is gone, whatever the file said.
+const edited = validate(
+  {},
+  [
+    { id: "2", name: "Patrol", x: 0, y: 0, z: 0, path: [[0, 0, 0], [1, 0, 1]], regions: ["somewhere"] },
+  ],
+  { "2": ["somewhere"] },
+  {},
+);
+assert.ok(!edited.some(f => f.text.includes("both a region and a route")), "the dropped route is not reported");
 
 // --- diffing two versions of a zone ---
 const before: ZoneSide = {

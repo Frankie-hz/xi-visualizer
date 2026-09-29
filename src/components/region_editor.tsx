@@ -527,7 +527,7 @@ export default function RegionEditor(props: RegionEditorProps) {
       }));
     if (tab() !== "review") return previous;
     queueMicrotask(() => setReviewStale(false));
-    return [...thin, ...validate(asSet(settled()), props.spawns, assign())];
+    return [...thin, ...validate(asSet(settled()), props.spawns, assign(), paths())];
   }, []);
 
   /**
