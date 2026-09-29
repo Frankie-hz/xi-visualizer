@@ -132,12 +132,25 @@ export default function RegionEditor(props: RegionEditorProps) {
     return sum / 2;
   };
   /** Shortest distance between two rings' edges, on x/z. */
+  const segDist = (px: number, pz: number, ax: number, az: number, bx: number, bz: number) => {
+    const dx = bx - ax, dz = bz - az;
+    const t = dx || dz ? Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz))) : 0;
+    return Math.hypot(px - ax - t * dx, pz - az - t * dz);
+  };
+  /**
+   * Whether a point is inside a ring or on its edge, within half a scan cell. A hole cut from an
+   * obstacle's ring has that ring's own corners on its boundary, and a strict inside test counted
+   * them out, so everything just cut went on being offered as still to cut.
+   */
+  const withinRing = (ring: Ring, x: number, z: number) => {
+    if (inRing(ring, x, z)) return true;
+    for (let i = 0; i < ring.length; i++) {
+      const [ax, , az] = ring[i], [bx, , bz] = ring[(i + 1) % ring.length];
+      if (segDist(x, z, ax, az, bx, bz) <= OBSTACLE_CELL / 2) return true;
+    }
+    return false;
+  };
   const ringDistance = (a: Ring, b: Ring) => {
-    const segDist = (px: number, pz: number, ax: number, az: number, bx: number, bz: number) => {
-      const dx = bx - ax, dz = bz - az;
-      const t = dx || dz ? Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz))) : 0;
-      return Math.hypot(px - ax - t * dx, pz - az - t * dz);
-    };
     let best = Infinity;
     for (const [outer, inner] of [[a, b], [b, a]] as const) {
       for (const [px, , pz] of outer) {
@@ -718,7 +731,6 @@ export default function RegionEditor(props: RegionEditorProps) {
     setMergeReach(OBSTACLE_DEFAULTS.reach);
     setGapMinArea(OBSTACLE_DEFAULTS.gapMinArea);
   };
-  const [obstacles, setObstacles] = createSignal<Obstacle[]>([]);
   // The obstacle under the cursor in carve mode: its ring lights up, and a click cuts it.
   const [obstacleHover, setObstacleHover] = createSignal<{ obstacle: Obstacle; x: number; y: number; } | null>(null);
   /** A cliff line or a wall: long and thin, and big enough for "thin" to mean anything. Ring
@@ -763,15 +775,22 @@ export default function RegionEditor(props: RegionEditorProps) {
     }
     return fallback;
   };
-  /** The steep faces inside the active region on the current floor, clustered into obstacles. */
-  const scanObstacles = () => {
-    const r = active();
-    if (!r || !zoneMesh || !floorIndex || (r.rings[0]?.length ?? 0) < 3) return setObstacles([]);
+  // Scans read the region as it was once the mouse stopped: a vertex drag is not worth a pass over
+  // every triangle in the zone on each mouse move. The picture still follows the drag live.
+  const settledActive = () => settled().find(r => r.name === activeName());
+  /**
+   * The steep faces inside the selected region's outline on the current floor, clustered into
+   * obstacles, before any size or margin filter. This is the expensive half, over every triangle
+   * in the zone, so it reruns only when something it reads changes: not on the margin or size
+   * dials, which only filter what it found.
+   */
+  const rawObstacles = createMemo<Obstacle[]>(() => {
+    if (mode() !== "obstacles") return [];
+    const r = settledActive();
+    if (!r || !zoneMesh || !floorIndex || (r.rings[0]?.length ?? 0) < 3) return [];
     const pos = zoneMesh.geometry.getAttribute("position").array as Float32Array;
     const only = floor();
     const up = Math.cos((obstacleSlope() * Math.PI) / 180);
-    const minHeight = obstacleMinHeight();
-    const minArea = obstacleMinArea();
     const perVertex = floorIndex.perVertex;
     let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
     for (const [x, , z] of r.rings[0]) {
@@ -794,47 +813,34 @@ export default function RegionEditor(props: RegionEditorProps) {
     // A blob past the bulk size, or shaped like a cliff, is trees and rocks chained together
     // through the low faces between them: roots, a bank. Its tall faces, the trunks and rock
     // walls, are found again on their own and offered as parts.
-    const blobs = found.filter(o =>
-      obstacleArea(o, OBSTACLE_CELL) > obstacleBulkMax() || (obstacleArea(o, OBSTACLE_CELL) >= 10 && elongation(o, OBSTACLE_CELL) > 2.5)
-    );
+    const blobs = found.filter(o => obstacleArea(o, OBSTACLE_CELL) > obstacleBulkMax() || isCliff(o));
     if (blobs.length) {
       const inBlob = new Set(blobs.flatMap(o => o.cells.map(([ix, iz]) => keyOfCell(ix, iz))));
       for (const part of findObstacles(pos, { ...scan, minSpan: TALL_FACE })) {
         if (part.cells.filter(([ix, iz]) => inBlob.has(keyOfCell(ix, iz))).length * 2 >= part.cells.length) found.push(part);
       }
     }
-    // Height is foot minus top because y points down. An obstacle whose ring already lies inside
-    // an existing hole has nothing left to cut.
+    return found;
+  });
+  /** What is left to cut once the dials that only filter have had their say. */
+  const obstacles = createMemo<Obstacle[]>(() => {
+    const r = settledActive();
+    const found = rawObstacles();
+    if (!r || !found.length) return [];
+    const minHeight = obstacleMinHeight();
+    const minArea = obstacleMinArea();
     const holes = r.rings.slice(1).filter(h => h.length >= 3);
     // Nothing left to cut: a ring already inside an old hole, or one mostly outside the outline,
     // which is the wall the region ends at and would only carve a yalm off the border.
     const spent = (o: Obstacle) => {
       const ring = ringsAround([o], obstacleMargin(), OBSTACLE_CELL, walkedCells())[0];
       if (!ring) return true;
-      if (holes.some(h => ring.every(([x, , z]) => inRing(h, x, z)))) return true;
+      if (holes.some(h => ring.every(([x, , z]) => withinRing(h, x, z)))) return true;
       return ring.filter(([x, , z]) => inRing(r.rings[0], x, z)).length < 0.3 * ring.length;
     };
-    setObstacles(found.filter(o => o.foot - o.top >= minHeight && obstacleArea(o, OBSTACLE_CELL) >= minArea && !spent(o)));
-  };
-  // Rescans whenever the region itself changes too: a ring just cut, or undone, moves obstacles
-  // into or out of a hole, and the list of what is left to ring must follow.
-  createEffect(on(
-    [
-      mode,
-      activeName,
-      floor,
-      regions,
-      obstacleSlope,
-      obstacleJoin,
-      obstacleClimb,
-      obstacleMinHeight,
-      obstacleMinArea,
-      obstacleMargin,
-      obstacleBulkMax,
-      walkedCells,
-    ],
-    () => (mode() === "obstacles" ? scanObstacles() : setObstacles([])),
-  ));
+    // Height is foot minus top because y points down.
+    return found.filter(o => o.foot - o.top >= minHeight && obstacleArea(o, OBSTACLE_CELL) >= minArea && !spent(o));
+  });
   /**
    * Terrain height under a ring vertex, found by dropping a ray through the zone mesh near the
    * obstacle's own foot. A ring around a rock on a slope needs each vertex on the ground beside
@@ -1022,7 +1028,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         const holes = r.rings.slice(1).filter(h => h.length >= 3);
         const y = sampleFloor((ix + 0.5) * cell, (iz + 0.5) * cell, lastYOf(r.name, (ix + 0.5) * cell, (iz + 0.5) * cell));
         for (const ring of traceCells(patch, cell, y)) {
-          if (holes.some(h => ring.every(([x, , z]) => inRing(h, x, z)))) continue;
+          if (holes.some(h => ring.every(([x, , z]) => withinRing(h, x, z)))) continue;
           out.push(onGround(ring.map(([x, , z]) => [x, sampleFloor(x, z, y), z] as Vertex)));
         }
       }
@@ -1067,6 +1073,8 @@ export default function RegionEditor(props: RegionEditorProps) {
     if (done) {
       checkpoint(done === 1 ? "cut an empty patch" : `cut ${done} empty patches`);
       setRegions(rs => rs.map(r => (r.name === name ? { name, rings: shape.rings.map(onGround) } : r)));
+      // Settled now rather than in 400ms, so what was just cut drops off the list before a second click can cut it again.
+      setSettled(regions());
     }
     if (skipped) flash(`${skipped} empty patch${skipped === 1 ? "" : "es"} would cut ${name} in two; left alone`, "warn");
   };
@@ -1101,6 +1109,8 @@ export default function RegionEditor(props: RegionEditorProps) {
       // Where a ring carved a bay, the clipper's new corners borrowed a neighbour's height; every
       // ring goes back onto the terrain so the outline does not dip under it.
       setRegions(rs => rs.map(r => (r.name === name ? { name, rings: shape.rings.map(onGround) } : r)));
+      // Settled now rather than in 400ms, so what was just cut drops off the list before a second click can cut it again.
+      setSettled(regions());
     }
     if (skipped) flash(`${skipped} ring${skipped === 1 ? "" : "s"} would cut ${name} in two; left alone`, "warn");
   };

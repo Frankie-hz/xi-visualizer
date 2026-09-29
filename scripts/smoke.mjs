@@ -115,6 +115,31 @@ try {
   await settle(300);
   assert.deepStrictEqual(await tally(), before, "Esc on an undrawn region took it away again");
 
+  // carving: empty patches are found in the selected region, cutting them is one step, what was cut
+  // leaves the list, and undo takes it back
+  await page.evaluate(() =>
+    [...document.querySelectorAll('div[title*="right-click for more"]')].find(d => d.style.display === "block" && d.innerText.startsWith("e_46")).click()
+  );
+  await settle(800);
+  await press("Carve holes");
+  await settle(10000);
+  const patches = () => text().then(t => Number(t.match(/Cut patches \((\d+)\)/)?.[1]));
+  const found = await patches();
+  assert.ok(found > 0, `empty patches were found in e_46, got ${found}`);
+  assert.match(await text(), /Ring all \(0\)/, "and the obstacles e_46 already has holes for are not offered again");
+  await press("Cut patches");
+  await settle(4000);
+  assert.strictEqual((await tally()).History, 1, "cutting them is one step in History");
+  const left = await patches();
+  assert.ok(left < found, `what was cut left the list, ${found} → ${left}`);
+  await page.keyboard.down("Control");
+  await page.keyboard.press("z");
+  await page.keyboard.up("Control");
+  await settle(1500);
+  assert.strictEqual((await tally()).History, 0, "and undo takes it back");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+
   // reviewing: the same menu offers nothing that changes the zone, and a click still selects
   await page.goto(`${URL}?review=1`, { waitUntil: "domcontentloaded" });
   await settle(ZONE_READY);
