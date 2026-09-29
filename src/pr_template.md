@@ -2,8 +2,8 @@
 <!-- (it should look like this: - [x] I have ...) -->
 **_I affirm:_**
 - [x] I understand that if I do not agree to the following points by completing the checkboxes my PR will be ignored.
-- [x] I understand I should leave resolving conversations to the LandSandBoat team so that reviewers won't miss what was said.
-- [x] I have read and understood the [Contributing Guide](https://github.com/LandSandBoat/server/blob/base/CONTRIBUTING.md) and the [Code of Conduct](https://github.com/LandSandBoat/server/blob/base/CODE_OF_CONDUCT.md).
+- [ ] I understand I should leave resolving conversations to the LandSandBoat team so that reviewers won't miss what was said.
+- [ ] I have read and understood the [Contributing Guide](https://github.com/LandSandBoat/server/blob/base/CONTRIBUTING.md) and the [Code of Conduct](https://github.com/LandSandBoat/server/blob/base/CODE_OF_CONDUCT.md).
 - [ ] I have _**tested my code and the things my code has changed**_ since the last commit in the PR and will test after any later commits.
 
 ## What does this pull request do?
@@ -14,6 +14,7 @@ Edited with the [Regions editor]({{editor}}).
 
 ## Steps to test these changes
 
-<!-- Clear and detailed steps to test your changes here -->
+1. Open each zone's link above: it draws these regions over the old ones and the recorded roam trails.
+2. On a server with this branch, zone in and check the mobs spawn inside their regions.
 
 
