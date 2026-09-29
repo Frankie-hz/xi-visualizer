@@ -757,6 +757,20 @@ export default function RegionsPage() {
     return { merged, regionsNow, mobsNow, theirSpawns };
   };
 
+  const [saving, setSaving] = createSignal(false);
+  /** One save at a time: two rebuilding the branch at once race, and the second POST of a new ref fails. */
+  const runSave = async (keepMine = false) => {
+    if (saving()) return;
+    setSaving(true);
+    try {
+      await (local() ? saveLocal() : saveToBranch(keepMine));
+    } finally {
+      setSaving(false);
+    }
+  };
+  /** Whether the zone on screen is one of the commits on the working branch. */
+  const zoneOnBranch = () => branchZones().some(z => z.zone === files()?.folder);
+
   /** What the last save found changed on both sides, until the person decides about it. */
   const [conflicts, setConflicts] = createSignal<string[] | undefined>();
 
@@ -931,11 +945,24 @@ export default function RegionsPage() {
           <Show when={!reviewing()}>
             <button
               class={BTN}
-              classList={{ "bg-emerald-600 hover:bg-emerald-500 text-white": dirty(), "bg-slate-700 text-slate-400": !dirty() }}
-              onClick={() => (local() ? saveLocal() : saveToBranch())}
-              title={local() ? "Write both files back to the local folder" : `Commit both files to ${branchName()} on your fork`}
+              classList={{ "bg-emerald-600 hover:bg-emerald-500 text-white": dirty() && !saving(), "bg-slate-700 text-slate-400": !dirty() || saving() }}
+              disabled={!dirty() || saving()}
+              onClick={() => runSave()}
+              title={local()
+                ? "Write both files back to the local folder"
+                : authToken()
+                ? `Commit both files to ${branchName()} on your fork`
+                : "Saving commits to your fork of the repository on GitHub, so it needs you signed in"}
             >
-              {dirty() ? "Save" : local() ? "Saved" : pushed() ? "Committed" : "No changes"}
+              {saving()
+                ? "Saving…"
+                : dirty()
+                ? (local() || authToken() ? "Save" : "Sign in to save")
+                : local()
+                ? "Saved"
+                : zoneOnBranch()
+                ? "Committed"
+                : "No changes"}
             </button>
           </Show>
           <button class={BTN_PLAIN} onClick={copyPatched}>Copy YAML</button>
@@ -1011,7 +1038,7 @@ export default function RegionsPage() {
           <button
             class={BTN_QUIET}
             title={`Commit with your version of ${conflicts()!.join(", ")}, replacing what changed on ${ref()}. The pull request diff will show it.`}
-            onClick={() => saveToBranch(true)}
+            onClick={() => runSave(true)}
           >
             Save, keeping mine
           </button>
