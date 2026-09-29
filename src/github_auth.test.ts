@@ -105,6 +105,15 @@ location.search = `?code=abc&state=${issued()}`;
 reply = { error: "not_allowed", error_description: "nobody is not on this editor's list." };
 await assert.rejects(completeSignIn(), /not on this editor's list/, "says why it was refused");
 
+// pressing Cancel on GitHub comes back as a callback, to the page it left, saying so
+await startSignIn("#/regions/west_ronfaure");
+location.search = `?error=access_denied&error_description=denied&state=${issued()}`;
+location.hash = "";
+assert.ok(isCallback(), "a cancelled sign-in is still a callback");
+restoreRoute();
+assert.strictEqual(location.hash, "#/regions/west_ronfaure", "back where it started");
+await assert.rejects(completeSignIn(), /cancelled/, "and says it was cancelled");
+
 // a spent code cannot be replayed by reloading, since the pending state is consumed either way
 await startSignIn("#/regions");
 location.search = `?code=abc&state=${issued()}`;

@@ -62,8 +62,7 @@ interface Pending {
   returnTo: string;
 }
 
-const base64url = (bytes: Uint8Array) =>
-  btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const base64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
 const randomString = () => base64url(crypto.getRandomValues(new Uint8Array(32)));
 
@@ -103,8 +102,14 @@ export async function startSignIn(returnTo: string) {
   location.href = `https://github.com/login/oauth/authorize?${query}`;
 }
 
-/** Whether the current URL is GitHub bringing somebody back from an installation. */
-export const isCallback = () => new URLSearchParams(location.search).has("code");
+/**
+ * Whether the current URL is GitHub bringing somebody back from signing in, including from
+ * pressing Cancel there, which comes back with an error instead of a code.
+ */
+export const isCallback = () => {
+  const query = new URLSearchParams(location.search);
+  return query.has("code") || (query.has("error") && query.has("state"));
+};
 
 /**
  * The callback lands on the site root, which under a hash router is the home page and not the
@@ -127,6 +132,8 @@ export async function completeSignIn(): Promise<StoredToken> {
   if (!pending || pending.state !== query.get("state")) {
     throw new Error("this sign-in did not start in this tab, so it was not completed");
   }
+  if (query.get("error") === "access_denied") throw new Error("Sign-in was cancelled on GitHub; nothing changed");
+  if (query.get("error")) throw new Error(`GitHub did not sign you in: ${query.get("error_description") ?? query.get("error")}`);
   if (!code) throw new Error("GitHub sent no code");
 
   const out = await relay("/oauth/token", {
