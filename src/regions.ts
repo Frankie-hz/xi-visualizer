@@ -1035,12 +1035,25 @@ export interface SpawnMove {
   to?: string;
 }
 
+/** A mob whose route changed: given one, lost one, or walking different legs. */
+export interface SpawnRoute {
+  id: string;
+  name: string;
+  /** Legs before and after; 0 is no route. */
+  fromLegs: number;
+  toLegs: number;
+}
+
 export interface RegionsDiff {
   added: string[];
   removed: string[];
   reshaped: RegionChange[];
   unchanged: string[];
   moved: SpawnMove[];
+  /** Mobs whose route changed. Not a region change, but a change to where the mob goes. */
+  rerouted: SpawnRoute[];
+  /** Mobs still on a fixed point, with that point moved. */
+  relocated: { id: string; name: string; }[];
   addedSpawns: string[];
   removedSpawns: string[];
 }
@@ -1058,7 +1071,8 @@ export function diffRegions(base: ZoneSide, head: ZoneSide): RegionsDiff {
   const shape = (r: Region) => emitRegionsBlock({ r });
   const names = new Set([...Object.keys(base.regions), ...Object.keys(head.regions)]);
 
-  const diff: RegionsDiff = { added: [], removed: [], reshaped: [], unchanged: [], moved: [], addedSpawns: [], removedSpawns: [] };
+  const diff: RegionsDiff = { added: [], removed: [], reshaped: [], unchanged: [], moved: [], rerouted: [], relocated: [], addedSpawns: [], removedSpawns: [] };
+  const route = (s: Spawn) => (s.path ? JSON.stringify([s.path, s.loop ?? false]) : "");
   for (const name of [...names].sort()) {
     const before = base.regions[name];
     const after = head.regions[name];
@@ -1088,12 +1102,20 @@ export function diffRegions(base: ZoneSide, head: ZoneSide): RegionsDiff {
       if (was !== now) {
         diff.moved.push({ id, name: after.name, from: was || undefined, to: now || undefined });
       }
+      if (route(before) !== route(after)) {
+        diff.rerouted.push({ id, name: after.name, fromLegs: before.path?.length ?? 0, toLegs: after.path?.length ?? 0 });
+      } else if (!was && !now && !after.path && before.at && after.at && before.at.join() !== after.at.join()) {
+        diff.relocated.push({ id, name: after.name });
+      }
     }
   }
   for (const id of baseSpawns.keys()) {
     if (!headSpawns.has(id)) diff.removedSpawns.push(id);
   }
-  diff.moved.sort((a, b) => a.name.localeCompare(b.name) || Number(a.id) - Number(b.id));
+  const byName = (a: { name: string; id: string; }, b: { name: string; id: string; }) => a.name.localeCompare(b.name) || Number(a.id) - Number(b.id);
+  diff.moved.sort(byName);
+  diff.rerouted.sort(byName);
+  diff.relocated.sort(byName);
   return diff;
 }
 
@@ -1108,12 +1130,8 @@ export function commitMessage(zone: string, before: ZoneSide, after: ZoneSide): 
   const d = diffRegions(before, after);
   const n = (count: number, thing: string) => `${count} ${thing}${count === 1 ? "" : "s"}`;
 
-  // Patrol changes are not a region diff, but they are what the commit did.
-  const was = new Map(before.spawns.map(s => [s.id, s]));
-  const routed = after.spawns.filter(s => {
-    const b = was.get(s.id);
-    return b && JSON.stringify([b.path, b.loop ?? false]) !== JSON.stringify([s.path, s.loop ?? false]);
-  });
+  // Route changes are not a region diff, but they are what the commit did.
+  const routed = d.rerouted;
 
   // Marks rather than words, as the diff page writes them: a title naming all three kinds of
   // region change in full runs past what GitHub shows of a title.
@@ -1122,7 +1140,7 @@ export function commitMessage(zone: string, before: ZoneSide, after: ZoneSide): 
   const touched = marks.reduce((sum, [c]) => sum + c, 0);
   if (touched) title.push(`${marks.filter(([c]) => c).map(([c, mark]) => `${mark}${c}`).join(" ")} region${touched === 1 ? "" : "s"}`);
   if (d.moved.length) title.push(`${n(d.moved.length, "spawn")} placed`);
-  if (routed.length) title.push(`${n(routed.length, "patrol")} changed`);
+  if (routed.length) title.push(`${n(routed.length, "route")} changed`);
 
   const body: string[] = [];
   if (d.added.length) body.push(`Added: ${d.added.join(", ")}`);
@@ -1140,7 +1158,7 @@ export function commitMessage(zone: string, before: ZoneSide, after: ZoneSide): 
     into.set(key, [...(into.get(key) ?? []), `${m.name} ${m.id}${m.from ? ` (was ${m.from})` : ""}`]);
   }
   for (const [to, who] of into) body.push(`Placed in ${to}: ${who.join(", ")}`);
-  if (routed.length) body.push(`Patrols: ${routed.map(s => `${s.name} ${s.id}`).join(", ")}`);
+  if (routed.length) body.push(`Routes: ${routed.map(s => `${s.name} ${s.id}`).join(", ")}`);
 
   return `${zone}: ${title.join(", ") || "regions updated"}${body.length ? `\n\n${body.join("\n")}` : ""}`;
 }

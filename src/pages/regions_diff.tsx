@@ -232,7 +232,9 @@ export default function RegionsDiffPage() {
     return trailOf(data, ids);
   };
 
-  const total = (d: RegionsDiff) => d.added.length + d.removed.length + d.reshaped.length + d.moved.length + d.addedSpawns.length + d.removedSpawns.length;
+  const total = (d: RegionsDiff) =>
+    d.added.length + d.removed.length + d.reshaped.length + d.moved.length + d.rerouted.length + d.relocated.length + d.addedSpawns.length
+    + d.removedSpawns.length;
   const swatch = (kind: keyof typeof STATUS_COLOR) => `#${STATUS_COLOR[kind].toString(16).padStart(6, "0")}`;
 
   // What a maintainer wants off a glance is not the geometry, it is the blast radius: how many mobs
@@ -568,6 +570,27 @@ export default function RegionsDiffPage() {
                     <DiffRow color={swatch("reshaped")} mark="→" active={focus()?.spawn === move.id} onClick={() => setFocus({ spawn: move.id })}>
                       <span class="text-slate-300">{move.name}</span> <span class="text-slate-500">{move.id}</span> {move.from ?? "no region"} →{" "}
                       {move.to ?? "no region"}
+                    </DiffRow>
+                  )}
+                </For>
+              </Show>
+              <Show when={sides()!.diff.rerouted.length}>
+                <div class="text-xs uppercase tracking-wide text-slate-500 mt-2 px-1">{sides()!.diff.rerouted.length} routes changed</div>
+                <For each={sides()!.diff.rerouted}>
+                  {r => (
+                    <DiffRow color={swatch("reshaped")} mark="↻" active={focus()?.spawn === r.id} onClick={() => setFocus({ spawn: r.id })}>
+                      <span class="text-slate-300">{r.name}</span> <span class="text-slate-500">{r.id}</span>{" "}
+                      {r.fromLegs ? (r.toLegs ? `${r.fromLegs} → ${r.toLegs} legs` : "route removed") : `given a ${r.toLegs} leg route`}
+                    </DiffRow>
+                  )}
+                </For>
+              </Show>
+              <Show when={sides()!.diff.relocated.length}>
+                <div class="text-xs uppercase tracking-wide text-slate-500 mt-2 px-1">{sides()!.diff.relocated.length} fixed points moved</div>
+                <For each={sides()!.diff.relocated}>
+                  {r => (
+                    <DiffRow color={swatch("reshaped")} mark="~" active={focus()?.spawn === r.id} onClick={() => setFocus({ spawn: r.id })}>
+                      <span class="text-slate-300">{r.name}</span> <span class="text-slate-500">{r.id}</span>
                     </DiffRow>
                   )}
                 </For>

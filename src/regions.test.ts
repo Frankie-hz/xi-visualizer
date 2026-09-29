@@ -437,7 +437,17 @@ assert.ok(
 );
 assert.strictEqual(commitMessage("z", before, before), "z: regions updated", "nothing to say still gets a title");
 const walked = { ...before, spawns: before.spawns.map(s => (s.id === "3" ? { ...s, path: [[0, 0, 0], [5, 0, 5]] as Vertex[] } : s)) };
-assert.strictEqual(commitMessage("z", before, walked), "z: 1 patrol changed\n\nPatrols: Worm 3", "a route is a change too");
+assert.strictEqual(commitMessage("z", before, walked), "z: 1 route changed\n\nRoutes: Worm 3", "a route is a change too");
+assert.deepStrictEqual(diffRegions(before, walked).rerouted, [{ id: "3", name: "Worm", fromLegs: 0, toLegs: 2 }], "and the diff lists it");
+const shifted = {
+  regions: {},
+  spawns: [{ id: "9", name: "Crab", x: 1, y: 0, z: 1, at: [1, 0, 1] as Vertex }],
+};
+assert.deepStrictEqual(
+  diffRegions(shifted, { regions: {}, spawns: [{ ...shifted.spawns[0], x: 4, at: [4, 0, 1] as Vertex }] }).relocated,
+  [{ id: "9", name: "Crab" }],
+  "a fixed point that moved is a change",
+);
 assert.deepStrictEqual(
   [holed.reshaped[0].fromHoles, holed.reshaped[0].toHoles],
   [0, 1],
