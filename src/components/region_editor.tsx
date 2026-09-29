@@ -3860,7 +3860,7 @@ function ReviewList(props: { findings: Finding[]; onJump: (f: Finding) => void; 
               </Show>
             </span>
             {/* A crossing ring is the one finding here with a mechanical answer. */}
-            <Show when={props.onRepair && f.region && /crosses itself/.test(f.text)}>
+            <Show when={props.onRepair && f.region && f.code === "self-intersects"}>
               <button
                 class="px-1.5 rounded bg-slate-600 hover:bg-slate-500 text-slate-100"
                 title="Rebuild it as valid shapes"

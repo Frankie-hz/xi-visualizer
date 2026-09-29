@@ -1168,6 +1168,8 @@ export function commitMessage(zone: string, before: ZoneSide, after: ZoneSide): 
 export interface Finding {
   level: "error" | "warn" | "info";
   text: string;
+  /** Set on findings with a mechanical fix, so the list can offer it without reading the text. */
+  code?: "self-intersects";
   region?: string;
   spawnId?: string;
 }
@@ -1187,7 +1189,7 @@ export function validate(regions: RegionSet, spawns: Spawn[], assign: Record<str
   for (const [name, r] of Object.entries(regions)) {
     r.rings.forEach((ring, i) => {
       if (ring.length < 3) findings.push({ level: "error", region: name, text: `${i ? "hole" : "outline"} has only ${ring.length} vertices` });
-      else if (selfIntersects(ring)) findings.push({ level: "error", region: name, text: `${i ? "hole" : "outline"} crosses itself` });
+      else if (selfIntersects(ring)) findings.push({ level: "error", region: name, code: "self-intersects", text: `${i ? "hole" : "outline"} crosses itself` });
     });
     if (!counts[name]) findings.push({ level: "warn", region: name, text: "no spawns assigned" });
   }
