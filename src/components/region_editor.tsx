@@ -1377,7 +1377,10 @@ export default function RegionEditor(props: RegionEditorProps) {
   createEffect(() => {
     const row = activeName() ?? walker();
     if (!row) return;
-    setTab(activeName() ? "regions" : "paths");
+    // Only between the two lists: a finding or a history step selects things too, and clicking
+    // down those should not throw the reader off the list they are working through.
+    const showing = untrack(tab);
+    if (showing === "regions" || showing === "paths") setTab(activeName() ? "regions" : "paths");
     requestAnimationFrame(() => rowRefs.get(row)?.scrollIntoView({ block: "nearest" }));
   });
 
