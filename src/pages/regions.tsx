@@ -111,6 +111,9 @@ const count = (n: number, thing: string) => `${n} ${thing}${n === 1 ? "" : "s"}`
  * folder's, an LSB checkout's -- so a stale draft from one source was silently restored over
  * another and the page showed different geometry depending on when it was last reloaded.
  */
+/** Where the editor is published, for links that leave this machine. */
+const PUBLIC_EDITOR = "https://sruon.github.io/xi-visualizer/";
+
 /** Session flag naming the zone whose edits went out with the sign-in redirect. */
 const RESUME = "xi-visualizer:regions-resume";
 
@@ -875,14 +878,14 @@ export default function RegionsPage() {
   const prUrl = () => {
     const where = fork();
     if (where?.state !== "ready") return undefined;
-    const editor = `${location.origin}${location.pathname}`;
+    // A link a reviewer can open: the published editor, even when this one is a dev server.
+    const editor = /^(localhost|127\.)/.test(location.hostname) ? PUBLIC_EDITOR : `${location.origin}${location.pathname}`;
     const zone = files()?.folder ?? "";
     // Both sides, named separately: the base is on the staging repository and the head on this
     // contributor's fork. Pointing both at one repository only ever worked for whoever owns the
     // staging repository, and read every region as newly added for everybody else.
     const diffFor = (name: string) =>
-      `${editor}#/regions-diff?repo=${repo()}&base=${ref()}`
-      + `&head_repo=${where.repo}&head=${branchName()}&zone=${name}`;
+      `${editor}#/regions-diff?${new URLSearchParams({ repo: repo(), base: ref(), head_repo: where.repo, head: branchName(), zone: name })}`;
 
     // Every zone on the branch, not whichever one is open: a sitting's pull request covers all of
     // them, and a reviewer wants a diff link per zone rather than one into the middle of it.
