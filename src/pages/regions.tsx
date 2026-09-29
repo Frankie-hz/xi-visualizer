@@ -17,6 +17,7 @@ import {
   installUrl,
   listRegionBranches,
   prTitle,
+  refusedForWorkflows,
   save,
   type Sitting,
   whoAmI,
@@ -867,6 +868,12 @@ export default function RegionsPage() {
       setSitting({ ...sitting()!, branch: branchName(), zones: result.zones, ancestor: sitting()?.ancestor ?? "committed" });
       if (result.onBranch) setPushed(true);
     } catch (e) {
+      if (refusedForWorkflows(e)) {
+        setStatus(undefined);
+        setError(undefined);
+        setFork({ state: "needs_sync", repo: where.repo });
+        return setShowSignIn(true);
+      }
       if ((e as { status?: number; }).status !== 403) return failed(e);
       setStatus(undefined);
       // A refusal on a write is worth one more question before reporting it: "not accessible by

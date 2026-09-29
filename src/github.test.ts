@@ -5,7 +5,7 @@
 // GitHub is enough to hold all three honest.
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
-import { compareUrl, deleteBranch, fillTemplate, findFork, findSitting, freeBranchName, prTitle, save, whoAmI } from "./github.ts";
+import { compareUrl, deleteBranch, fillTemplate, findFork, findSitting, freeBranchName, prTitle, refusedForWorkflows, save, whoAmI } from "./github.ts";
 
 const noHeaders = { get: () => null };
 
@@ -290,6 +290,14 @@ await assert.rejects(
   /does not grant contents=write/s,
   "the error names the permission and where to grant it",
 );
+
+// The ref refused with no permission named is the workflow case, and the page turns it into the
+// "sync your fork" panel rather than showing the raw refusal.
+fakeGitHub({
+  ...commonRoutes,
+  "POST /repos/someone/server/git/refs": { $status: 403, $body: '{"message":"Resource not accessible by integration"}' },
+});
+await assert.rejects(save({ ...saving, ...thisZone }), (e: unknown) => refusedForWorkflows(e), "a bare 403 on the ref is the workflow case");
 
 // An installation spread over more pages than one: reading only the first reported "not installed"
 // and sent people to a link that was already done.

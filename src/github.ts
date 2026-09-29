@@ -27,12 +27,24 @@ async function gh(token: string, path: string, init?: RequestInit) {
       ? "your GitHub session expired, sign in again"
       : res.status === 403 && needs
       ? `${where} → 403. The app installation does not grant ${needs}. Accept the app's pending `
-        + `permission request at github.com/settings/installations, then sign out and in again.`
+        + `permission request at github.com/settings/installations, then save again.`
       : `${where} → HTTP ${res.status} ${(await res.text()).slice(0, 200)}`,
   );
   error.status = res.status;
+  error.path = path;
+  error.needs = needs;
   throw error;
 }
+
+/**
+ * Whether a failed save was GitHub refusing to let the app create or move the branch because it
+ * would bring workflow changes into the fork: a bare 403 on the ref, naming no permission. Syncing
+ * the fork is the way out, the same one findFork offers when it sees this coming.
+ */
+export const refusedForWorkflows = (e: unknown) => {
+  const err = e as { status?: number; path?: string; needs?: string | null; };
+  return err.status === 403 && !err.needs && /\/git\/refs/.test(err.path ?? "");
+};
 
 /** Same, but a 404 is an answer rather than a failure. */
 async function ghMaybe(token: string, path: string) {
