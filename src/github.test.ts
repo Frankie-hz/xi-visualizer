@@ -173,6 +173,24 @@ fakeGitHub({
 });
 assert.deepStrictEqual(await findSitting("t", FORK, UPSTREAM, "regions-master", TODAY), { branch: TODAY, zones: [] });
 
+// Squash-merged: still ahead, but its pull request is done, so a new sitting starts, on a name of its own.
+fakeGitHub({
+  ...sittingRoutes,
+  "/repos/someone/server/git/matching-refs/heads/regions/": [{ ref: `refs/heads/${TODAY}` }],
+  [`/repos/someone/server/compare/base-sha...${TODAY}`]: { ahead_by: 1, merge_base_commit: { sha: "cut-from" }, commits: [] },
+  [`/repos/sruon/server/pulls?head=someone:${encodeURIComponent(TODAY)}&state=all&per_page=10`]: [{ state: "closed", merged_at: "2026-09-01T00:00:00Z" }],
+});
+assert.deepStrictEqual(await findSitting("t", FORK, UPSTREAM, "regions-master", TODAY), { branch: `${TODAY}-2`, zones: [] }, "a merged pull request ends it");
+
+// Its pull request still open: saves go on adding to it, and the page can say which one.
+fakeGitHub({
+  ...sittingRoutes,
+  "/repos/someone/server/git/matching-refs/heads/regions/": [{ ref: `refs/heads/${TODAY}` }],
+  [`/repos/someone/server/compare/base-sha...${TODAY}`]: { ahead_by: 1, merge_base_commit: { sha: "cut-from" }, commits: [] },
+  [`/repos/sruon/server/pulls?head=someone:${encodeURIComponent(TODAY)}&state=all&per_page=10`]: [{ state: "open", number: 42, html_url: "https://x/42" }],
+});
+assert.deepStrictEqual((await findSitting("t", FORK, UPSTREAM, "regions-master", TODAY)).pr, { number: 42, url: "https://x/42" });
+
 // Several old branches: the newest one still ahead wins.
 fakeGitHub({
   ...sittingRoutes,

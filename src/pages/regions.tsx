@@ -843,7 +843,9 @@ export default function RegionsPage() {
       setStatus(
         result.unchanged
           ? (result.onBranch ? "Already committed" : "Nothing to commit")
-          : `Committed, ${count(result.zones.length, "zone")} on ${branchName()}`,
+          : sitting()?.pr
+          ? `Committed, and added to pull request #${sitting()!.pr!.number}`
+          : `Committed, ${count(result.zones.length, "zone")} on ${branchName()}. Next: open the pull request.`,
       );
       if (!result.unchanged) {
         // It is on a branch now, so this is as safe as saving to disk.
@@ -1024,9 +1026,20 @@ export default function RegionsPage() {
           </Show>
           {/* Only once something is actually on the branch: an empty compare page helps nobody. */}
           <Show when={pushed() && prUrl() && !reviewing()}>
-            <a class={BTN_GO} href={prUrl()} target="_blank" rel="noreferrer" title={`Opens a pull request against ${repo()}@${ref()}`}>
-              Open pull request
-            </a>
+            <Show
+              when={sitting()?.pr}
+              fallback={
+                <a class={BTN_GO} href={prUrl()} target="_blank" rel="noreferrer" title={`Opens a pull request against ${repo()}@${ref()}`}>
+                  Open pull request
+                </a>
+              }
+            >
+              {open => (
+                <a class={BTN_PLAIN} href={open().url} target="_blank" rel="noreferrer" title="Saves to this branch add to it">
+                  View pull request #{open().number}
+                </a>
+              )}
+            </Show>
           </Show>
         </Show>
         <Show when={files()}>

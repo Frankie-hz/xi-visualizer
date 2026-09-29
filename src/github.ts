@@ -375,6 +375,8 @@ export interface Sitting {
   ancestor?: string;
   /** What the branch already carries, so a pull request can be opened without saving again. */
   zones: ZoneOnBranch[];
+  /** The open pull request for the branch, once there is one: saves go on adding to it. */
+  pr?: { number: number; url: string; };
 }
 
 /**
@@ -398,12 +400,25 @@ export async function findSitting(
   // Newest first, which the date in the name gives for free.
   const names = refs.map((r: any) => String(r.ref).replace("refs/heads/", "")).sort().reverse();
 
+  const owner = fork.split("/")[0];
   for (const branch of names) {
     const diff = await ghMaybe(token, `/repos/${fork}/compare/${baseSha}...${branch}`);
     if (!diff || diff.ahead_by === 0) continue; // merged, or never had anything
-    return { branch, ancestor: diff.merge_base_commit?.sha, zones: zonesInCommits(diff.commits) };
+    // A squash or rebase merge leaves the branch ahead of base for good, since base got new commits
+    // rather than these ones. Its pull request is what says it is finished, and so is one closed
+    // without merging: starting fresh beats quietly reopening work somebody set aside.
+    const pulls: any[] = (await ghMaybe(token, `/repos/${baseRepo}/pulls?head=${owner}:${encodeURIComponent(branch)}&state=all&per_page=10`)) ?? [];
+    if (pulls.length && pulls.every(p => p.state === "closed")) continue;
+    const open = pulls.find(p => p.state === "open");
+    return {
+      branch,
+      ancestor: diff.merge_base_commit?.sha,
+      zones: zonesInCommits(diff.commits),
+      ...(open ? { pr: { number: open.number, url: open.html_url } } : {}),
+    };
   }
-  return { branch: today, zones: [] };
+  // Never a name already on the fork: that branch is finished, and moving it would rewrite it.
+  return { branch: freeBranchName(names, today), zones: [] };
 }
 
 /** Every regions/* branch on the fork, newest name first, which the date in the name gives. */
