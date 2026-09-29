@@ -3084,7 +3084,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                     class="block w-full text-left px-3 py-1 hover:bg-slate-700"
                     onClick={() => (convertToPatrol(name()), setMenu(null))}
                   >
-                    Convert to patrol ({mobs(props.spawns.filter(s => assign()[s.id] === name()).length)})
+                    Convert to patrol ({mobs(props.spawns.filter(s => assign()[s.id]?.includes(name())).length)})
                   </button>
                   <button class="block w-full text-left px-3 py-1 hover:bg-slate-700" onClick={() => (repairShape(name()), setMenu(null))}>
                     Repair the shape
