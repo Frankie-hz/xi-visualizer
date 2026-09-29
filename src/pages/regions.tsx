@@ -1168,10 +1168,16 @@ export default function RegionsPage() {
                 class="px-1 py-0.5 bg-slate-700 rounded font-mono text-slate-200 w-44"
                 value={branchName()}
                 title="Name this branch, before anything is committed to it"
-                onChange={e => {
-                  const named = asBranch(e.currentTarget.value);
-                  setBranchChosen(named);
-                  e.currentTarget.value = named;
+                onChange={async e => {
+                  const input = e.currentTarget;
+                  const named = asBranch(input.value);
+                  const where = fork();
+                  // A name already on the fork belongs to other work, and a save would rebuild it.
+                  const taken = where?.state === "ready" ? await listRegionBranches(authToken(), where.repo).catch(() => []) : [];
+                  const free = freeBranchName(taken, named);
+                  if (free !== named) setStatus(`${named} is already on your fork, so the next save starts ${free}`);
+                  setBranchChosen(free);
+                  input.value = free;
                 }}
               />
             </Show>
