@@ -5,7 +5,20 @@
 // GitHub is enough to hold all three honest.
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
-import { compareUrl, deleteBranch, fillTemplate, findFork, findSitting, freeBranchName, prTitle, refusedForWorkflows, save, whoAmI } from "./github.ts";
+import {
+  compareUrl,
+  deleteBranch,
+  fillTemplate,
+  findFork,
+  findSitting,
+  freeBranchName,
+  ghPublic,
+  ghPublicPages,
+  prTitle,
+  refusedForWorkflows,
+  save,
+  whoAmI,
+} from "./github.ts";
 
 const noHeaders = { get: () => null };
 
@@ -46,6 +59,33 @@ function fakeGitHub(routes: Record<string, any>) {
 
 const UPSTREAM = "sruon/server";
 const FORK = "someone/server";
+
+// --- public reads ---
+
+// A user token the app is not installed for reads as 404; the same read without it succeeds.
+let publicCalls: string[] = [];
+(globalThis as any).fetch = async (url: string, init?: any) => {
+  publicCalls.push(init?.headers?.Authorization ? "token" : "anon");
+  return init?.headers?.Authorization
+    ? { ok: false, status: 404, headers: noHeaders }
+    : { ok: true, status: 200, headers: noHeaders, json: async () => ({ fine: true }) };
+};
+assert.deepStrictEqual(await ghPublic("/repos/a/b", "t"), { fine: true });
+assert.deepStrictEqual(publicCalls, ["token", "anon"], "asked again without the token");
+
+// The rate limit says what it is and what raises it.
+(globalThis as any).fetch = async () => ({ ok: false, status: 403, headers: { get: (h: string) => (h === "x-ratelimit-remaining" ? "0" : null) } });
+await assert.rejects(ghPublic("/repos/a/b"), (e: any) => e.rateLimited && /Signing in raises it/.test(e.message));
+
+// Pages until a short one.
+publicCalls = [];
+(globalThis as any).fetch = async (url: string) => {
+  publicCalls.push(url);
+  const page = Number(new URL(url).searchParams.get("page"));
+  return { ok: true, status: 200, headers: noHeaders, json: async () => Array.from({ length: page === 1 ? 100 : 7 }, (_, i) => i) };
+};
+assert.strictEqual((await ghPublicPages("/repos/a/b/pulls/1/files")).length, 107);
+assert.strictEqual(publicCalls.length, 2, "stopped at the short page");
 
 // --- finding the fork ---
 

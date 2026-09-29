@@ -9,6 +9,57 @@
 
 const API = "https://api.github.com";
 
+/** Where pull requests go and zone data is read from, unless a link says otherwise. */
+export const UPSTREAM = "LandSandBoat/server";
+export const UPSTREAM_BASE = "base";
+/** Where the zone folders live inside the repository. */
+export const ZONES_DIR = "data/zones";
+
+/** A file as committed, by ref or sha. Not rate limited, but cached by GitHub for a few minutes. */
+export const rawUrl = (repo: string, ref: string, path: string) => `https://raw.githubusercontent.com/${repo}/${ref}/${path}`;
+
+/**
+ * A read of public data, sent with the signed-in token when there is one: that raises the hourly
+ * limit from 60 to 5000, and 60 is a few page loads for a reviewer.
+ *
+ * A GitHub App's user token only reaches repositories the app is installed on, and GitHub answers
+ * 404 rather than 403 for the rest; an expired one gets 401. Both read fine without the header, this
+ * being public, so either is asked again without it rather than failing a read nobody had to sign
+ * in for. The error carries `status`, so a 404 can be told apart from a failure.
+ */
+export async function ghPublic(path: string, token?: string): Promise<any> {
+  const url = `${API}${path}`;
+  const headers = { Accept: "application/vnd.github+json" };
+  let res = await fetch(url, token ? { headers: { ...headers, Authorization: `Bearer ${token}` } } : { headers });
+  if (token && (res.status === 404 || res.status === 401)) res = await fetch(url, { headers });
+  if (res.ok) return res.json();
+  const limited = (res.status === 403 || res.status === 429) && res.headers?.get?.("x-ratelimit-remaining") === "0";
+  const error: any = new Error(
+    limited
+      ? token
+        ? "GitHub's hourly request limit is used up; it resets within the hour"
+        : "GitHub's hourly limit for signed-out requests is used up on this network. Signing in raises it from 60 to 5000"
+      : res.status === 404
+      ? `${path.split("?")[0]} was not found, or is private`
+      : `${path.split("?")[0]} → HTTP ${res.status}`,
+  );
+  error.status = res.status;
+  error.rateLimited = limited;
+  throw error;
+}
+
+/** Every page of a listing that pages with per_page/page, up to `max` pages. */
+export async function ghPublicPages(path: string, token?: string, max = 30): Promise<any[]> {
+  const out: any[] = [];
+  const joiner = path.includes("?") ? "&" : "?";
+  for (let page = 1; page <= max; page++) {
+    const items = await ghPublic(`${path}${joiner}per_page=100&page=${page}`, token);
+    out.push(...items);
+    if (items.length < 100) break;
+  }
+  return out;
+}
+
 async function gh(token: string, path: string, init?: RequestInit) {
   const res = await fetch(`${API}${path}`, {
     ...init,

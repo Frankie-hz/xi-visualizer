@@ -13,6 +13,7 @@ import {
   type ForkState,
   forkUrl,
   freeBranchName,
+  ghPublic,
   grantedOn,
   installUrl,
   listRegionBranches,
@@ -20,7 +21,10 @@ import {
   refusedForWorkflows,
   save,
   type Sitting,
+  UPSTREAM,
+  UPSTREAM_BASE,
   whoAmI,
+  ZONES_DIR,
 } from "../github";
 import type { ZoneOnBranch } from "../github";
 import { canSignIn, completeSignIn, isCallback, signOut, startSignIn as beginSignIn, storedToken } from "../github_auth";
@@ -80,9 +84,9 @@ interface FoundDraft {
 // from the same place, so a contributor sees the regions already accepted rather than redoing them.
 // Upstream itself. The pull request is opened through GitHub's compare form rather than the API,
 // so this repository does not need the app installed on it for that to work.
-const DEFAULT_REPO = "LandSandBoat/server";
-const DEFAULT_REF = "base";
-const ZONES = "data/zones"; // where the zone folders live inside the repo
+const DEFAULT_REPO = UPSTREAM;
+const DEFAULT_REF = UPSTREAM_BASE;
+const ZONES = ZONES_DIR;
 const LOCAL = "/local-zones"; // dev middleware over a folder on disk, see vite.config.ts
 // A branch per sitting, carrying one commit per zone touched in it. A branch per zone would mean a
 // pull request per zone, and a single standing branch would have to be re-cut after every merge anyway.
@@ -478,30 +482,10 @@ export default function RegionsPage() {
     setStatus(`Listing ${repo()}…`);
     try {
       // The subtree under data/zones, not the whole repository: asking for the repository root
-      // recursively downloaded nearly 7MB to read a few hundred directory names, on every visit,
-      // against a limit of 60 requests an hour for anyone not signed in. A large transfer that
-      // gives up looks exactly like "Failed to fetch".
-      const tree = `https://api.github.com/repos/${repo()}/git/trees/${ref()}:${ZONES}?recursive=1`;
-      // Being signed in raises that hourly limit from 60 to 5000, and costs nothing to send.
-      const authed = authToken() ? { headers: { Authorization: `Bearer ${authToken()}` } } : undefined;
-      let res = await fetch(tree, authed);
-
-      // A GitHub App user token only reaches repositories the app is installed on, and GitHub
-      // answers 404 rather than 403 for the rest, so a signed-in reviewer opening a branch on a
-      // repository they have not installed it on is told the branch does not exist. A stale token
-      // gets 401 the same way. Both read fine without the header, this being a public repository,
-      // so drop it and ask again rather than making somebody sign out to read a review link.
-      if (authed && (res.status === 404 || res.status === 401)) {
-        res = await fetch(tree);
-      }
-      if (!res.ok) {
-        if (res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") {
-          throw new Error("GitHub's hourly limit for signed-out requests is used up on this network; signing in raises it from 60 to 5000");
-        }
-        if (res.status === 404) throw new Error(`no ${ref()} branch on ${repo()}, or the repository is private`);
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const json = (await res.json()) as { tree?: { path: string; }[]; };
+      // recursively downloaded nearly 7MB to read a few hundred directory names, on every visit.
+      const json = (await ghPublic(`/repos/${repo()}/git/trees/${ref()}:${ZONES}?recursive=1`, authToken()).catch(e => {
+        throw e.status === 404 ? new Error(`no ${ref()} branch on ${repo()}, or the repository is private`) : e;
+      })) as { tree?: { path: string; }[]; };
       // Paths come back relative to data/zones, so a zone is a directory holding a mobs.yaml.
       // Fifty of them are towns with none, and those cannot be edited here.
       const wanted = new RegExp("^([^/]+)/mobs\\.yaml$");
@@ -519,7 +503,7 @@ export default function RegionsPage() {
       setError(
         e instanceof TypeError
           ? `Could not reach api.github.com (${e}). The request was blocked or the connection dropped -- ${repo()} itself is public and readable without signing in.`
-          : `${repo()}: ${e}`,
+          : `${repo()}: ${(e as Error).message}`,
       );
     }
   };
