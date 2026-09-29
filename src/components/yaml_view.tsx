@@ -1,6 +1,7 @@
 import hljs from "highlight.js/lib/core";
 import yaml from "highlight.js/lib/languages/yaml";
 import { createMemo, createSignal, For, Show } from "solid-js";
+import { copyText } from "../util";
 import "highlight.js/styles/atom-one-dark.css";
 
 hljs.registerLanguage("yaml", yaml);
@@ -25,6 +26,11 @@ export default function YamlView(props: YamlViewProps) {
   const [which, setWhich] = createSignal(0);
   const [scroll, setScroll] = createSignal(0);
   const [height, setHeight] = createSignal(600);
+  const [copied, setCopied] = createSignal<boolean | undefined>();
+  const copy = async () => {
+    setCopied(await copyText(current()?.text ?? ""));
+    setTimeout(() => setCopied(undefined), 1500);
+  };
 
   const current = () => props.files[Math.min(which(), props.files.length - 1)];
   const lines = createMemo(() => current()?.text.split("\n") ?? []);
@@ -59,9 +65,9 @@ export default function YamlView(props: YamlViewProps) {
         <span class="flex-1" />
         <button
           class="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200"
-          onClick={() => navigator.clipboard.writeText(current()?.text ?? "")}
+          onClick={copy}
         >
-          Copy
+          {copied() === undefined ? "Copy" : copied() ? "Copied" : "Copy failed"}
         </button>
         <button class="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200" onClick={props.onClose}>Close</button>
       </div>

@@ -1,5 +1,6 @@
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { Patrol, Spawn } from "../regions";
+import { copyText } from "../util";
 
 export type MobStatus = "region" | "route" | "fixed" | "nowhere";
 
@@ -58,25 +59,7 @@ export default function MobList(props: MobListProps) {
   // back into the yaml or a query by hand, and reading nine digits off the screen invites the
   // kind of typo nothing downstream would catch.
   async function copyId(id: string) {
-    try {
-      await navigator.clipboard.writeText(id);
-    } catch {
-      // clipboard is refused without a secure context or when the document is not focused, so
-      // fall back to the selection trick, which only needs the click we are already inside.
-      const ta = document.createElement("textarea");
-      ta.value = id;
-      ta.setAttribute("readonly", "");
-      ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        if (!document.execCommand("copy")) return;
-      } catch {
-        return;
-      } finally {
-        ta.remove();
-      }
-    }
+    if (!(await copyText(id))) return;
     setCopied(id);
     clearTimeout(flash);
     flash = setTimeout(() => setCopied(null), 1000);

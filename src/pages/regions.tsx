@@ -43,7 +43,7 @@ import {
   zoneOfMobId,
 } from "../regions";
 import type { Patrol, RegionSet, Spawn, ZoneState } from "../regions";
-import { decompress, fetchProgress } from "../util";
+import { copyText, decompress, fetchProgress } from "../util";
 // The wording of a pull request is prose, so it lives in a file that can be edited as prose.
 import prTemplate from "../pr_template.md?raw";
 import { loadRoam } from "../roam";
@@ -751,7 +751,10 @@ export default function RegionsPage() {
 
   const copyPatched = () => {
     const next = patched();
-    if (next) navigator.clipboard.writeText(`# --- regions.yaml ---\n${next.regionsYaml}\n# --- mobs.yaml (spawns section) ---\n${next.mobsYaml}`);
+    if (!next) return;
+    copyText(`# --- regions.yaml ---\n${next.regionsYaml}\n# --- mobs.yaml (spawns section) ---\n${next.mobsYaml}`).then(ok =>
+      ok ? setStatus("Copied both files") : setError("The browser would not let this page use the clipboard; View YAML shows the files to copy by hand")
+    );
   };
 
   /** Commits the open zone to the working branch on the user's fork. */

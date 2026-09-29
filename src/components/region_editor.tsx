@@ -14,7 +14,7 @@ import type { Obstacle } from "../obstacles";
 import { containsXZ, regionAt, regionHue, regionsFromPoints, repairRegion, routeFromTrail, selfIntersects, simplifyRing, validate } from "../regions";
 import type { Finding, Patrol, Region, RegionSet, Ring, Spawn, TrailPoint, Vertex } from "../regions";
 import type { RoamData } from "../roam";
-import { isTyping } from "../util";
+import { copyText, isTyping } from "../util";
 import MobList from "./region_mob_list";
 import ShortcutsCard from "./region_shortcuts";
 import type { ZoneData } from "./zone_model";
@@ -226,9 +226,9 @@ export default function RegionEditor(props: RegionEditorProps) {
   const growHole = () => {
     const plan = growPlan();
     const g = grow();
-    if (!plan || !g || !plan.ring) return flash(plan?.why ?? "nothing to grow");
+    if (!plan || !g || !plan.ring) return flash(plan?.why ?? "nothing to grow", "warn");
     const one = asOne(repairRegion({ rings: [...plan.entry.rings, plan.ring] }), Math.abs(ringArea(plan.entry.rings[0])));
-    if (!one) return flash(`growing here would cut ${g.name} in two`);
+    if (!one) return flash(`growing here would cut ${g.name} in two`, "warn");
     checkpoint("grow a hole from the roam data");
     setRegions(rs => rs.map(r => (r.name === g.name ? { name: g.name, rings: one.rings.map(onGround) } : r)));
     setHoleHover(null);
@@ -248,11 +248,11 @@ export default function RegionEditor(props: RegionEditorProps) {
   const mergeHoles = () => {
     const plan = mergePlan();
     const m = merge();
-    if (!plan || !m || !plan.hull) return flash("no other hole within reach");
+    if (!plan || !m || !plan.hull) return flash("no other hole within reach", "warn");
     const { entry, group, hull } = plan;
     const rings = [...entry.rings.filter((_, k) => !group.includes(k)), hull];
     const one = asOne(repairRegion({ rings }), Math.abs(ringArea(entry.rings[0])));
-    if (!one) return flash(`merging these would cut ${m.name} in two`);
+    if (!one) return flash(`merging these would cut ${m.name} in two`, "warn");
     checkpoint(`merge ${group.length} holes`);
     setRegions(rs => rs.map(r => (r.name === m.name ? { name: m.name, rings: one.rings.map(onGround) } : r)));
     setHoleHover(null);
@@ -275,7 +275,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     return [...lower.slice(0, -1), ...upper.slice(0, -1)].map(v => [...v] as Vertex);
   };
   const [cursor, setCursor] = createSignal<THREE.Vector3 | undefined>();
-  const [toast, setToast] = createSignal<string | undefined>();
+  const [toast, setToast] = createSignal<{ text: string; warn: boolean; } | undefined>();
   const [rowFocus, setRowFocus] = createSignal<string | null>(null);
   const [pinnedId, setPinnedId] = createSignal<string | null>(null);
   const [menu, setMenu] = createSignal<
@@ -299,15 +299,18 @@ export default function RegionEditor(props: RegionEditorProps) {
   const xyz = (p: THREE.Vector3) => [p.x, p.y, p.z].map(n => n.toFixed(3)).join(" ");
 
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
-  /** A note in the corner of the map that clears itself. */
-  const flash = (text: string) => {
-    setToast(text);
+  /**
+   * A note at the foot of the map that clears itself. A warning is something that did not happen
+   * the way it was asked for, so it looks different and stays long enough to be read.
+   */
+  const flash = (text: string, tone: "ok" | "warn" = "ok") => {
+    setToast({ text, warn: tone === "warn" });
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => setToast(undefined), 2400);
+    toastTimer = setTimeout(() => setToast(undefined), tone === "warn" ? 6000 : 2400);
   };
-  const copy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    flash(`copied ${text}`);
+  const copy = async (text: string) => {
+    if (await copyText(text)) flash(`copied ${text}`);
+    else flash("the browser would not let this page use the clipboard", "warn");
   };
   onCleanup(() => clearTimeout(toastTimer));
 
@@ -955,7 +958,7 @@ export default function RegionEditor(props: RegionEditorProps) {
       checkpoint(done === 1 ? `cut a ${what}` : `cut ${done} ${what}s`);
       setRegions(rs => rs.map(r => (r.name === name ? { name, rings: shape.rings.map(onGround) } : r)));
     }
-    if (skipped) flash(`${skipped} ${what}${skipped === 1 ? "" : "s"} would cut ${name} in two; left alone`);
+    if (skipped) flash(`${skipped} ${what}${skipped === 1 ? "" : "s"} would cut ${name} in two; left alone`, "warn");
   };
   /**
    * Cuts a hole around each obstacle. Every ring goes through the clipper at once, so one that
@@ -989,7 +992,7 @@ export default function RegionEditor(props: RegionEditorProps) {
       // ring goes back onto the terrain so the outline does not dip under it.
       setRegions(rs => rs.map(r => (r.name === name ? { name, rings: shape.rings.map(onGround) } : r)));
     }
-    if (skipped) flash(`${skipped} ring${skipped === 1 ? "" : "s"} would cut ${name} in two; left alone`);
+    if (skipped) flash(`${skipped} ring${skipped === 1 ? "" : "s"} would cut ${name} in two; left alone`, "warn");
   };
 
   const editActive = (fn: (r: RegionEntry) => void) => {
@@ -1060,7 +1063,7 @@ export default function RegionEditor(props: RegionEditorProps) {
    */
   const convertToPatrol = (name: string) => {
     const members = props.spawns.filter(s => assign()[s.id]?.includes(name));
-    if (!members.length) return flash(`${name} has no mobs to convert`);
+    if (!members.length) return flash(`${name} has no mobs to convert`, "warn");
     const candidates = members
       .map(s => ({ s, samples: props.roam?.ranges[s.id]?.[1] ?? 0 }))
       .filter(m => m.samples >= 30)
@@ -1106,7 +1109,7 @@ export default function RegionEditor(props: RegionEditorProps) {
   /** Re-traces an existing route from the mob's trail, throwing away hand edits. */
   const retrace = (id: string) => {
     const traced = routeFromTrail(trailPoints([id]));
-    if (!traced) return flash("no roam trail for that mob");
+    if (!traced) return flash("no roam trail for that mob", "warn");
     checkpoint(`re-trace ${props.spawns.find(s => s.id === id)?.name ?? id}`);
     // Everyone who was walking the old line walks the new one: they were given it together.
     const sharing = routeGroups().find(g => g.ids.includes(id))?.ids ?? [id];
@@ -1138,7 +1141,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     const entry = regions().find(r => r.name === name);
     if (!entry) return;
     const pieces = repairRegion(entry);
-    if (!pieces.length) return flash(`${name} has no shape left to repair`);
+    if (!pieces.length) return flash(`${name} has no shape left to repair`, "warn");
     if (pieces.length === 1 && !entry.rings.some(ring => selfIntersects(ring))) {
       return flash(`${name} is already a clean shape`);
     }
@@ -1330,16 +1333,16 @@ export default function RegionEditor(props: RegionEditorProps) {
     const r = active();
     if (!r) return;
     const built = regionsFromPoints(trailPoints(Object.keys(assign()).filter(id => assign()[id]?.includes(r.name))));
-    if (!built.length) return flash("no roam trails for that region's mobs");
+    if (!built.length) return flash("no roam trails for that region's mobs", "warn");
     checkpoint(`refit ${r.name}`);
     setRegions(rs => rs.map(x => (x.name === r.name ? { name: r.name, rings: built[0].rings } : x)));
-    if (built.length > 1) flash(`those trails form ${built.length} clusters, fitted the biggest`);
+    if (built.length > 1) flash(`those trails form ${built.length} clusters, fitted the biggest`, "warn");
   };
 
   /** Builds a new region around a set of mobs' trails and assigns them (plus anything inside it). */
   const buildFrom = (spawns: Spawn[]) => {
     const built = regionsFromPoints(trailPoints(spawns.map(s => s.id)));
-    if (!built.length) return flash("no roam trails for those mobs");
+    if (!built.length) return flash("no roam trails for those mobs", "warn");
 
     // Named after whichever template dominates the selection, since that is what it will hold.
     const common = spawns.map(s => s.name).sort((a, b) => spawns.filter(s => s.name === b).length - spawns.filter(s => s.name === a).length)[0] ?? "region";
@@ -3249,7 +3252,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                     onClick={() => {
                       setMenu(null);
                       if (replayId() === spawn().id) return setReplayId(null);
-                      if (trailPoints([spawn().id]).length < 2) return flash(`no roam trail for ${spawn().name}`);
+                      if (trailPoints([spawn().id]).length < 2) return flash(`no roam trail for ${spawn().name}`, "warn");
                       setReplayId(spawn().id);
                     }}
                   >
@@ -3321,8 +3324,12 @@ export default function RegionEditor(props: RegionEditorProps) {
           </div>
         </Show>
         <Show when={toast()}>
-          <div class="absolute bottom-2 left-1/2 -translate-x-1/2 bg-emerald-600 text-white text-xs font-mono rounded px-3 py-1 pointer-events-none">
-            {toast()}
+          <div
+            role="status"
+            class="absolute bottom-2 left-1/2 -translate-x-1/2 text-white text-xs font-mono rounded px-3 py-1 pointer-events-none max-w-[80%] text-center"
+            classList={{ "bg-emerald-600": !toast()!.warn, "bg-amber-600": toast()!.warn }}
+          >
+            {toast()!.text}
           </div>
         </Show>
         <Show when={obstacleHover() && mode() === "obstacles" && !menu()}>
