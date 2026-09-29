@@ -75,3 +75,13 @@ export async function copyText(text: string): Promise<boolean> {
 export const isTyping = (target: EventTarget | null) =>
   target instanceof HTMLElement
   && (target.isContentEditable || target.matches("textarea, select, input:not([type=range], [type=checkbox], [type=radio], [type=button])"));
+
+/**
+ * Enter and Space on something clickable that is not a button: a row in a list. It is focusable
+ * with tabIndex, and this makes the keyboard do what the click does.
+ */
+export const onActivate = (act: () => void) => (ev: KeyboardEvent) => {
+  if (ev.target !== ev.currentTarget || (ev.key !== "Enter" && ev.key !== " ")) return;
+  ev.preventDefault();
+  act();
+};

@@ -1,6 +1,6 @@
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { Patrol, Spawn } from "../regions";
-import { copyText } from "../util";
+import { copyText, onActivate } from "../util";
 
 export type MobStatus = "region" | "route" | "fixed" | "nowhere";
 
@@ -158,6 +158,8 @@ export default function MobList(props: MobListProps) {
                 }, click to keep its trail on screen, alt-click to copy its id, right-click for more`}
                 onMouseEnter={() => props.onHover(s.id)}
                 onMouseLeave={() => props.onHover(null)}
+                tabIndex={0}
+                onKeyDown={onActivate(() => props.onPin(s.id))}
                 onClick={e => (e.altKey ? copyId(s.id) : props.onPin(s.id))}
                 onContextMenu={e => (e.preventDefault(), props.onMenu(s, e.clientX, e.clientY))}
               >
@@ -179,6 +181,7 @@ export default function MobList(props: MobListProps) {
                   <button
                     class="px-1 leading-none text-slate-400 hover:text-white"
                     title={`Assign to ${props.activeName}, shift to add it to the ones it already has`}
+                    aria-label={`Assign to ${props.activeName}`}
                     onClick={e => (e.stopPropagation(), props.onAssign(s, e.shiftKey))}
                   >
                     +
@@ -188,6 +191,7 @@ export default function MobList(props: MobListProps) {
                   <button
                     class="px-1 leading-none text-slate-400 hover:text-white"
                     title="Centre on it"
+                    aria-label="Centre on it"
                     onClick={e => (e.stopPropagation(), props.onCentre(s))}
                   >
                     ⌖

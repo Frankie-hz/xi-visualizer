@@ -14,7 +14,7 @@ import type { Obstacle } from "../obstacles";
 import { containsXZ, regionAt, regionHue, regionsFromPoints, repairRegion, routeFromTrail, selfIntersects, simplifyRing, validate } from "../regions";
 import type { Finding, Patrol, Region, RegionSet, Ring, Spawn, TrailPoint, Vertex } from "../regions";
 import type { RoamData } from "../roam";
-import { copyText, isTyping } from "../util";
+import { copyText, isTyping, onActivate } from "../util";
 import MobList from "./region_mob_list";
 import ShortcutsCard from "./region_shortcuts";
 import type { ZoneData } from "./zone_model";
@@ -3469,10 +3469,12 @@ export default function RegionEditor(props: RegionEditorProps) {
       </div>
 
       <div class="w-80 flex flex-col bg-slate-800 rounded-lg p-2 overflow-hidden text-sm">
-        <div class="flex gap-1 mb-2">
+        <div class="flex gap-1 mb-2" role="tablist">
           <button
             class="flex-1 px-2 py-1 rounded"
             classList={{ "bg-slate-600": tab() === "regions", "bg-slate-700 text-slate-400": tab() !== "regions" }}
+            role="tab"
+            aria-selected={tab() === "regions"}
             onClick={() => setTab("regions")}
           >
             Regions ({regions().length})
@@ -3480,6 +3482,8 @@ export default function RegionEditor(props: RegionEditorProps) {
           <button
             class="flex-1 px-2 py-1 rounded"
             classList={{ "bg-slate-600": tab() === "paths", "bg-slate-700 text-slate-400": tab() !== "paths" }}
+            role="tab"
+            aria-selected={tab() === "paths"}
             onClick={() => setTab("paths")}
           >
             Routes ({Object.keys(paths()).length})
@@ -3488,6 +3492,8 @@ export default function RegionEditor(props: RegionEditorProps) {
             class="flex-1 px-2 py-1 rounded"
             classList={{ "bg-slate-600": tab() === "review", "bg-slate-700 text-slate-400": tab() !== "review" }}
             title="Checks every region and how well each covers its mobs' trails. Runs while this tab is open; ? means the regions have changed since the last check."
+            role="tab"
+            aria-selected={tab() === "review"}
             onClick={() => setTab("review")}
           >
             Review ({reviewStale() ? "?" : findings().filter(f => f.level !== "info").length})
@@ -3495,6 +3501,8 @@ export default function RegionEditor(props: RegionEditorProps) {
           <button
             class="flex-1 px-2 py-1 rounded"
             classList={{ "bg-slate-600": tab() === "history", "bg-slate-700 text-slate-400": tab() !== "history" }}
+            role="tab"
+            aria-selected={tab() === "history"}
             onClick={() => setTab("history")}
           >
             History ({undoStack().length})
@@ -3531,6 +3539,8 @@ export default function RegionEditor(props: RegionEditorProps) {
                 <div
                   class="py-0.5 px-1 rounded cursor-pointer hover:bg-slate-700 text-slate-300"
                   title="Take the zone back to just before this"
+                  tabIndex={0}
+                  onKeyDown={onActivate(() => rewindTo(undoStack().length - 1 - i()))}
                   onClick={() => rewindTo(undoStack().length - 1 - i())}
                 >
                   {step.label}
@@ -3557,6 +3567,8 @@ export default function RegionEditor(props: RegionEditorProps) {
                     onContextMenu={e => (
                       e.preventDefault(), setMenu({ kind: "route", lead: routeGroups().find(g => g.ids.includes(id))?.lead ?? id, x: e.clientX, y: e.clientY })
                     )}
+                    tabIndex={0}
+                    onKeyDown={onActivate(() => selectRoute(id))}
                     onClick={() => selectRoute(id)}
                   >
                     <span class="flex-1 truncate" title={spawn()?.name}>{spawn()?.name ?? "unknown"}</span>
@@ -3566,6 +3578,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                       <button
                         class="px-1 text-slate-400 hover:text-white"
                         title={patrol.loop === false ? "path: walks back along the same legs" : "circuit: closes into a loop"}
+                        aria-label={patrol.loop === false ? "Walks back along the same legs; make it a loop" : "Loops; make it walk back along the same legs"}
                         onClick={e => {
                           e.stopPropagation();
                           checkpoint(`${props.spawns.find(s => s.id === id)?.name ?? id} walks back and forth`);
@@ -3577,6 +3590,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                       <button
                         class="px-1 text-slate-400 hover:text-white"
                         title="Re-trace from the mob's roam trail"
+                        aria-label="Re-trace from the mob's roam trail"
                         onClick={e => (e.stopPropagation(), retrace(id))}
                       >
                         ⟳
@@ -3584,11 +3598,17 @@ export default function RegionEditor(props: RegionEditorProps) {
                       <button
                         class="px-1 text-slate-400 hover:text-white"
                         title="Add more legs"
+                        aria-label="Add more legs"
                         onClick={e => (e.stopPropagation(), selectRoute(id), setMode("draw"))}
                       >
                         ✎
                       </button>
-                      <button class="text-slate-400 hover:text-red-400" title="Remove the route" onClick={e => (e.stopPropagation(), dropPath(id))}>
+                      <button
+                        class="text-slate-400 hover:text-red-400"
+                        title="Remove the route"
+                        aria-label="Remove the route"
+                        onClick={e => (e.stopPropagation(), dropPath(id))}
+                      >
                         ✕
                       </button>
                     </Show>
@@ -3673,6 +3693,8 @@ export default function RegionEditor(props: RegionEditorProps) {
                   ref={el => rowRefs.set(r.name, el)}
                   class="flex items-center gap-2 py-1 px-1 rounded cursor-pointer hover:bg-slate-700"
                   classList={{ "bg-slate-700": r.name === activeName() }}
+                  tabIndex={0}
+                  onKeyDown={onActivate(() => (setActiveName(r.name), zoomTo(r.name)))}
                   onClick={() => (setActiveName(r.name), zoomTo(r.name))}
                   onContextMenu={e => (e.preventDefault(), setMenu({ kind: "region", name: r.name, x: e.clientX, y: e.clientY }))}
                 >
@@ -3712,9 +3734,21 @@ export default function RegionEditor(props: RegionEditorProps) {
                       {(coverage()[r.name] * 100).toFixed(0)}%
                     </span>
                   </Show>
-                  <button class="px-1 text-slate-400 hover:text-white" title="Center" onClick={e => (e.stopPropagation(), centerOn(r.name))}>⌖</button>
+                  <button
+                    class="px-1 text-slate-400 hover:text-white"
+                    title="Centre on it"
+                    aria-label="Centre on it"
+                    onClick={e => (e.stopPropagation(), centerOn(r.name))}
+                  >
+                    ⌖
+                  </button>
                   <Show when={canEdit()}>
-                    <button class="text-slate-400 hover:text-red-400" title="Delete region" onClick={e => (e.stopPropagation(), deleteRegion(r.name))}>
+                    <button
+                      class="text-slate-400 hover:text-red-400"
+                      title="Delete region"
+                      aria-label="Delete region"
+                      onClick={e => (e.stopPropagation(), deleteRegion(r.name))}
+                    >
                       ✕
                     </button>
                   </Show>
@@ -3773,15 +3807,24 @@ export default function RegionEditor(props: RegionEditorProps) {
                       title="Click to keep this mob's roam trail on screen"
                       onMouseEnter={() => setRowFocus(s.id)}
                       onMouseLeave={() => setRowFocus(null)}
+                      tabIndex={0}
+                      onKeyDown={onActivate(() => setPinnedId(id => (id === s.id ? null : s.id)))}
                       onClick={() => setPinnedId(id => (id === s.id ? null : s.id))}
                     >
                       <span class="flex-1 truncate" title={s.name}>{s.name}</span>
                       <span class="text-slate-500">{s.id}</span>
                       <Show when={s.at} fallback={<span class="px-1 text-slate-600" title="Placed by the region, no fixed point">·</span>}>
-                        <button class="px-1 text-slate-400 hover:text-white" title="Center" onClick={() => flyTo(s.x, s.y, s.z)}>⌖</button>
+                        <button
+                          class="px-1 text-slate-400 hover:text-white"
+                          title="Centre on it"
+                          aria-label="Centre on it"
+                          onClick={() => flyTo(s.x, s.y, s.z)}
+                        >
+                          ⌖
+                        </button>
                       </Show>
                       <Show when={canEdit()}>
-                        <button class="text-slate-400 hover:text-red-400" title="Unassign" onClick={() => unassign(s.id)}>✕</button>
+                        <button class="text-slate-400 hover:text-red-400" title="Unassign" aria-label="Unassign" onClick={() => unassign(s.id)}>✕</button>
                       </Show>
                     </div>
                   )}
@@ -3801,7 +3844,12 @@ function ReviewList(props: { findings: Finding[]; onJump: (f: Finding) => void; 
     <div class="flex-1 overflow-y-auto">
       <For each={props.findings} fallback={<div class="text-emerald-500 p-2">Nothing to flag.</div>}>
         {f => (
-          <div class="flex items-center gap-1 py-1 px-1 rounded hover:bg-slate-700 cursor-pointer text-xs" onClick={() => props.onJump(f)}>
+          <div
+            class="flex items-center gap-1 py-1 px-1 rounded hover:bg-slate-700 cursor-pointer text-xs"
+            tabIndex={0}
+            onKeyDown={onActivate(() => props.onJump(f))}
+            onClick={() => props.onJump(f)}
+          >
             <span class={color[f.level]}>●</span>
             <span class="flex-1 text-slate-300">
               {f.text}
