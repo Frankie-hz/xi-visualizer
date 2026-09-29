@@ -55,6 +55,20 @@ type Mode = "select" | "draw" | "obstacles";
 /** Grid the collision mesh's steep faces are read on, in yalms. */
 const OBSTACLE_CELL = 0.5;
 
+/** Where every carving dial starts, and where Defaults puts it back. Distances in yalms. */
+const OBSTACLE_DEFAULTS = {
+  margin: 1,
+  slope: 50,
+  join: 1,
+  climb: 2,
+  minHeight: 0.5,
+  minArea: 0.5,
+  bulkMax: 150,
+  clearance: 1,
+  reach: 2,
+  gapMinArea: 6,
+};
+
 const GOLDEN = 0.61803398875; // successive regions land far apart on the colour wheel
 const PATH_COLOR = 0xa78bfa; // routes are violet, clear of the region hues and the cyan trails
 
@@ -180,7 +194,7 @@ export default function RegionEditor(props: RegionEditorProps) {
    * where the mobs stopped. Two steps, like a merge: a plan with a dial, then Apply.
    */
   const [grow, setGrow] = createSignal<{ name: string; x: number; z: number; y: number; } | null>(null);
-  const [growClearance, setGrowClearance] = createSignal(1);
+  const [growClearance, setGrowClearance] = createSignal(OBSTACLE_DEFAULTS.clearance);
   const growPlan = createMemo(() => {
     const g = grow();
     const entry = g && regions().find(r => r.name === g.name);
@@ -237,7 +251,7 @@ export default function RegionEditor(props: RegionEditorProps) {
   };
 
   const [merge, setMerge] = createSignal<{ name: string; index: number; } | null>(null);
-  const [mergeReach, setMergeReach] = createSignal(2);
+  const [mergeReach, setMergeReach] = createSignal(OBSTACLE_DEFAULTS.reach);
   const mergePlan = createMemo(() => {
     const m = merge();
     const entry = m && regions().find(r => r.name === m.name);
@@ -604,7 +618,6 @@ export default function RegionEditor(props: RegionEditorProps) {
   // The dials: how far off the faces the ring sits, what counts as steep, how close faces must be
   // to be one obstacle, how tall and how wide an obstacle must be to show at all, and how big one
   // may be before "ring all" skips it.
-  const OBSTACLE_DEFAULTS = { margin: 1, slope: 50, join: 1, climb: 2, minHeight: 0.5, minArea: 0.5, bulkMax: 150 };
   const TALL_FACE = 2; // yalms of face height in one cell: a trunk or a rock wall, not a bank or a root
   const GROUND_SNAP = 2; // yalms; a vertex with the ground this close sits on it
   const SPIKE = 2; // yalms; a vertex this far above or below both its neighbours is never on the ground
@@ -616,6 +629,83 @@ export default function RegionEditor(props: RegionEditorProps) {
   const [obstacleMinHeight, setObstacleMinHeight] = createSignal(OBSTACLE_DEFAULTS.minHeight); // yalms
   const [obstacleMinArea, setObstacleMinArea] = createSignal(OBSTACLE_DEFAULTS.minArea); // square yalms of footprint
   const [obstacleBulkMax, setObstacleBulkMax] = createSignal(OBSTACLE_DEFAULTS.bulkMax); // square yalms of footprint
+  const DIALS: DialSpec[] = [
+    {
+      label: "margin",
+      unit: "y",
+      get: obstacleMargin,
+      set: setObstacleMargin,
+      min: 0,
+      max: 5,
+      step: 0.25,
+      title: "How far off the faces the hole ring sits: the mob's own radius plus some",
+    },
+    {
+      label: "steeper than",
+      unit: "°",
+      get: obstacleSlope,
+      set: setObstacleSlope,
+      min: 20,
+      max: 85,
+      step: 1,
+      title: "A face this steep or more is an obstacle; below it is ground a mob walks",
+    },
+    {
+      label: "join within",
+      advanced: true,
+      unit: "y",
+      get: obstacleJoin,
+      set: setObstacleJoin,
+      min: 0,
+      max: 4,
+      step: 0.25,
+      title: "Faces this close are one obstacle: a trunk and its branches, a rock and its ledges",
+    },
+    {
+      label: "climb",
+      advanced: true,
+      unit: "y",
+      get: obstacleClimb,
+      set: setObstacleClimb,
+      min: 0,
+      max: 8,
+      step: 0.5,
+      title:
+        "Ground the steep faces lead up onto, this far above their foot, is part of the obstacle: a rock's top, the plateau behind a cliff. 0 keeps only the faces",
+    },
+    {
+      label: "at least tall",
+      advanced: true,
+      unit: "y",
+      get: obstacleMinHeight,
+      set: setObstacleMinHeight,
+      min: 0,
+      max: 4,
+      step: 0.25,
+      title: "Lower than this is a kerb or a root, not something a mob paths around",
+    },
+    {
+      label: "at least wide",
+      advanced: true,
+      unit: "y²",
+      get: obstacleMinArea,
+      set: setObstacleMinArea,
+      min: 0,
+      max: 10,
+      step: 0.25,
+      title: "Footprint under this is a speck of geometry",
+    },
+    {
+      label: "ring all up to",
+      unit: "y²",
+      get: obstacleBulkMax,
+      set: setObstacleBulkMax,
+      min: 5,
+      max: 500,
+      step: 5,
+      title: "Ring all skips anything bigger: a cliff or a wall takes a click of its own",
+    },
+  ];
   const resetObstacleDials = () => {
     setObstacleMargin(OBSTACLE_DEFAULTS.margin);
     setObstacleSlope(OBSTACLE_DEFAULTS.slope);
@@ -624,6 +714,9 @@ export default function RegionEditor(props: RegionEditorProps) {
     setObstacleMinHeight(OBSTACLE_DEFAULTS.minHeight);
     setObstacleMinArea(OBSTACLE_DEFAULTS.minArea);
     setObstacleBulkMax(OBSTACLE_DEFAULTS.bulkMax);
+    setGrowClearance(OBSTACLE_DEFAULTS.clearance);
+    setMergeReach(OBSTACLE_DEFAULTS.reach);
+    setGapMinArea(OBSTACLE_DEFAULTS.gapMinArea);
   };
   const [obstacles, setObstacles] = createSignal<Obstacle[]>([]);
   // The obstacle under the cursor in carve mode: its ring lights up, and a click cuts it.
@@ -869,7 +962,7 @@ export default function RegionEditor(props: RegionEditorProps) {
    * collision, a spot they simply never stand on), but the data does: a ring of samples around an
    * empty disc. Found alongside the obstacles in carve mode and cut the same way.
    */
-  const [gapMinArea, setGapMinArea] = createSignal(6); // square yalms
+  const [gapMinArea, setGapMinArea] = createSignal(OBSTACLE_DEFAULTS.gapMinArea); // square yalms
   const rawGaps = createMemo<Ring[]>(() => {
     const r = active();
     if (mode() !== "obstacles" || !r || (r.rings[0]?.length ?? 0) < 3 || !walkedCells().size) return [];
@@ -950,9 +1043,12 @@ export default function RegionEditor(props: RegionEditorProps) {
     const { bulk: small, big } = previewRings();
     return { bulk: small.filter(o => !hide(o)), big: big.filter(o => !hide(o)) };
   });
+  /** Why the empty-patch search found nothing, when it could not have found anything. */
+  const gapsWhyNot = () =>
+    !props.roam ? "turn on roam data to find them" : !memberTrailAll().length ? "none: no mob in this region has a roam trail" : undefined;
   const gapAt = (x: number, z: number) => gaps().find(g => inRing(g, x, z));
   /** Cuts holes for the given rings, each through the clipper on its own, like ringObstacles. */
-  const cutRings = (rings: Ring[], what: string) => {
+  const cutRings = (rings: Ring[]) => {
     const name = activeName();
     const entry = regions().find(r => r.name === name);
     if (!name || !entry || !rings.length) return;
@@ -969,10 +1065,10 @@ export default function RegionEditor(props: RegionEditorProps) {
       done++;
     }
     if (done) {
-      checkpoint(done === 1 ? `cut a ${what}` : `cut ${done} ${what}s`);
+      checkpoint(done === 1 ? "cut an empty patch" : `cut ${done} empty patches`);
       setRegions(rs => rs.map(r => (r.name === name ? { name, rings: shape.rings.map(onGround) } : r)));
     }
-    if (skipped) flash(`${skipped} ${what}${skipped === 1 ? "" : "s"} would cut ${name} in two; left alone`, "warn");
+    if (skipped) flash(`${skipped} empty patch${skipped === 1 ? "" : "es"} would cut ${name} in two; left alone`, "warn");
   };
   /**
    * Cuts a hole around each obstacle. Every ring goes through the clipper at once, so one that
@@ -1768,7 +1864,6 @@ export default function RegionEditor(props: RegionEditorProps) {
     const { bulk: small, big } = shownPreview();
     if (!small.length && !big.length) return;
     const added: { lines: LineSegments2; geo: LineSegmentsGeometry; }[] = [];
-    // Two colours: what Ring all takes in full amber, what is over its size dimmer.
     // Two looks: what Ring all takes solid, what is over its size dashed; both full amber. Only
     // the part of a ring inside the region is drawn: the cut clips to the outline, so the preview
     // shows the same.
@@ -2483,7 +2578,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         if (o) ringObstacles([o]);
         else {
           const g = p && gapAt(p.x, p.z);
-          if (g) cutRings([g], "roam gap");
+          if (g) cutRings([g]);
         }
         return;
       }
@@ -2992,7 +3087,7 @@ export default function RegionEditor(props: RegionEditorProps) {
           </div>
         </Show>
         <Show when={grow()}>
-          <div class="absolute top-10 right-2 z-30 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
+          <div class="absolute top-10 right-2 z-30 w-72 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
             <div class="flex items-center justify-between">
               <span class="text-[10px] uppercase tracking-wide text-slate-500">Hole from roam data</span>
               <span class="text-slate-400">
@@ -3022,7 +3117,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         </Show>
         <Show when={mergePlan()}>
           {plan => (
-            <div class="absolute top-10 right-2 z-30 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
+            <div class="absolute top-10 right-2 z-30 w-72 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
               <div class="flex items-center justify-between">
                 <span class="text-[10px] uppercase tracking-wide text-slate-500">Merge holes</span>
                 <span class="text-slate-400">{plan().group.length} in the group · esc cancels</span>
@@ -3054,123 +3149,63 @@ export default function RegionEditor(props: RegionEditorProps) {
           )}
         </Show>
         <Show when={mode() === "obstacles" && !props.readOnly && !merge() && !grow()}>
-          <div class="absolute top-10 right-2 z-30 w-64 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
+          <div class="absolute top-10 right-2 z-30 w-72 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
             <div class="flex items-center justify-between">
               <span class="text-[10px] uppercase tracking-wide text-slate-500">Carve holes</span>
-              <span class="text-slate-400">
-                {obstacles().length} found · {obstacles().length - bulk().length} cliffs or over size · esc leaves
+              <span class="text-slate-500">esc leaves</span>
+            </div>
+            <p class="text-slate-400 leading-snug">
+              Cut holes where mobs cannot stand. Amber outlines are obstacles in the collision mesh, violet ones ground no mob was recorded on: click one to cut
+              it, or cut them all below. Distances are in yalms.
+            </p>
+            <div class="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px] text-slate-400">
+              <span class="flex items-center gap-1">
+                <span class="w-4 border-t-2 border-amber-400" />Ring all cuts it
+              </span>
+              <span class="flex items-center gap-1">
+                <span class="w-4 border-t-2 border-dashed border-amber-400" />too big, click it
+              </span>
+              <span class="flex items-center gap-1">
+                <span class="w-4 border-t-2 border-dashed border-violet-400" />empty patch
+              </span>
+              <span class="flex items-center gap-1">
+                <span class="w-4 border-t-2 border-white" />under the cursor
               </span>
             </div>
-            <For
-              each={[
-                {
-                  label: "margin",
-                  unit: "y",
-                  get: obstacleMargin,
-                  set: setObstacleMargin,
-                  min: 0,
-                  max: 5,
-                  step: 0.25,
-                  title: "How far off the faces the hole ring sits: the mob's own radius plus some",
-                },
-                {
-                  label: "steeper than",
-                  unit: "°",
-                  get: obstacleSlope,
-                  set: setObstacleSlope,
-                  min: 20,
-                  max: 85,
-                  step: 1,
-                  title: "A face this steep or more is an obstacle; below it is ground a mob walks",
-                },
-                {
-                  label: "join within",
-                  unit: "y",
-                  get: obstacleJoin,
-                  set: setObstacleJoin,
-                  min: 0,
-                  max: 4,
-                  step: 0.25,
-                  title: "Faces this close are one obstacle: a trunk and its branches, a rock and its ledges",
-                },
-                {
-                  label: "climb",
-                  unit: "y",
-                  get: obstacleClimb,
-                  set: setObstacleClimb,
-                  min: 0,
-                  max: 8,
-                  step: 0.5,
-                  title:
-                    "Ground the steep faces lead up onto, this far above their foot, is part of the obstacle: a rock's top, the plateau behind a cliff. 0 keeps only the faces",
-                },
-                {
-                  label: "at least tall",
-                  unit: "y",
-                  get: obstacleMinHeight,
-                  set: setObstacleMinHeight,
-                  min: 0,
-                  max: 4,
-                  step: 0.25,
-                  title: "Lower than this is a kerb or a root, not something a mob paths around",
-                },
-                {
-                  label: "at least wide",
-                  unit: "y²",
-                  get: obstacleMinArea,
-                  set: setObstacleMinArea,
-                  min: 0,
-                  max: 10,
-                  step: 0.25,
-                  title: "Footprint under this is a speck of geometry",
-                },
-                {
-                  label: "ring all up to",
-                  unit: "y²",
-                  get: obstacleBulkMax,
-                  set: setObstacleBulkMax,
-                  min: 5,
-                  max: 500,
-                  step: 5,
-                  title: "Ring all skips anything bigger: a cliff or a wall takes a click of its own",
-                },
-              ]}
-            >
-              {d => (
-                <label class="flex items-center gap-2" title={d.title}>
-                  <span class="w-24 text-slate-300">{d.label}</span>
-                  <input
-                    type="range"
-                    class="flex-1"
-                    min={d.min}
-                    max={d.max}
-                    step={d.step}
-                    value={d.get()}
-                    onInput={e => d.set(Number(e.currentTarget.value))}
-                  />
-                  <span class="w-12 text-right font-mono text-slate-200">{d.get()}{d.unit}</span>
-                </label>
-              )}
-            </For>
-            <div class="border-t border-slate-700 pt-1 text-[10px] uppercase tracking-wide text-slate-500">Roam gaps · {gaps().length} found</div>
-            <label class="flex items-center gap-2" title="Ground within this of a recorded sample is ground the mobs use; what is left, enclosed, is a gap">
-              <span class="w-24 text-slate-300">clearance</span>
-              <input
-                type="range"
-                class="flex-1"
-                min="0.5"
-                max="4"
-                step="0.25"
-                value={growClearance()}
-                onInput={e => setGrowClearance(Number(e.currentTarget.value))}
-              />
-              <span class="w-12 text-right font-mono text-slate-200">{growClearance()}y</span>
-            </label>
-            <label class="flex items-center gap-2" title="A gap smaller than this is sampling noise">
-              <span class="w-24 text-slate-300">gap at least</span>
-              <input type="range" class="flex-1" min="1" max="60" step="1" value={gapMinArea()} onInput={e => setGapMinArea(Number(e.currentTarget.value))} />
-              <span class="w-12 text-right font-mono text-slate-200">{gapMinArea()}y²</span>
-            </label>
+            <div class="border-t border-slate-700 pt-1 text-[10px] uppercase tracking-wide text-slate-500">
+              Obstacles · {obstacles().length}{" "}
+              found<Show when={obstacles().length - bulk().length}>, {obstacles().length - bulk().length} left to a click</Show>
+            </div>
+            <For each={DIALS.filter(d => !d.advanced)}>{d => <Dial {...d} />}</For>
+            <details>
+              <summary class="cursor-pointer text-slate-400 hover:text-slate-200">More dials</summary>
+              <div class="space-y-2 mt-2">
+                <For each={DIALS.filter(d => d.advanced)}>{d => <Dial {...d} />}</For>
+              </div>
+            </details>
+            <div class="border-t border-slate-700 pt-1 text-[10px] uppercase tracking-wide text-slate-500">
+              Empty patches · <Show when={gapsWhyNot()} fallback={<>{gaps().length} found</>}>{gapsWhyNot()}</Show>
+            </div>
+            <Dial
+              label="clearance"
+              unit="y"
+              get={growClearance}
+              set={setGrowClearance}
+              min={0.5}
+              max={4}
+              step={0.25}
+              title="Ground within this many yalms of a recorded sample is ground the mobs use; enclosed ground beyond it is an empty patch. The same dial as a grow plan's clearance."
+            />
+            <Dial
+              label="patch at least"
+              unit="y²"
+              get={gapMinArea}
+              set={setGapMinArea}
+              min={1}
+              max={60}
+              step={1}
+              title="An empty patch smaller than this, in square yalms, is sampling noise"
+            />
             <div class="flex gap-1">
               <button
                 class="flex-1 px-2 py-1 bg-amber-700 hover:bg-amber-600 rounded disabled:opacity-40"
@@ -3183,10 +3218,10 @@ export default function RegionEditor(props: RegionEditorProps) {
               <button
                 class="flex-1 px-2 py-1 bg-violet-700 hover:bg-violet-600 rounded disabled:opacity-40"
                 disabled={!gaps().length}
-                title="Cut every roam gap as a hole"
-                onClick={() => cutRings(gaps(), "roam gap")}
+                title="Cut every empty patch as a hole"
+                onClick={() => cutRings(gaps())}
               >
-                Cut gaps ({gaps().length})
+                Cut patches ({gaps().length})
               </button>
               <button
                 class="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded"
@@ -3794,5 +3829,37 @@ function ReviewList(props: { findings: Finding[]; onJump: (f: Finding) => void; 
         )}
       </For>
     </div>
+  );
+}
+
+interface DialSpec {
+  label: string;
+  unit: string;
+  get: () => number;
+  set: (value: number) => void;
+  min: number;
+  max: number;
+  step: number;
+  title: string;
+  advanced?: boolean;
+}
+
+/** One labelled slider, with its value and unit beside it. */
+function Dial(props: DialSpec) {
+  return (
+    <label class="flex items-center gap-2" title={props.title}>
+      <span class="w-24 shrink-0 whitespace-nowrap text-slate-300">{props.label}</span>
+      <input
+        type="range"
+        class="flex-1"
+        min={props.min}
+        max={props.max}
+        step={props.step}
+        value={props.get()}
+        aria-label={props.label}
+        onInput={e => props.set(Number(e.currentTarget.value))}
+      />
+      <span class="w-14 shrink-0 text-right font-mono text-slate-200">{props.get()}{props.unit}</span>
+    </label>
   );
 }
