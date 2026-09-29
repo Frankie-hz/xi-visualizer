@@ -1177,7 +1177,7 @@ export default function RegionEditor(props: RegionEditorProps) {
   const assignInside = (remove: boolean) => {
     const r = active();
     if (!r) return;
-    checkpoint(`assign what ${name} covers`);
+    checkpoint(`${remove ? "unassign" : "assign"} what ${r.name} covers`);
     const set = asSet(regions());
     setAssign(a => {
       const next = { ...a };
@@ -1296,7 +1296,7 @@ export default function RegionEditor(props: RegionEditorProps) {
   };
 
   const unassign = (id: string) => {
-    checkpoint(`unassign ${name}`);
+    checkpoint(`unassign ${props.spawns.find(s => s.id === id)?.name ?? id}`);
     setAssign(a => {
       const next = { ...a };
       delete next[id];
