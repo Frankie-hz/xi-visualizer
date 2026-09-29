@@ -52,6 +52,10 @@ assert.strictEqual(body.error, "not_allowed");
 assert.match(body.error_description, /stranger is not on this editor's list/);
 assert.ok(!JSON.stringify(body).includes("ghu_secret"), "the token stays on this side of the refusal");
 
+// `*` lets anyone in
+githubSays({ token: { access_token: "ghu_ok" }, user: { login: "stranger" } });
+assert.strictEqual((await (await post("/oauth/token", undefined, { ...env, ALLOWED_LOGINS: "*" })).json()).login, "stranger");
+
 // a token GitHub will not identify is not a token we hand over either
 githubSays({ token: { access_token: "ghu_odd" }, user: null });
 globalThis.fetch = async url =>

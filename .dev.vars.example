@@ -6,6 +6,7 @@
 # GitHub usernames allowed to sign in to the editor, comma separated. The relay asks GitHub who a
 # token belongs to and refuses anyone not listed. This gates who can use the editor; it is not a
 # boundary around LSB, since anyone can fork and open a pull request by hand regardless.
+# `*` lets any GitHub account in.
 ALLOWED_LOGINS=sruon
 
 # The GitHub App's client id, from its settings page. Public, always starts Iv23li.

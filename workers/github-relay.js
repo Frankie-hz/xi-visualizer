@@ -7,7 +7,8 @@
 //
 // What the allowlist is: a gate on who gets to use this editor. It is not a boundary around LSB --
 // nobody can push to base with or without it, and anyone can fork and open a pull request by hand.
-// It exists so the sign-in button is not an open door, and that is all it needs to do.
+// It exists so the sign-in button is not an open door, and that is all it needs to do. `*` opens it
+// to every GitHub account.
 //
 // Deploy with `pnpm relay:deploy`, secrets with `pnpm relay:secrets`. The app needs a callback URL
 // registered for every origin below; the page names which one it wants, because GitHub otherwise
@@ -79,7 +80,7 @@ export default {
     if (body.access_token) {
       const allowed = (env.ALLOWED_LOGINS ?? "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
       const login = await loginOf(body.access_token);
-      if (!login || !allowed.includes(login.toLowerCase())) {
+      if (!login || !(allowed.includes("*") || allowed.includes(login.toLowerCase()))) {
         return json({
           error: "not_allowed",
           error_description: login
