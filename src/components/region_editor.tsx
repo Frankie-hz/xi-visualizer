@@ -1130,6 +1130,7 @@ export default function RegionEditor(props: RegionEditorProps) {
       return next;
     });
     if (walker() === id) editWalker(null);
+    flash(`dropped the route for ${props.spawns.find(s => s.id === id)?.name ?? id}; it stands on its spawn point again`);
   };
 
   /**
@@ -1232,7 +1233,8 @@ export default function RegionEditor(props: RegionEditorProps) {
   // Returns false when the new name is empty or taken, so the input can snap back.
   const renameRegion = (from: string, raw: string) => {
     const to = raw.trim().replace(/[^A-Za-z0-9_]/g, "_");
-    if (!to || regions().some(r => r.name === to && r.name !== from)) return false;
+    if (!to) return (flash("a region needs a name", "warn"), false);
+    if (regions().some(r => r.name === to && r.name !== from)) return (flash(`${to} is already a region's name`, "warn"), false);
     if (to === from) return true;
     checkpoint(`rename ${from} to ${to}`);
     setRegions(rs => rs.map(r => (r.name === from ? { ...r, name: to } : r)));
@@ -1242,6 +1244,8 @@ export default function RegionEditor(props: RegionEditorProps) {
   };
 
   const deleteRegion = (name: string) => {
+    const orphaned = Object.values(assign()).filter(ns => ns.length === 1 && ns[0] === name).length;
+    flash(`deleted ${name}${orphaned ? `; ${mobs(orphaned)} it held now have no region` : ""}, ctrl+z brings it back`);
     checkpoint(`delete ${name}`);
     setRegions(rs => rs.filter(r => r.name !== name));
     setAssign(a =>
@@ -1254,21 +1258,35 @@ export default function RegionEditor(props: RegionEditorProps) {
     if (activeName() === name) setActiveName(null);
   };
 
+  /**
+   * The mobs standing inside the selected region by their own position, narrowed by the filter box
+   * like everything else in this panel. A spawn whose region already replaced its `at:` has no
+   * position to test.
+   */
+  const insideActive = createMemo(() => {
+    const r = active();
+    if (!r) return [];
+    const set = asSet(settled());
+    return props.spawns.filter(s => s.at && matches(s) && regionAt(set, s.x, s.z, s.y) === r.name);
+  });
+
   const assignInside = (remove: boolean) => {
     const r = active();
     if (!r) return;
+    const a = assign();
+    const touched = insideActive().filter(s => (remove ? a[s.id] : a[s.id]?.join() !== r.name));
+    const filtered = filter() ? ` matching "${filter()}"` : "";
+    if (!touched.length) return flash(`no mobs${filtered} inside ${r.name} to ${remove ? "unassign" : "assign"}`, "warn");
     checkpoint(`${remove ? "unassign" : "assign"} what ${r.name} covers`);
-    const set = asSet(regions());
-    setAssign(a => {
-      const next = { ...a };
-      for (const s of props.spawns) {
-        // A spawn whose region already replaced its `at:` has no position to test.
-        if (!s.at || !matches(s) || regionAt(set, s.x, s.z, s.y) !== r.name) continue;
+    setAssign(prev => {
+      const next = { ...prev };
+      for (const s of touched) {
         if (remove) delete next[s.id];
         else next[s.id] = [r.name];
       }
       return next;
     });
+    flash(`${remove ? "unassigned" : "assigned"} ${mobs(touched.length)}${filtered} ${remove ? "inside" : "to"} ${r.name}`);
   };
 
   // Keeps the current view angle and distance, just slides the camera over. Scene is flipped on y/z.
@@ -1337,6 +1355,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     checkpoint(`refit ${r.name}`);
     setRegions(rs => rs.map(x => (x.name === r.name ? { name: r.name, rings: built[0].rings } : x)));
     if (built.length > 1) flash(`those trails form ${built.length} clusters, fitted the biggest`, "warn");
+    else flash(`refitted ${r.name} to its mobs' trails`);
   };
 
   /** Builds a new region around a set of mobs' trails and assigns them (plus anything inside it). */
@@ -2465,7 +2484,15 @@ export default function RegionEditor(props: RegionEditorProps) {
       const spawn = pickSpawn();
       const name = activeName();
       if (spawn && name && canEdit()) {
-        checkpoint(`assign ${spawn.name}`);
+        const had = assign()[spawn.id] ?? [];
+        flash(
+          had.includes(name)
+            ? `took ${spawn.name} out of ${name}`
+            : ev.shiftKey
+            ? `${spawn.name} is now in ${[...had, name].join(" or ")}`
+            : `${spawn.name} is now in ${name}${had.length ? `, was ${had.join(" or ")}` : ""}`,
+        );
+        checkpoint(had.includes(name) ? `unassign ${spawn.name}` : `assign ${spawn.name}`);
         setAssign(a => {
           const next = { ...a };
           const current = next[spawn.id] ?? [];
@@ -2893,8 +2920,13 @@ export default function RegionEditor(props: RegionEditorProps) {
               disabled={!active()}
               title={active() ? "Drop the least important quarter of the selected region's vertices" : "Select a region first"}
               onClick={() => {
-                checkpoint(`simplify ${activeName()}`);
+                const entry = active();
+                if (!entry) return;
+                const before = entry.rings.reduce((n, ring) => n + ring.length, 0);
+                checkpoint(`simplify ${entry.name}`);
                 editActive(r => (r.rings = r.rings.map(ring => simplifyRing(ring, Infinity, Math.ceil(ring.length * 0.75)))));
+                const after = active()?.rings.reduce((n, ring) => n + ring.length, 0) ?? before;
+                flash(`simplified ${entry.name}: ${before} → ${after} vertices, holes included`);
               }}
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -3647,10 +3679,20 @@ export default function RegionEditor(props: RegionEditorProps) {
               />
               <Show when={canEdit()}>
                 <div class="flex gap-1">
-                  <button class="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs" onClick={() => assignInside(false)}>
-                    Assign inside
+                  <button
+                    class="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs"
+                    title={`Put every mob whose spawn point is inside ${active()!.name} in it${filter() ? `, of those matching "${filter()}"` : ""}`}
+                    onClick={() => assignInside(false)}
+                  >
+                    Assign inside ({insideActive().length})
                   </button>
-                  <button class="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs" onClick={() => assignInside(true)}>
+                  <button
+                    class="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs"
+                    title={`Take every mob whose spawn point is inside ${active()!.name} out of its region${
+                      filter() ? `, of those matching "${filter()}"` : ""
+                    }`}
+                    onClick={() => assignInside(true)}
+                  >
                     Unassign inside
                   </button>
                   <button
