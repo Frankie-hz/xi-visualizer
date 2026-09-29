@@ -114,6 +114,16 @@ assert.deepStrictEqual(await findFork("t", UPSTREAM, "someone"), { state: "ready
 fakeGitHub({ ...upstreamIs, "/repos/someone/server": { fork: true, source: { full_name: "someone-else/thing" } } });
 assert.deepStrictEqual(await findFork("t", UPSTREAM, "someone"), { state: "missing" }, "a repo outside the network is not ours to write to");
 
+// A fork under another name, as GitHub makes when "server" was already taken, is still theirs.
+fakeGitHub({
+  ...upstreamIs,
+  "/repos/someone/server": { fork: false, full_name: "someone/server" },
+  "/user/repos?affiliation=owner&per_page=100&page=1": [{ full_name: "someone/server", fork: false }, { full_name: "someone/server-1", fork: true }],
+  "/repos/someone/server-1": { fork: true, full_name: "someone/server-1", source: { full_name: NETWORK } },
+  ...installedFor("someone/server-1"),
+});
+assert.deepStrictEqual(await findFork("t", UPSTREAM, "someone"), { state: "ready", repo: "someone/server-1" }, "found under its other name");
+
 // The maintainer's own fork is the staging repo itself, and has to be accepted like any other.
 fakeGitHub({ ...upstreamIs, "/repos/sruon/server": { full_name: UPSTREAM, source: { full_name: NETWORK } }, ...installedFor("sruon/server") });
 assert.deepStrictEqual(await findFork("t", UPSTREAM, "sruon"), { state: "ready", repo: "sruon/server" });

@@ -207,10 +207,14 @@ export async function findFork(token: string, upstream: string, login: string, b
   const target = await gh(token, `/repos/${upstream}`);
   const network = target.source?.full_name ?? target.full_name;
 
-  const repo = `${login}/${upstream.split("/")[1]}`;
-  const mine = await ghMaybe(token, `/repos/${repo}`);
+  const named = `${login}/${upstream.split("/")[1]}`;
+  const mine = await ghMaybe(token, `/repos/${named}`);
   const sameNetwork = mine && (mine.source?.full_name ?? mine.full_name) === network;
-  if (!sameNetwork) return { state: "missing" };
+  // Usually named after upstream, but not always: GitHub calls it server-1 when the account already
+  // had a repository called server, and people rename forks. Missing it sent them to fork again,
+  // which GitHub answers by showing the fork that already exists.
+  const repo = sameNetwork ? named : await forkElsewhere(token, network);
+  if (!repo) return { state: "missing" };
 
   // Asked before any drawing happens, because all three of these fail at the first commit and
   // "Resource not accessible by integration" an hour later is not something anyone can act on.
@@ -228,6 +232,19 @@ export async function findFork(token: string, upstream: string, login: string, b
     return { state: "needs_sync", repo };
   }
   return { state: "ready", repo };
+}
+
+/** The signed-in account's own fork in `network` under some other name, if it has one. */
+async function forkElsewhere(token: string, network: string): Promise<string | undefined> {
+  for (let page = 1; page <= 10; page++) {
+    const repos: any[] = (await ghMaybe(token, `/user/repos?affiliation=owner&per_page=100&page=${page}`)) ?? [];
+    for (const candidate of repos.filter(r => r.fork)) {
+      const full = await ghMaybe(token, `/repos/${candidate.full_name}`);
+      if (full && (full.source?.full_name ?? full.full_name) === network) return candidate.full_name;
+    }
+    if (repos.length < 100) return undefined;
+  }
+  return undefined;
 }
 
 /**
