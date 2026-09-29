@@ -233,21 +233,47 @@ export default function RegionsPage() {
 
       setStatus(`Next save starts ${branchName()}`);
     } catch (e) {
-      setStatus(undefined);
-
-      setError(`${e}`);
+      failed(e);
     }
   };
   /** The zones sitting on the working branch, so the pull request can name what it actually holds. */
   const branchZones = () => sitting()?.zones ?? [];
 
+  /** Why the fork could not be checked, when it could not: a panel with nothing in it helps nobody. */
+  const [forkError, setForkError] = createSignal<string | undefined>();
+
+  const endSession = () => {
+    signOut();
+    setAccount(null);
+    setFork(undefined);
+    setSitting(undefined);
+    setPushed(false);
+  };
+
+  /**
+   * Reports a GitHub call that failed. An expired session signs out, since every later call would
+   * fail the same way behind a toolbar that still shows the login and no way to sign in again.
+   */
+  const failed = (e: unknown) => {
+    setStatus(undefined);
+    if ((e as { status?: number; }).status === 401) {
+      endSession();
+      setShowSignIn(true);
+      return setError("Your GitHub sign-in has expired; they last eight hours. Sign in again, your edits are kept.");
+    }
+    setError((e as Error)?.message ?? String(e));
+  };
+
   const locateFork = async () => {
     const t = authToken();
     if (!t) return setFork(undefined);
+    setForkError(undefined);
     try {
       const found = await findFork(t, repo(), await whoAmI(t), ref());
       setFork(found);
-      if (found.state !== "ready") return;
+      // Something still stands between this person and a save, and the panel is what says so.
+      if (found.state !== "ready") return setShowSignIn(true);
+      setShowSignIn(false);
 
       const now = await findSitting(t, found.repo, repo(), ref(), branchForToday());
       setSitting(now);
@@ -259,7 +285,9 @@ export default function RegionsPage() {
       if (showing && now.ancestor && !dirty()) await openZone(showing);
     } catch (e) {
       setFork(undefined);
-      setError(`${e}`);
+      if ((e as { status?: number; }).status === 401) return failed(e);
+      setForkError((e as Error)?.message ?? String(e));
+      setShowSignIn(true);
     }
   };
 
@@ -707,8 +735,7 @@ export default function RegionsPage() {
       const showing = files()?.folder;
       if (showing) await openZone(showing); // back to staging's version of it
     } catch (e) {
-      setStatus(undefined);
-      setError(`${e}`);
+      failed(e);
     }
   };
 
@@ -840,14 +867,12 @@ export default function RegionsPage() {
       setSitting({ ...sitting()!, branch: branchName(), zones: result.zones, ancestor: sitting()?.ancestor ?? "committed" });
       if (result.onBranch) setPushed(true);
     } catch (e) {
+      if ((e as { status?: number; }).status !== 403) return failed(e);
       setStatus(undefined);
       // A refusal on a write is worth one more question before reporting it: "not accessible by
       // integration" says nothing about which of several causes it was, and what the installation
       // holds is the fact that tells them apart.
-      const why = (e as { status?: number; }).status === 403
-        ? ` (${where.repo}: ${await grantedOn(authToken(), where.repo)})`
-        : "";
-      setError(`${e}${why}`);
+      setError(`${(e as Error).message} (${where.repo}: ${await grantedOn(authToken(), where.repo)})`);
     }
   };
 
@@ -1079,7 +1104,7 @@ export default function RegionsPage() {
               <span class="text-slate-400">{who().login}</span>
               <button
                 class={BTN_PLAIN}
-                onClick={() => (signOut(), setAccount(null), setFork(undefined), setSitting(undefined), setPushed(false))}
+                onClick={endSession}
               >
                 Sign out
               </button>
@@ -1096,13 +1121,20 @@ export default function RegionsPage() {
               disabled={signingIn()}
               onClick={startSignIn}
             >
-              {signingIn() ? "Off to GitHub…" : "Install & sign in"}
+              {signingIn() ? "Off to GitHub…" : "Sign in with GitHub"}
             </button>
             <span class="text-slate-400">
-              Takes you to GitHub to install this app on your fork of {repo()}, and signs you in on the way back. Saves then commit to <b>{branchName()}</b>
-              {" "}
-              there, and nothing else is touched until you open the pull request yourself.
+              Saves go to your own fork of <b>{repo()}</b>, on a branch named <b>{branchName()}</b>. Setting that up is three steps, once: sign in, fork{" "}
+              {repo()}, then install this app on that fork. This panel walks you through each, your edits are kept meanwhile, and nothing reaches {repo()}{" "}
+              until you open the pull request yourself.
             </span>
+          </Show>
+
+          <Show when={authToken() && !fork()}>
+            <Show when={forkError()} fallback={<span class="text-slate-400">Checking your fork of {repo()}…</span>}>
+              <span>Could not check your fork of {repo()}: {forkError()}</span>
+              <button class={BTN_QUIET} onClick={locateFork}>Retry</button>
+            </Show>
           </Show>
 
           {/* Signed in, but there is nowhere to write yet. Both cases are one click on github.com. */}
@@ -1267,7 +1299,9 @@ export default function RegionsPage() {
                           && Object.entries(a).every(([id, n]) => base.assign[id] === n);
                         const isDirty = !sameAssign || emitRegionsBlock(r) !== base.block || JSON.stringify(p) !== base.paths;
                         setDirty(isDirty);
-                        setEdits(n => n + 1);
+                        setEdits(n =>
+                          n + 1
+                        );
                         scheduleDraft(isDirty);
                       }}
                     />
