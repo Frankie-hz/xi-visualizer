@@ -252,8 +252,9 @@ export default function RegionEditor(props: RegionEditorProps) {
     const { entry, group, hull } = plan;
     const rings = [...entry.rings.filter((_, k) => !group.includes(k)), hull];
     const one = asOne(repairRegion({ rings }), Math.abs(ringArea(entry.rings[0])));
+    if (!one) return flash(`merging these would cut ${m.name} in two`);
     checkpoint(`merge ${group.length} holes`);
-    setRegions(rs => rs.map(r => (r.name === m.name ? { name: m.name, rings: (one ? one.rings : rings).map(onGround) } : r)));
+    setRegions(rs => rs.map(r => (r.name === m.name ? { name: m.name, rings: one.rings.map(onGround) } : r)));
     setHoleHover(null);
     setMerge(null);
     flash(`merged ${group.length} holes`);
@@ -611,7 +612,6 @@ export default function RegionEditor(props: RegionEditorProps) {
     if (!name) return [] as TrailPoint[];
     return trailPoints(props.spawns.filter(s => assign()[s.id]?.includes(name)).map(s => s.id));
   });
-  const memberTrail = createMemo(() => (mode() === "obstacles" ? memberTrailAll() : ([] as TrailPoint[])));
   const walkedCellsAll = createMemo(() => {
     const out = new Set<number>();
     for (const p of memberTrailAll()) out.add(cellKey(p.x, p.z, OBSTACLE_CELL));
@@ -823,7 +823,9 @@ export default function RegionEditor(props: RegionEditorProps) {
     if (pieces.length === 1) return pieces[0];
     if (!pieces.length) return null;
     const sized = pieces.map(p => ({ p, area: Math.abs(ringArea(p.rings[0])) })).sort((a, b) => b.area - a.area);
-    const trail = memberTrail();
+    // Every member's trail, whatever the mode: grow and merge are reached from the hole menu
+    // outside carve mode, and a pocket with a mob in it is a split there too.
+    const trail = memberTrailAll();
     for (const { p, area } of sized.slice(1)) {
       if (area >= 0.05 * outlineArea) return null;
       if (trail.some(t => inRing(p.rings[0], t.x, t.z))) return null;
