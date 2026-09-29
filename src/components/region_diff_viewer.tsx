@@ -10,6 +10,7 @@ import { createViewer } from "../graphics/viewer";
 import { ColorKind, createZoneMesh, prepareMeshData } from "../graphics/ximesh";
 import { regionDifference } from "../regions";
 import type { Region, RegionsDiff, ZoneSide } from "../regions";
+import { copyText } from "../util";
 import type { ZoneData } from "./zone_model";
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -67,9 +68,8 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
   const [toast, setToast] = createSignal<string | undefined>();
   const xyz = (p: THREE.Vector3) => [p.x, p.y, p.z].map(n => n.toFixed(3)).join(" ");
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
-  const copy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setToast(`copied ${text}`);
+  const copy = async (text: string) => {
+    setToast((await copyText(text)) ? `copied ${text}` : "the browser would not let this page use the clipboard");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => setToast(undefined), 2400);
   };
@@ -221,13 +221,16 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
     }
     untrack(scope);
 
-    // Spawns that changed region, at wherever the new file leaves them standing.
-    const moved = props.diff.moved
-      .map(m => props.head.spawns.find(s => s.id === m.id))
-      .filter((s): s is NonNullable<typeof s> => !!s?.at);
+    // Spawns that changed region, at wherever the new file leaves them standing: their own point, or
+    // the middle of each region placing them. Most have no point of their own once a region places
+    // them, so drawing only those with one left nearly every reassignment off the map.
+    const moved = props.diff.moved.flatMap(m => {
+      const now = standsAt(props.head, m.id, m.to);
+      return now.length ? now : standsAt(props.base, m.id, m.from);
+    });
     if (moved.length) {
       const geo = new THREE.BufferGeometry();
-      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(moved.flatMap(s => [s.x, s.y, s.z])), 3));
+      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(moved.flatMap(({ at }) => [at.x, at.y, at.z])), 3));
       const points = new THREE.Points(
         geo,
         new THREE.PointsMaterial({ color: STATUS_COLOR.reshaped, size: 7, sizeAttenuation: false, depthTest: false }),
@@ -537,19 +540,16 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
       return hit ? scene().worldToLocal(hit.point.clone()) : undefined;
     };
     const onMove = (ev: MouseEvent) => setCursor(groundPoint(ev));
-    const onLeave = () => setCursor(undefined);
     const onClick = (ev: MouseEvent) => {
       if (!ev.altKey) return;
       const p = groundPoint(ev);
       if (p) copy(`!pos ${xyz(p)}`);
     };
     canvasElement.addEventListener("mousemove", onMove);
-    canvasElement.addEventListener("mouseleave", onLeave);
     canvasElement.addEventListener("click", onClick);
 
     onCleanup(() => {
       canvasElement.removeEventListener("mousemove", onMove);
-      canvasElement.removeEventListener("mouseleave", onLeave);
       canvasElement.removeEventListener("click", onClick);
       viewer.dispose();
     });
@@ -596,7 +596,7 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
       <div class="absolute top-2 left-2 flex gap-3 text-xs bg-slate-900/75 rounded px-2 py-1 pointer-events-none">
         <For each={Object.entries(STATUS_COLOR)}>
           {([kind, color]) => (
-            <span style={{ color: `#${color.toString(16)}` }}>
+            <span style={{ color: `#${color.toString(16).padStart(6, "0")}` }}>
               {kind}
               <Show when={kind === "reshaped"}>
                 <span class="text-slate-500">(dashed = before, red ground = cut away, green = taken in)</span>
@@ -604,6 +604,7 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
             </span>
           )}
         </For>
+        <span style={{ color: `#${STATUS_COLOR.reshaped.toString(16).padStart(6, "0")}` }}>● mob reassigned</span>
       </div>
       <Show when={cursor()}>
         <div
