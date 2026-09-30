@@ -55,8 +55,9 @@ export const roamMaterial = () =>
         vBig = big;
         vShown = shown;
         vLit = lit;
-        // The selected region's own points are bigger and solid; the backdrop stays fine and faint.
-        gl_PointSize = big > 0.5 ? 9.0 : (lit > 0.5 ? 4.0 : 2.0);
+        // The selected region's own points are bigger; the backdrop stays fine. Both carry a dark
+        // rim, which is what keeps a pale dot readable over pale ground: sand, snow, a light fill.
+        gl_PointSize = big > 0.5 ? 9.0 : (lit > 0.5 ? 5.0 : 3.0);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
@@ -78,7 +79,8 @@ export const roamMaterial = () =>
           // not borrow it, and cyan reads on top of any region fill.
           gl_FragColor = d > 0.34 ? vec4(0.02, 0.02, 0.04, 1.0) : vec4(0.35, 0.95, 1.0, 1.0);
         } else {
-          gl_FragColor = vec4(vColor, vLit > 0.5 ? 1.0 : 0.6);
+          float rim = vLit > 0.5 ? 0.3 : 0.25;
+          gl_FragColor = d > rim ? vec4(0.02, 0.02, 0.04, vLit > 0.5 ? 1.0 : 0.7) : vec4(vColor, vLit > 0.5 ? 1.0 : 0.85);
         }
         #include <colorspace_fragment>
       }
