@@ -22,6 +22,8 @@ export default function MapToolbar(props: {
   onCarve: () => void;
   onSimplify: () => void;
   onGround: () => void;
+  simulating: boolean;
+  onSimulate: () => void;
 }) {
   return (
     <div class="absolute top-2 left-2 flex gap-1 text-xs">
@@ -64,6 +66,22 @@ export default function MapToolbar(props: {
           <path d="M2 13h12" />
         </Icon>
         Ground
+      </button>
+      <button
+        class={`${TOOL} ${props.simulating ? "bg-emerald-600 hover:bg-emerald-500 text-white" : IDLE}`}
+        aria-pressed={props.simulating}
+        disabled={!props.selected}
+        title={props.selected ? "Show where the server would spawn mobs in the selected region, checked against its navmesh" : PICK}
+        onClick={() => props.onSimulate()}
+      >
+        <Icon>
+          <circle cx="4" cy="5" r="1.4" fill="currentColor" stroke="none" />
+          <circle cx="10" cy="4" r="1.4" fill="currentColor" stroke="none" />
+          <circle cx="7" cy="9" r="1.4" fill="currentColor" stroke="none" />
+          <circle cx="12" cy="11" r="1.4" fill="currentColor" stroke="none" />
+          <circle cx="4" cy="12" r="1.4" fill="currentColor" stroke="none" />
+        </Icon>
+        Spawns
       </button>
     </div>
   );

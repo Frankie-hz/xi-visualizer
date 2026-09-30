@@ -1,9 +1,10 @@
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import * as THREE from "three";
 import { Line2, LineGeometry, LineMaterial, LineSegments2, LineSegmentsGeometry, MapControls } from "three/examples/jsm/Addons.js";
 import { convexHull, inRing, mostlyInside, ringDistance, signedArea, withinRing } from "../geometry";
 import { createMapCamera, fitCameraToContents } from "../graphics/camera";
 import { buildFloorIndex, type FloorIndex } from "../graphics/floors";
+import { parseNavMesh } from "../graphics/navmesh";
 import { beaconMaterial, cometMaterial, handleMaterial, roamMaterial, spawnMaterial } from "../graphics/region_points";
 import { addNavMesh, addZoneMesh, fillRef, groundColours, groundUnder, paintOnce, worldPerPixel } from "../graphics/region_scene";
 import { setupBaseScene } from "../graphics/scene";
@@ -38,10 +39,12 @@ import {
 } from "../regions";
 import type { Finding, Patrol, Region, RegionSet, Ring, Spawn, TrailPoint, Vertex } from "../regions";
 import type { RoamData } from "../roam";
+import { indexNav, simulate, SNAP_TOLERANCE } from "../spawn_sim";
 import { putOnGround } from "../terrain";
 import { COLORS, contrastHue, css } from "../theme";
 import type { ZoneData } from "../types";
 import { copyText, isTyping } from "../util";
+import { loadNavMesh } from "../zone_mesh";
 import { CarvePanel, PlanPanel } from "./carve_panels";
 import { type DialSpec } from "./dial";
 import EditorMenu, { type MenuActions, type MenuTarget } from "./editor_menu";
@@ -519,6 +522,21 @@ export default function RegionEditor(props: RegionEditorProps) {
     if (untrack(tab) !== "review") setReviewStale(true);
   }, { defer: true }));
 
+  // The server's navmesh, loaded when the spawn simulation or the review needs it rather than with
+  // the zone: it is a few MB, and most edits never ask for it.
+  const [simulating, setSimulating] = createSignal(false);
+  const [navIndex] = createResource(
+    () => (simulating() || tab() === "review" ? props.zoneData.id : undefined),
+    async id => indexNav(parseNavMesh(props.nav ?? (await loadNavMesh(id, () => {}))).tiles.map(t => t.positions)),
+  );
+  const nav = () => (navIndex.state === "ready" ? navIndex() : undefined);
+  /** The same draws every time for the same region, so the review does not change on its own. */
+  const seeded = (text: string) => {
+    let h = 2166136261;
+    for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+    return () => ((h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0) / 4294967296);
+  };
+
   const findings = createMemo<Finding[]>(previous => {
     const thin: Finding[] = Object.entries(coverage())
       .filter(([, v]) => v < 0.9)
@@ -530,7 +548,20 @@ export default function RegionEditor(props: RegionEditorProps) {
       }));
     if (tab() !== "review") return previous;
     queueMicrotask(() => setReviewStale(false));
-    return [...thin, ...validate(asSet(settled()), props.spawns, assign(), paths())];
+    // Sixty-four draws, as the server makes when it checks a region at load: none surviving and
+    // the server will not use the region; most thrown away and every spawn costs it retries.
+    const walkable: Finding[] = [];
+    const index = nav();
+    for (const r of index ? settled() : []) {
+      const draws = simulate(r, index!, 64, seeded(r.name));
+      if (!draws.length) continue;
+      const kept = draws.filter(d => d.ok).length / draws.length;
+      if (!kept) walkable.push({ level: "error", region: r.name, text: `${r.name}: no spawn draw lands on the navmesh, so the server will not use it` });
+      else if (kept < 0.5) {
+        walkable.push({ level: "warn", region: r.name, text: `${r.name}: only ${(kept * 100).toFixed(0)}% of spawn draws land on the navmesh` });
+      }
+    }
+    return [...walkable, ...thin, ...validate(asSet(settled()), props.spawns, assign(), paths())];
   }, []);
 
   /**
@@ -1821,6 +1852,57 @@ export default function RegionEditor(props: RegionEditorProps) {
   };
   const WHITE = new THREE.Color(0xffffff);
 
+  /**
+   * Spawns as the server would make them in the selected region: green where it would put a mob,
+   * red where the draw falls off the navmesh and gets drawn again. "Draw again" is a new roll.
+   */
+  const SIM_DRAWS = 400;
+  const [roll, setRoll] = createSignal(1);
+  const draws = createMemo(() => {
+    const r = settledActive();
+    const index = nav();
+    if (!simulating() || !r || !index) return [];
+    return simulate(r, index, SIM_DRAWS, seeded(`${r.name}:${roll()}`));
+  });
+  createEffect(() => {
+    const list = draws();
+    if (!list.length) return;
+    const positions: number[] = [], colours: number[] = [];
+    for (const d of list) {
+      const [x, y, z] = d.ok ? d.snapped : d.at;
+      positions.push(x, y - 0.3, z);
+      colours.push(...(d.ok ? [0.25, 0.95, 0.55] : [1, 0.3, 0.3]));
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(colours), 3));
+    const material = spawnMaterial();
+    (material.uniforms.pointSize as { value: number; }).value = 7;
+    // Transparent like the roam points, or three.js draws it before them and they cover it.
+    material.transparent = true;
+    const points = new THREE.Points(geo, material);
+    points.renderOrder = 6;
+    scene().add(points);
+    onCleanup(() => {
+      scene().remove(points);
+      geo.dispose();
+      material.dispose();
+    });
+  });
+  // The roam points step aside while the simulation is up: hundreds of trail dots bury it.
+  createEffect(() => {
+    const on = simulating() && !!active();
+    if (roamPoints) roamPoints.visible = !on;
+    onCleanup(() => roamPoints && (roamPoints.visible = true));
+  });
+  const simSummary = () => {
+    const list = draws();
+    const kept = list.filter(d => d.ok).length;
+    const why: Record<string, number> = {};
+    for (const d of list) if ("why" in d) why[d.why] = (why[d.why] ?? 0) + 1;
+    return { total: list.length, kept, why: Object.entries(why).sort((a, b) => b[1] - a[1]) };
+  };
+
   // The obstacles on offer, each drawn as the ring a click would cut, so the margin is visible
   // before anything is changed. What Ring all takes is solid, what is over its size dashed. Only
   // the part inside the region is drawn: the cut clips to the outline, so the preview does too.
@@ -2877,7 +2959,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         </div>
         {/* What is being edited and how to stop — the full list of keys lives in the shortcuts card. */}
         <Show when={walker() || activeName() || pinnedSpawn() || replayId()}>
-          <div class="absolute top-2 left-1/2 -translate-x-1/2 text-xs text-slate-200 bg-slate-900/85 rounded px-3 py-1.5 pointer-events-none text-center">
+          <div class="absolute top-2 right-10 text-xs text-slate-200 bg-slate-900/85 rounded px-3 py-1.5 pointer-events-none text-right">
             <Show when={walkerSpawn()}>
               {spawn => (
                 <div>
@@ -2934,7 +3016,38 @@ export default function RegionEditor(props: RegionEditorProps) {
             onCarve={() => setMode(m => (m === "obstacles" ? "select" : "obstacles"))}
             onSimplify={simplifyActive}
             onGround={groundActive}
+            simulating={simulating()}
+            onSimulate={() => setSimulating(on => !on)}
           />
+        </Show>
+        <Show when={simulating() && active()}>
+          <div class="absolute top-11 left-2 z-20 w-72 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-1">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] uppercase tracking-wide text-slate-500">Simulated spawns</span>
+              <button class="px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600" disabled={!nav()} onClick={() => setRoll(n => n + 1)}>
+                Draw again
+              </button>
+            </div>
+            <Show
+              when={nav()}
+              fallback={<div class="text-slate-400">{navIndex.error ? "No navmesh for this zone, so every draw would stand." : "Loading the navmesh…"}</div>}
+            >
+              <div class="text-slate-300">
+                <b class="text-emerald-400">{simSummary().kept}</b> of {simSummary().total} draws kept
+              </div>
+              <For each={simSummary().why}>
+                {([why, n]) => (
+                  <div class="text-red-300">
+                    {n} thrown away: {why}
+                  </div>
+                )}
+              </For>
+              <div class="text-slate-500 leading-snug">
+                Green is where the server would put a mob, red a draw it throws away and draws again: off the navmesh by more than {SNAP_TOLERANCE}{" "}
+                yalms, or snapped out of the region.
+              </div>
+            </Show>
+          </div>
         </Show>
         <Show when={grow()}>
           <PlanPanel
