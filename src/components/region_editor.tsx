@@ -31,7 +31,8 @@ import { GROUND_SNAP, putOnGround, SPIKE } from "../terrain";
 import { COLORS, css } from "../theme";
 import type { ZoneData } from "../types";
 import { copyText, isTyping, onActivate } from "../util";
-import Dial, { type DialSpec } from "./dial";
+import { CarvePanel, PlanPanel } from "./carve_panels";
+import { type DialSpec } from "./dial";
 import { createHistory } from "./history";
 import HistoryTab from "./history_tab";
 import MobList from "./region_mob_list";
@@ -2869,145 +2870,80 @@ export default function RegionEditor(props: RegionEditorProps) {
           </div>
         </Show>
         <Show when={grow()}>
-          <div class="absolute top-10 right-2 z-30 w-72 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
-            <div class="flex items-center justify-between">
-              <span class="text-[10px] uppercase tracking-wide text-slate-500">Hole from roam data</span>
-              <span class="text-slate-400">
-                {growPlan()?.ring ? `${(growPlan()!.cells.size * OBSTACLE_CELL * OBSTACLE_CELL).toFixed(0)} y²` : growPlan()?.why ?? "…"} · esc cancels
-              </span>
-            </div>
-            <Dial
-              label="clearance"
-              unit="y"
-              get={growClearance}
-              set={setGrowClearance}
-              min={0.5}
-              max={4}
-              step={0.25}
-              title="Ground within this many yalms of a recorded sample is ground the mobs use and stays out of the hole"
-            />
-            <div class="flex gap-1">
-              <button class="flex-1 px-2 py-1 bg-violet-700 hover:bg-violet-600 rounded disabled:opacity-40" disabled={!growPlan()?.ring} onClick={growHole}>
-                Apply
-              </button>
-              <button class="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded" onClick={() => setGrow(null)}>Cancel</button>
-            </div>
-          </div>
+          <PlanPanel
+            title="Hole from roam data"
+            status={growPlan()?.ring ? `${(growPlan()!.cells.size * OBSTACLE_CELL * OBSTACLE_CELL).toFixed(0)} y²` : growPlan()?.why ?? "…"}
+            dial={{
+              label: "clearance",
+              unit: "y",
+              get: growClearance,
+              set: setGrowClearance,
+              min: 0.5,
+              max: 4,
+              step: 0.25,
+              title: "Ground within this many yalms of a recorded sample is ground the mobs use and stays out of the hole",
+            }}
+            applyLabel="Apply"
+            canApply={!!growPlan()?.ring}
+            onApply={growHole}
+            onCancel={() => setGrow(null)}
+          />
         </Show>
         <Show when={mergePlan()}>
           {plan => (
-            <div class="absolute top-10 right-2 z-30 w-72 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="text-[10px] uppercase tracking-wide text-slate-500">Merge holes</span>
-                <span class="text-slate-400">{plan().group.length} in the group · esc cancels</span>
-              </div>
-              <Dial
-                label="reach"
-                unit="y"
-                get={mergeReach}
-                set={setMergeReach}
-                min={0.25}
-                max={12}
-                step={0.25}
-                title="A hole whose edge is within this many yalms of the chosen one joins the merge"
-              />
-              <div class="flex gap-1">
-                <button
-                  class="flex-1 px-2 py-1 bg-violet-700 hover:bg-violet-600 rounded disabled:opacity-40"
-                  disabled={plan().group.length < 2}
-                  onClick={mergeHoles}
-                >
-                  Merge {plan().group.length} holes
-                </button>
-                <button class="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded" onClick={() => setMerge(null)}>Cancel</button>
-              </div>
-            </div>
+            <PlanPanel
+              title="Merge holes"
+              status={`${plan().group.length} in the group`}
+              dial={{
+                label: "reach",
+                unit: "y",
+                get: mergeReach,
+                set: setMergeReach,
+                min: 0.25,
+                max: 12,
+                step: 0.25,
+                title: "A hole whose edge is within this many yalms of the chosen one joins the merge",
+              }}
+              applyLabel={`Merge ${plan().group.length} holes`}
+              canApply={plan().group.length >= 2}
+              onApply={mergeHoles}
+              onCancel={() => setMerge(null)}
+            />
           )}
         </Show>
         <Show when={mode() === "obstacles" && !props.readOnly && !merge() && !grow()}>
-          <div class="absolute top-10 right-2 z-30 w-72 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-2">
-            <div class="flex items-center justify-between">
-              <span class="text-[10px] uppercase tracking-wide text-slate-500">Carve holes</span>
-              <span class="text-slate-500">esc leaves</span>
-            </div>
-            <p class="text-slate-400 leading-snug">
-              Cut holes where mobs cannot stand. Amber outlines are obstacles in the collision mesh, violet ones ground no mob was recorded on: click one to cut
-              it, or cut them all below. Distances are in yalms.
-            </p>
-            <div class="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px] text-slate-400">
-              <span class="flex items-center gap-1">
-                <span class="w-4 border-t-2 border-amber-400" />Ring all cuts it
-              </span>
-              <span class="flex items-center gap-1">
-                <span class="w-4 border-t-2 border-dashed border-amber-400" />too big, click it
-              </span>
-              <span class="flex items-center gap-1">
-                <span class="w-4 border-t-2 border-dashed border-violet-400" />empty patch
-              </span>
-              <span class="flex items-center gap-1">
-                <span class="w-4 border-t-2 border-white" />under the cursor
-              </span>
-            </div>
-            <div class="border-t border-slate-700 pt-1 text-[10px] uppercase tracking-wide text-slate-500">
-              Obstacles · {obstacles().length}{" "}
-              found<Show when={obstacles().length - bulk().length}>, {obstacles().length - bulk().length} left to a click</Show>
-            </div>
-            <For each={DIALS.filter(d => !d.advanced)}>{d => <Dial {...d} />}</For>
-            <details>
-              <summary class="cursor-pointer text-slate-400 hover:text-slate-200">More dials</summary>
-              <div class="space-y-2 mt-2">
-                <For each={DIALS.filter(d => d.advanced)}>{d => <Dial {...d} />}</For>
-              </div>
-            </details>
-            <div class="border-t border-slate-700 pt-1 text-[10px] uppercase tracking-wide text-slate-500">
-              Empty patches · <Show when={gapsWhyNot()} fallback={<>{gaps().length} found</>}>{gapsWhyNot()}</Show>
-            </div>
-            <Dial
-              label="clearance"
-              unit="y"
-              get={growClearance}
-              set={setGrowClearance}
-              min={0.5}
-              max={4}
-              step={0.25}
-              title="Ground within this many yalms of a recorded sample is ground the mobs use; enclosed ground beyond it is an empty patch. The same dial as a grow plan's clearance."
-            />
-            <Dial
-              label="patch at least"
-              unit="y²"
-              get={gapMinArea}
-              set={setGapMinArea}
-              min={1}
-              max={60}
-              step={1}
-              title="An empty patch smaller than this, in square yalms, is sampling noise"
-            />
-            <div class="flex gap-1">
-              <button
-                class="flex-1 px-2 py-1 bg-amber-700 hover:bg-amber-600 rounded disabled:opacity-40"
-                disabled={!bulk().length || cutting()}
-                title="Ring every obstacle up to the size above; each one goes through the clipper on its own"
-                onClick={() => ringObstacles(bulk())}
-              >
-                Ring all ({bulk().length})
-              </button>
-              <button
-                class="flex-1 px-2 py-1 bg-violet-700 hover:bg-violet-600 rounded disabled:opacity-40"
-                disabled={!gaps().length || cutting()}
-                title="Cut every empty patch as a hole"
-                onClick={() => cutRings(gaps())}
-              >
-                Cut patches ({gaps().length})
-              </button>
-              <button
-                class="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded"
-                title="Put every dial back to its default"
-                onClick={resetObstacleDials}
-              >
-                Defaults
-              </button>
-            </div>
-          </div>
+          <CarvePanel
+            dials={DIALS}
+            clearance={{
+              label: "clearance",
+              unit: "y",
+              get: growClearance,
+              set: setGrowClearance,
+              min: 0.5,
+              max: 4,
+              step: 0.25,
+              title:
+                "Ground within this many yalms of a recorded sample is ground the mobs use; enclosed ground beyond it is an empty patch. The same dial as a grow plan's clearance.",
+            }}
+            patchAtLeast={{
+              label: "patch at least",
+              unit: "y²",
+              get: gapMinArea,
+              set: setGapMinArea,
+              min: 1,
+              max: 60,
+              step: 1,
+              title: "An empty patch smaller than this, in square yalms, is sampling noise",
+            }}
+            obstacles={obstacles().length}
+            ringAll={bulk().length}
+            patches={gaps().length}
+            patchesWhyNot={gapsWhyNot()}
+            cutting={cutting()}
+            onRingAll={() => ringObstacles(bulk())}
+            onCutPatches={() => cutRings(gaps())}
+            onDefaults={resetObstacleDials}
+          />
         </Show>
         <Show when={cursor()}>
           <div
