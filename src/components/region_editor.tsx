@@ -787,7 +787,12 @@ export default function RegionEditor(props: RegionEditorProps) {
     const blobs = found.filter(o => obstacleArea(o, OBSTACLE_CELL) > obstacleBulkMax() || isCliff(o));
     if (blobs.length) {
       const inBlob = new Set(blobs.flatMap(o => o.cells.map(([ix, iz]) => keyOfCell(ix, iz))));
+      // A blob made of nothing but tall faces comes back as its own part; offering it twice
+      // counted one obstacle as two.
+      const cellsOf = (o: Obstacle) => o.cells.map(([ix, iz]) => keyOfCell(ix, iz)).sort((a, b) => a - b).join();
+      const listed = new Set(found.map(cellsOf));
       for (const part of findObstacles(pos, { ...scan, minSpan: TALL_FACE })) {
+        if (listed.has(cellsOf(part))) continue;
         if (part.cells.filter(([ix, iz]) => inBlob.has(keyOfCell(ix, iz))).length * 2 >= part.cells.length) found.push(part);
       }
     }
