@@ -51,6 +51,7 @@ import MapToolbar from "./map_toolbar";
 import MobList from "./region_mob_list";
 import ShortcutsCard from "./region_shortcuts";
 import ReviewList from "./review_list";
+import RoutesTab from "./routes_tab";
 
 interface RegionEntry extends Region {
   name: string;
@@ -1123,6 +1124,12 @@ export default function RegionEditor(props: RegionEditorProps) {
       return next;
     });
     flash(`retraced ${traced.legs.length} legs, ${fit(traced.coverage)}`);
+  };
+
+  /** Switches a route between a loop and walking back along the same legs. */
+  const toggleLoop = (id: string) => {
+    checkpoint(`${props.spawns.find(s => s.id === id)?.name ?? id} walks back and forth`);
+    setPaths(all => ({ ...all, [id]: { ...all[id], loop: all[id].loop === false ? undefined : false } }));
   };
 
   const dropPath = (id: string) => {
@@ -3205,72 +3212,19 @@ export default function RegionEditor(props: RegionEditorProps) {
         </Show>
 
         <Show when={tab() === "paths"}>
-          <div class="text-xs text-slate-400 mb-2">
-            {/* What is being edited is on the banner over the map, where the editing happens. */}
-            <Show when={!walker()}>a route replaces a mob's spawn point, so it walks its legs instead</Show>
-          </div>
-          <div class="flex-1 overflow-y-auto">
-            <For each={Object.entries(paths())} fallback={<div class="text-slate-500 p-2">No routes yet.</div>}>
-              {([id, patrol]) => {
-                const spawn = () => props.spawns.find(s => s.id === id);
-                return (
-                  <div
-                    ref={el => rowRefs.set(id, el)}
-                    class="flex items-center gap-2 py-0.5 px-1 rounded cursor-pointer hover:bg-slate-700 text-xs"
-                    classList={{ "bg-slate-700": id === walker() }}
-                    onContextMenu={e => (
-                      e.preventDefault(), setMenu({ kind: "route", lead: routeGroups().find(g => g.ids.includes(id))?.lead ?? id, x: e.clientX, y: e.clientY })
-                    )}
-                    tabIndex={0}
-                    onKeyDown={onActivate(() => selectRoute(id))}
-                    onClick={() => selectRoute(id)}
-                  >
-                    <span class="flex-1 truncate" title={spawn()?.name}>{spawn()?.name ?? "unknown"}</span>
-                    <span class="text-slate-500">{id}</span>
-                    <span class="text-slate-400">{patrol.legs.length} legs</span>
-                    <Show when={canEdit()}>
-                      <button
-                        class="px-1 text-slate-400 hover:text-white"
-                        title={patrol.loop === false ? "path: walks back along the same legs" : "circuit: closes into a loop"}
-                        aria-label={patrol.loop === false ? "Walks back along the same legs; make it a loop" : "Loops; make it walk back along the same legs"}
-                        onClick={e => {
-                          e.stopPropagation();
-                          checkpoint(`${props.spawns.find(s => s.id === id)?.name ?? id} walks back and forth`);
-                          setPaths(all => ({ ...all, [id]: { ...all[id], loop: all[id].loop === false ? undefined : false } }));
-                        }}
-                      >
-                        {patrol.loop === false ? "↔" : "↻"}
-                      </button>
-                      <button
-                        class="px-1 text-slate-400 hover:text-white"
-                        title="Re-trace from the mob's roam trail"
-                        aria-label="Re-trace from the mob's roam trail"
-                        onClick={e => (e.stopPropagation(), retrace(id))}
-                      >
-                        ⟳
-                      </button>
-                      <button
-                        class="px-1 text-slate-400 hover:text-white"
-                        title="Add more legs"
-                        aria-label="Add more legs"
-                        onClick={e => (e.stopPropagation(), selectRoute(id), setMode("draw"))}
-                      >
-                        ✎
-                      </button>
-                      <button
-                        class="text-slate-400 hover:text-red-400"
-                        title="Remove the route"
-                        aria-label="Remove the route"
-                        onClick={e => (e.stopPropagation(), dropPath(id))}
-                      >
-                        ✕
-                      </button>
-                    </Show>
-                  </div>
-                );
-              }}
-            </For>
-          </div>
+          <RoutesTab
+            paths={paths()}
+            spawns={props.spawns}
+            walker={walker()}
+            canEdit={canEdit()}
+            rowRef={(id, el) => rowRefs.set(id, el)}
+            onSelect={selectRoute}
+            onMenu={(id, x, y) => setMenu({ kind: "route", lead: routeGroups().find(g => g.ids.includes(id))?.lead ?? id, x, y })}
+            onToggleLoop={toggleLoop}
+            onRetrace={retrace}
+            onAddLegs={id => (selectRoute(id), setMode("draw"))}
+            onDrop={dropPath}
+          />
         </Show>
 
         <Show when={tab() === "review"}>
