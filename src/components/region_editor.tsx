@@ -27,7 +27,7 @@ import type { Obstacle } from "../obstacles";
 import { containsXZ, regionAt, regionHue, regionsFromPoints, repairRegion, routeFromTrail, selfIntersects, simplifyRing, validate } from "../regions";
 import type { Finding, Patrol, Region, RegionSet, Ring, Spawn, TrailPoint, Vertex } from "../regions";
 import type { RoamData } from "../roam";
-import { GROUND_SNAP, putOnGround, SPIKE } from "../terrain";
+import { putOnGround } from "../terrain";
 import { COLORS, css } from "../theme";
 import type { ZoneData } from "../types";
 import { copyText, isTyping, onActivate } from "../util";
@@ -36,6 +36,7 @@ import { type DialSpec } from "./dial";
 import { createHistory } from "./history";
 import HistoryTab from "./history_tab";
 import { CursorReadout, CursorTooltip, xyz } from "./map_overlays";
+import MapToolbar from "./map_toolbar";
 import MobList from "./region_mob_list";
 import ShortcutsCard from "./region_shortcuts";
 import ReviewList from "./review_list";
@@ -1153,6 +1154,33 @@ export default function RegionEditor(props: RegionEditorProps) {
     }
     setActiveName(name);
     flash(named.length > 1 ? `${name} was ${named.length} shapes, split them` : `repaired ${name}`);
+  };
+
+  /** Drops the least important quarter of the selected region's vertices, holes included. */
+  const simplifyActive = () => {
+    const entry = active();
+    if (!entry) return;
+    const before = entry.rings.reduce((n, ring) => n + ring.length, 0);
+    checkpoint(`simplify ${entry.name}`);
+    editActive(r => (r.rings = r.rings.map(ring => simplifyRing(ring, Infinity, Math.ceil(ring.length * 0.75)))));
+    const after = active()?.rings.reduce((n, ring) => n + ring.length, 0) ?? before;
+    flash(`simplified ${entry.name}: ${before} → ${after} vertices, holes included`);
+  };
+
+  /** Puts every vertex of the selected region on the ground, and says how many moved. */
+  const groundActive = () => {
+    const entry = active();
+    if (!entry) return;
+    let moved = 0;
+    const rings = entry.rings.map(ring => {
+      const [out, m] = groundRing(ring);
+      moved += m;
+      return out;
+    });
+    if (!moved) return flash(`${entry.name} is on the ground already`);
+    checkpoint(`ground ${entry.name}`);
+    editActive(r => (r.rings = rings));
+    flash(`${moved} ${moved === 1 ? "vertex" : "vertices"} of ${entry.name} put on the ground`);
   };
 
   const addRegion = () => {
@@ -2720,74 +2748,14 @@ export default function RegionEditor(props: RegionEditorProps) {
         <ShortcutsCard />
         {/* The map's own toolbar: tools that act on the view rather than the lists beside it. */}
         <Show when={!props.readOnly}>
-          <div class="absolute top-2 left-2 flex gap-1 text-xs">
-            <button
-              class="flex items-center gap-1.5 px-2 py-1 rounded disabled:opacity-40"
-              classList={{
-                "bg-amber-600 hover:bg-amber-500 text-white": mode() === "obstacles",
-                "bg-slate-900/80 hover:bg-slate-800 text-slate-200": mode() !== "obstacles",
-              }}
-              disabled={!active()}
-              title={active()
-                ? "Carve holes around the collision obstacles in the selected region: trees, rocks, walls"
-                : "Select a region first"}
-              onClick={() => setMode(m => (m === "obstacles" ? "select" : "obstacles"))}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
-                <path d="M8 1.5l5.6 3.25v6.5L8 14.5l-5.6-3.25v-6.5z" />
-                <circle cx="8" cy="8" r="2.4" fill="currentColor" stroke="none" />
-              </svg>
-              Carve holes
-            </button>
-            <button
-              class="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-900/80 hover:bg-slate-800 text-slate-200 disabled:opacity-40"
-              disabled={!active()}
-              title={active() ? "Drop the least important quarter of the selected region's vertices" : "Select a region first"}
-              onClick={() => {
-                const entry = active();
-                if (!entry) return;
-                const before = entry.rings.reduce((n, ring) => n + ring.length, 0);
-                checkpoint(`simplify ${entry.name}`);
-                editActive(r => (r.rings = r.rings.map(ring => simplifyRing(ring, Infinity, Math.ceil(ring.length * 0.75)))));
-                const after = active()?.rings.reduce((n, ring) => n + ring.length, 0) ?? before;
-                flash(`simplified ${entry.name}: ${before} → ${after} vertices, holes included`);
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
-                <path d="M2 12l3-6 3 4 2-3 4 5" />
-                <path d="M2 12h12" stroke-dasharray="2 1.5" />
-              </svg>
-              Simplify
-            </button>
-            <button
-              class="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-900/80 hover:bg-slate-800 text-slate-200 disabled:opacity-40"
-              disabled={!active() || !zoneMesh}
-              title={active()
-                ? `Put every vertex of the selected region on the ground: onto a surface within ${GROUND_SNAP} y, and none more than ${SPIKE} y above or below both its neighbours`
-                : "Select a region first"}
-              onClick={() => {
-                const entry = active();
-                if (!entry) return;
-                let moved = 0;
-                const rings = entry.rings.map(ring => {
-                  const [out, m] = groundRing(ring);
-                  moved += m;
-                  return out;
-                });
-                if (!moved) return flash(`${entry.name} is on the ground already`);
-                checkpoint(`ground ${entry.name}`);
-                editActive(r => (r.rings = rings));
-                flash(`${moved} ${moved === 1 ? "vertex" : "vertices"} of ${entry.name} put on the ground`);
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
-                <path d="M8 2v8" />
-                <path d="M5 7l3 3 3-3" />
-                <path d="M2 13h12" />
-              </svg>
-              Ground
-            </button>
-          </div>
+          <MapToolbar
+            selected={!!active()}
+            carving={mode() === "obstacles"}
+            canGround={!!zoneMesh}
+            onCarve={() => setMode(m => (m === "obstacles" ? "select" : "obstacles"))}
+            onSimplify={simplifyActive}
+            onGround={groundActive}
+          />
         </Show>
         <Show when={grow()}>
           <PlanPanel
