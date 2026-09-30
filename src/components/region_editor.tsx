@@ -41,7 +41,7 @@ import type { RoamData } from "../roam";
 import { putOnGround } from "../terrain";
 import { COLORS, css } from "../theme";
 import type { ZoneData } from "../types";
-import { copyText, isTyping, onActivate } from "../util";
+import { copyText, isTyping } from "../util";
 import { CarvePanel, PlanPanel } from "./carve_panels";
 import { type DialSpec } from "./dial";
 import { createHistory } from "./history";
@@ -50,6 +50,7 @@ import { CursorReadout, CursorTooltip, xyz } from "./map_overlays";
 import MapToolbar from "./map_toolbar";
 import MobList from "./region_mob_list";
 import ShortcutsCard from "./region_shortcuts";
+import RegionsTab from "./regions_tab";
 import ReviewList from "./review_list";
 import RoutesTab from "./routes_tab";
 
@@ -2723,8 +2724,6 @@ export default function RegionEditor(props: RegionEditorProps) {
     if (f.region) centerOn(f.region);
   };
 
-  const vertexCount = (r: RegionEntry) => r.rings[0]?.length ?? 0;
-
   return (
     <div class="flex gap-4" style={{ height: "78vh" }}>
       <MobList
@@ -3232,216 +3231,45 @@ export default function RegionEditor(props: RegionEditorProps) {
         </Show>
 
         <Show when={tab() === "regions"}>
-          {
-            /* The tools that change geometry, and only those: the list of regions below is the
-              main thing a reviewer came to read. */
-          }
-          <Show when={!props.readOnly}>
-            <div class="flex gap-1 mb-2">
-              <button class="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded" onClick={addRegion}>+ Region</button>
-              <button
-                class="px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded disabled:opacity-40 disabled:text-slate-300"
-                disabled={!active()}
-                onClick={startHole}
-                title="Cut a hole in the active region: click its corners on the map, Enter when done"
-              >
-                + Hole
-              </button>
-              <button
-                class="px-2 py-1 rounded disabled:opacity-40 disabled:text-slate-300"
-                classList={{ "bg-emerald-600 hover:bg-emerald-500": mode() === "draw", "bg-slate-600 hover:bg-slate-500": mode() !== "draw" }}
-                disabled={!active()}
-                title={mode() === "draw" ? "Stop adding vertices" : "Click on the map to add vertices to the outline, after its last one"}
-                onClick={() => (mode() === "draw" ? finishDraw() : startDraw(0))}
-              >
-                {mode() === "draw" ? "Done" : "Draw"}
-              </button>
-            </div>
-          </Show>
-
-          {/* Only somewhere with floors to choose between: an outdoor zone is one map sheet. */}
-          <Show when={floors().length > 1}>
-            <div class="flex flex-wrap items-center gap-1 mb-2 text-xs">
-              <span class="text-slate-400 mr-1">Floor</span>
-              <button
-                class="px-1.5 py-0.5 rounded"
-                classList={{ "bg-slate-600 text-white": floor() === null, "bg-slate-700 text-slate-400": floor() !== null }}
-                onClick={() => setFloor(null)}
-              >
-                All
-              </button>
-              <For each={floors()}>
-                {id => (
-                  <button
-                    class="px-1.5 py-0.5 rounded"
-                    classList={{ "bg-slate-600 text-white": floor() === id, "bg-slate-700 text-slate-400": floor() !== id }}
-                    title={`Show only map ${id}, hiding the floors above and below it`}
-                    onClick={() => setFloor(floor() === id ? null : id)}
-                  >
-                    {id}
-                  </button>
-                )}
-              </For>
-            </div>
-          </Show>
-
-          <label class="flex items-center gap-2 mb-1 text-xs text-slate-400 cursor-pointer">
-            <input type="checkbox" checked={hideAssigned()} onChange={e => setHideAssigned(e.currentTarget.checked)} />
-            hide mobs that have a region ({props.spawns.length - Object.keys(assign()).length} left)
-          </label>
-          <label class="flex items-center gap-2 mb-2 text-xs text-slate-400 cursor-pointer">
-            <input type="checkbox" checked={terrainColors()} onChange={e => setTerrainColors(e.currentTarget.checked)} />
-            terrain materials
-          </label>
-
-          <div class="flex-1 overflow-y-auto">
-            <For each={regions().filter(onRegionFloor)} fallback={<div class="text-slate-500 p-2">No regions yet.</div>}>
-              {r => (
-                <div
-                  ref={el => rowRefs.set(r.name, el)}
-                  class="flex items-center gap-2 py-1 px-1 rounded cursor-pointer hover:bg-slate-700"
-                  classList={{ "bg-slate-700": r.name === activeName() }}
-                  tabIndex={0}
-                  onKeyDown={onActivate(() => (setActiveName(r.name), zoomTo(r.name)))}
-                  onClick={() => (setActiveName(r.name), zoomTo(r.name))}
-                  onContextMenu={e => (e.preventDefault(), setMenu({ kind: "region", name: r.name, x: e.clientX, y: e.clientY }))}
-                >
-                  <span class="w-3 h-3 rounded-full shrink-0" style={{ background: cssOf(r.name) }} />
-                  <Show when={canEdit()} fallback={<span class="flex-1 min-w-0 truncate px-1">{r.name}</span>}>
-                    <input
-                      type="text"
-                      class="flex-1 min-w-0 bg-transparent px-1 rounded outline-none hover:bg-slate-600 focus:bg-slate-900"
-                      value={r.name}
-                      title="Click to rename"
-                      onClick={e => e.stopPropagation()}
-                      onFocus={() => setActiveName(r.name)}
-                      onKeyDown={e => e.key === "Enter" && e.currentTarget.blur()}
-                      onChange={e => {
-                        if (!renameRegion(r.name, e.currentTarget.value)) e.currentTarget.value = r.name;
-                      }}
-                    />
-                  </Show>
-                  <span
-                    class="text-xs text-slate-400"
-                    title={`${vertexCount(r)} vertices${r.rings.length > 1 ? `, ${r.rings.length - 1} hole${r.rings.length > 2 ? "s" : ""}` : ""}, ${
-                      spawnCounts()[r.name] ?? 0
-                    } mobs placed here`}
-                  >
-                    {vertexCount(r)}v{r.rings.length > 1 ? `+${r.rings.length - 1}h` : ""} · {spawnCounts()[r.name] ?? 0}
-                  </span>
-                  <Show when={coverage()[r.name] !== undefined}>
-                    {/* From the last Review check, and dimmed once the regions have moved on from it. */}
-                    <span
-                      class="text-xs"
-                      style={{ opacity: reviewStale() ? 0.45 : 1 }}
-                      classList={{
-                        "text-slate-500": coverage()[r.name] >= 0.9,
-                        "text-amber-400": coverage()[r.name] < 0.9 && coverage()[r.name] >= 0.7,
-                        "text-red-400": coverage()[r.name] < 0.7,
-                      }}
-                      title={`Share of its mobs' roam points inside this region${reviewStale() ? ", as of the last Review check; open Review to recount" : ""}`}
-                    >
-                      {(coverage()[r.name] * 100).toFixed(0)}%
-                    </span>
-                  </Show>
-                  <button
-                    class="px-1 text-slate-400 hover:text-white"
-                    title="Centre on it"
-                    aria-label="Centre on it"
-                    onClick={e => (e.stopPropagation(), centerOn(r.name))}
-                  >
-                    ⌖
-                  </button>
-                  <Show when={canEdit()}>
-                    <button
-                      class="text-slate-400 hover:text-red-400"
-                      title="Delete region"
-                      aria-label="Delete region"
-                      onClick={e => (e.stopPropagation(), deleteRegion(r.name))}
-                    >
-                      ✕
-                    </button>
-                  </Show>
-                </div>
-              )}
-            </For>
-          </div>
-
-          <Show when={active()}>
-            <div class="border-t border-slate-700 mt-2 pt-2 space-y-2">
-              <input
-                type="text"
-                placeholder="Filter mobs (name or id)…"
-                class="w-full px-2 py-1 bg-slate-700 rounded"
-                value={filter()}
-                onInput={e => setFilter(e.currentTarget.value)}
-              />
-              <Show when={canEdit()}>
-                <div class="flex gap-1">
-                  <button
-                    class="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs"
-                    title={`Put every mob whose spawn point is inside ${active()!.name} in it${filter() ? `, of those matching "${filter()}"` : ""}`}
-                    onClick={() => assignInside(false)}
-                  >
-                    Assign inside ({insideActive().length})
-                  </button>
-                  <button
-                    class="flex-1 px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs"
-                    title={`Take every mob whose spawn point is inside ${active()!.name} out of its region${
-                      filter() ? `, of those matching "${filter()}"` : ""
-                    }`}
-                    onClick={() => assignInside(true)}
-                  >
-                    Unassign inside
-                  </button>
-                  <button
-                    class="px-2 py-1 bg-slate-600 hover:bg-slate-500 rounded text-xs disabled:opacity-40 disabled:text-slate-300"
-                    disabled={!props.roam}
-                    title="Reshape this region around the roam trails of the mobs in it"
-                    onClick={refitActive}
-                  >
-                    Refit
-                  </button>
-                </div>
-              </Show>
-
-              <div class="text-xs text-slate-400">
-                {spawnCounts()[active()!.name] ?? 0} assigned{filter() && ` · ${members().length} shown`}
-              </div>
-              <div class="max-h-48 overflow-y-auto">
-                <For each={members()} fallback={<div class="text-xs text-slate-500 px-1">Nothing assigned yet.</div>}>
-                  {s => (
-                    <div
-                      class="flex items-center gap-2 py-0.5 px-1 rounded hover:bg-slate-700 text-xs cursor-pointer"
-                      classList={{ "bg-slate-600 hover:bg-slate-600": s.id === pinnedId() }}
-                      title="Click to keep this mob's roam trail on screen"
-                      onMouseEnter={() => setRowFocus(s.id)}
-                      onMouseLeave={() => setRowFocus(null)}
-                      tabIndex={0}
-                      onKeyDown={onActivate(() => setPinnedId(id => (id === s.id ? null : s.id)))}
-                      onClick={() => setPinnedId(id => (id === s.id ? null : s.id))}
-                    >
-                      <span class="flex-1 truncate" title={s.name}>{s.name}</span>
-                      <span class="text-slate-500">{s.id}</span>
-                      <Show when={s.at} fallback={<span class="px-1 text-slate-600" title="Placed by the region, no fixed point">·</span>}>
-                        <button
-                          class="px-1 text-slate-400 hover:text-white"
-                          title="Centre on it"
-                          aria-label="Centre on it"
-                          onClick={() => flyTo(s.x, s.y, s.z)}
-                        >
-                          ⌖
-                        </button>
-                      </Show>
-                      <Show when={canEdit()}>
-                        <button class="text-slate-400 hover:text-red-400" title="Unassign" aria-label="Unassign" onClick={() => unassign(s.id)}>✕</button>
-                      </Show>
-                    </div>
-                  )}
-                </For>
-              </div>
-            </div>
-          </Show>
+          <RegionsTab
+            canEdit={canEdit()}
+            drawing={mode() === "draw"}
+            selected={active()?.name ?? null}
+            onAddRegion={addRegion}
+            onStartHole={startHole}
+            onToggleDraw={() => (mode() === "draw" ? finishDraw() : startDraw(0))}
+            floors={floors()}
+            floor={floor()}
+            onFloor={setFloor}
+            hideAssigned={hideAssigned()}
+            onHideAssigned={setHideAssigned}
+            left={props.spawns.length - Object.keys(assign()).length}
+            terrainColors={terrainColors()}
+            onTerrainColors={setTerrainColors}
+            regions={regions().filter(onRegionFloor)}
+            colorOf={cssOf}
+            counts={spawnCounts()}
+            coverage={coverage()}
+            coverageStale={reviewStale()}
+            rowRef={(name, el) => rowRefs.set(name, el)}
+            onSelect={name => (setActiveName(name), zoomTo(name))}
+            onMenu={(name, x, y) => setMenu({ kind: "region", name, x, y })}
+            onRename={renameRegion}
+            onCentre={centerOn}
+            onDelete={deleteRegion}
+            filter={filter()}
+            onFilter={setFilter}
+            inside={insideActive().length}
+            onAssignInside={assignInside}
+            canRefit={!!props.roam}
+            onRefit={refitActive}
+            members={members()}
+            pinnedId={pinnedId()}
+            onRowFocus={setRowFocus}
+            onPin={id => setPinnedId(current => (current === id ? null : id))}
+            onFly={s => flyTo(s.x, s.y, s.z)}
+            onUnassign={unassign}
+          />
         </Show>
       </div>
     </div>
