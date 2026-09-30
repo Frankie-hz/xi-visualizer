@@ -91,6 +91,7 @@ export default function RegionsDiffPage() {
   const [status, setStatus] = createSignal<string | undefined>();
   const [focus, setFocus] = createSignal<{ name?: string; spawn?: string; } | undefined>();
   const [pasted, setPasted] = createSignal("");
+  const [wipe, setWipe] = createSignal(false);
   // Escape steps back out to the whole zone, from a region or a move. j and k step through the
   // changes in the list, [ and ] through the zones, so a review can be read without the mouse.
   onMount(() => {
@@ -376,6 +377,14 @@ export default function RegionsDiffPage() {
             /* The diff says what moved; the editor says whether it should have. Roam trails are the
               evidence the regions were drawn from, and they are only over there. */
           }
+          <button
+            class={wipe() ? BTN.quiet : BTN.plain}
+            aria-pressed={wipe()}
+            title="Before on one side of a line, after on the other, instead of laid over each other"
+            onClick={() => setWipe(on => !on)}
+          >
+            {wipe() ? "Overlay" : "Wipe"}
+          </button>
           <a
             class={BTN.plain}
             href={editorHref()}
@@ -475,6 +484,7 @@ export default function RegionsDiffPage() {
                 trail={trail()}
                 nav={showNav() && nav.state === "ready" ? nav() : undefined}
                 onPick={name => setFocus({ name })}
+                wipe={wipe()}
               />
               {/* Below the viewer's legend, which sits in the same corner. */}
               <Show when={picked()}>

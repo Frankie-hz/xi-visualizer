@@ -31,6 +31,8 @@ interface DiffViewerProps {
   nav?: ArrayBuffer;
   /** Clicking a label on the map is the same act as clicking its row in the list. */
   onPick?: (name: string) => void;
+  /** Before and after side by side instead of laid over each other, split by a handle to drag. */
+  wipe?: boolean;
 }
 
 export default function RegionDiffViewer(props: DiffViewerProps) {
@@ -214,6 +216,70 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
       overlay.add(points);
     }
   });
+
+  /**
+   * The wipe: the regions as the base had them left of a line, as the head has them right of it,
+   * each in its change's colour. Drawn whole on both sides and clipped at the line, which follows
+   * the handle and the camera, so dragging it across a reshape shows the one turn into the other.
+   */
+  const [split, setSplit] = createSignal(0.5);
+  const wipeGroup = new THREE.Group();
+  const beforePlane = new THREE.Plane();
+  const afterPlane = new THREE.Plane();
+  createEffect(() => {
+    const status = statuses();
+    const on = !!props.wipe;
+    overlay.visible = !on;
+    if (!on) return;
+    const before = new THREE.Group(), after = new THREE.Group();
+    for (const [name, kind] of Object.entries(status)) {
+      const color = STATUS_COLOR[kind];
+      for (const [side, region] of [[before, props.base.regions[name]], [after, props.head.regions[name]]] as const) {
+        if (!region) continue;
+        fill(region, color, kind === "unchanged" ? 0.12 : 0.3, side);
+        outline(region, color, kind !== "unchanged", kind === "unchanged" ? 0.4 : 1, false, side);
+      }
+    }
+    for (const [group, plane] of [[before, beforePlane], [after, afterPlane]] as const) {
+      group.traverse(o => {
+        const m = (o as THREE.Mesh).material as THREE.Material | undefined;
+        if (m) m.clippingPlanes = [plane];
+      });
+      wipeGroup.add(group);
+    }
+    if (!wipeGroup.parent) scene().add(wipeGroup);
+    onCleanup(() => {
+      for (const group of [before, after]) {
+        wipeGroup.remove(group);
+        group.traverse(o => {
+          (o as THREE.Mesh).geometry?.dispose();
+          ((o as THREE.Mesh).material as THREE.Material | undefined)?.dispose();
+        });
+      }
+    });
+  });
+  /** Puts the clipping planes through the camera and the handle's line on screen, this frame. */
+  const placeWipe = () => {
+    const cam = camera();
+    const x = split() * 2 - 1;
+    const top = new THREE.Vector3(x, 1, 0.5).unproject(cam);
+    const bottom = new THREE.Vector3(x, -1, 0.5).unproject(cam);
+    beforePlane.setFromCoplanarPoints(cam.position, bottom, top);
+    // Three.js keeps what is on a plane's positive side; the before side is the left of the line.
+    if (beforePlane.distanceToPoint(new THREE.Vector3(x - 0.2, 0, 0.5).unproject(cam)) < 0) beforePlane.negate();
+    afterPlane.copy(beforePlane).negate();
+  };
+  const dragWipe = (e: PointerEvent) => {
+    const bar = e.currentTarget as HTMLElement;
+    bar.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      const rect = canvasElement.getBoundingClientRect();
+      setSplit(Math.min(0.98, Math.max(0.02, (ev.clientX - rect.left) / rect.width)));
+    };
+    const stop = () => (bar.removeEventListener("pointermove", move), bar.removeEventListener("pointerup", stop));
+    bar.addEventListener("pointermove", move);
+    bar.addEventListener("pointerup", stop);
+  };
 
   /**
    * With a region or a move picked, everything else goes grey and faint: still there to be
@@ -471,6 +537,7 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
           for (const { material, peak } of walking.arriving) (material as THREE.Material & { opacity: number; }).opacity = peak * (0.1 + eased * 0.9);
         }
         for (const m of lineMaterials) m.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
+        if (props.wipe) placeWipe();
       },
       onAfterRender: () => {
         // Each leg's label rides just above its dot, wherever the dot is this frame.
@@ -502,6 +569,7 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
       },
     });
     controls = viewer.controls;
+    viewer.renderer.localClippingEnabled = true; // for the wipe
     fitCameraToContents(camera(), controls, fn => overlay.children.forEach(fn));
 
     // Where the cursor meets terrain. Only a real mesh hit counts: empty space has no position.
@@ -538,6 +606,21 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
   return (
     <div class="relative h-full">
       <canvas class="block w-full h-full outline-none" ref={canvasElement!} />
+      <Show when={props.wipe}>
+        <div class="absolute top-0 bottom-0 w-0.5 -translate-x-1/2 bg-white/80 pointer-events-none" style={{ left: `${split() * 100}%` }} />
+        <div class="absolute top-10 -translate-x-full pr-2 text-xs font-bold text-slate-100 pointer-events-none" style={{ left: `${split() * 100}%` }}>
+          before
+        </div>
+        <div class="absolute top-10 pl-2 text-xs font-bold text-slate-100 pointer-events-none" style={{ left: `${split() * 100}%` }}>after</div>
+        <div
+          class="absolute top-1/2 w-7 h-12 -translate-x-1/2 -translate-y-1/2 rounded-md bg-white text-slate-900 flex items-center justify-center cursor-ew-resize select-none shadow-lg touch-none"
+          style={{ left: `${split() * 100}%` }}
+          title="Drag to wipe between before and after"
+          onPointerDown={dragWipe}
+        >
+          ⇔
+        </div>
+      </Show>
       {
         /* The layer ignores the mouse so the camera still drags through it; the labels take it
           back, since a name on the map is the most obvious thing to click. */
