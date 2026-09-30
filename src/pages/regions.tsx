@@ -2,7 +2,7 @@ import { useBeforeLeave, useNavigate, useParams, useSearchParams } from "@solidj
 import { createEffect, createMemo, createResource, createSignal, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import RegionEditor from "../components/region_editor";
 import YamlView from "../components/yaml_view";
-import zones, { zoneOfFolder } from "../data/zones";
+import zones, { zoneFolders, zoneOfFolder } from "../data/zones";
 import {
   compareUrl,
   deleteBranch,
@@ -556,6 +556,12 @@ export default function RegionsPage() {
       setError(names.length ? undefined : `No ${ZONES}/<zone>/mobs.yaml in ${repo()}@${ref()} yet`);
     } catch (e) {
       setStatus(undefined);
+      // Out of requests for the hour. Opening a zone reads raw files, which that limit does not
+      // cover, so a list of every zone name still gets somebody working.
+      if ((e as { rateLimited?: boolean; }).rateLimited) {
+        setFolders(zoneFolders().sort((a, b) => zoneLabel(a).localeCompare(zoneLabel(b))));
+        return setError(`${(e as Error).message}. Meanwhile every zone is listed, including ones with no mobs to place.`);
+      }
       // fetch rejects with a TypeError when the request never completed at all: nothing was
       // refused, so there is no status to report and "Failed to fetch" on its own helps nobody.
       setError(
