@@ -1705,8 +1705,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     return floor() === null || on === undefined || on === null || on === floor();
   };
 
-  // Recorded roam trails, drawn under everything so a polygon can be checked against where the
-  // mobs actually went.
+  // Recorded roam trails, so a polygon can be checked against where the mobs actually went.
   createEffect(() => {
     const data = props.roam;
     roamPoints = undefined;
@@ -1733,7 +1732,8 @@ export default function RegionEditor(props: RegionEditorProps) {
     }
 
     const points = new THREE.Points(geo, roamMaterial());
-    points.renderOrder = 0;
+    // Over the fills, under the outlines: under a fill, a region's own trails were lost in it.
+    points.renderOrder = 1.5;
     roamPoints = points;
     scene().add(points);
     onCleanup(() => {
