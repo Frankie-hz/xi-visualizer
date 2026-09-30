@@ -24,7 +24,18 @@ import {
   traceCells,
 } from "../obstacles";
 import type { Obstacle } from "../obstacles";
-import { containsXZ, regionAt, regionHue, regionsFromPoints, repairRegion, routeFromTrail, selfIntersects, simplifyRing, validate } from "../regions";
+import {
+  containsXZ,
+  regionAt,
+  regionHue,
+  regionIntersection,
+  regionsFromPoints,
+  repairRegion,
+  routeFromTrail,
+  selfIntersects,
+  simplifyRing,
+  validate,
+} from "../regions";
 import type { Finding, Patrol, Region, RegionSet, Ring, Spawn, TrailPoint, Vertex } from "../regions";
 import type { RoamData } from "../roam";
 import { putOnGround } from "../terrain";
@@ -1725,6 +1736,56 @@ export default function RegionEditor(props: RegionEditorProps) {
   const AMBER = 0xffb020;
   const VIOLET = 0xc084fc;
 
+  /**
+   * The batch whose button the pointer is on. Its ground is filled on the map, pulsing, so what
+   * Ring all or Cut patches would take is seen before it is taken: the part of each ring over ground
+   * the region still has, which is exactly what the cut removes.
+   */
+  const [armed, setArmed] = createSignal<"ringAll" | "patches" | null>(null);
+  let pulse: THREE.MeshBasicMaterial | undefined;
+  createEffect(() => {
+    const batch = armed();
+    const r = active();
+    if (!batch || !r || mode() !== "obstacles") return;
+    const rings = batch === "ringAll"
+      ? ringsAround(bulk(), obstacleMargin(), OBSTACLE_CELL, walkedCells()).map(onGround)
+      : gaps();
+    const material = new THREE.MeshBasicMaterial({
+      color: batch === "ringAll" ? AMBER : VIOLET,
+      transparent: true,
+      opacity: 0.5,
+      side: THREE.DoubleSide,
+      depthTest: false,
+    });
+    const meshes: THREE.Mesh[] = [];
+    for (const ring of rings) {
+      for (const piece of regionIntersection({ rings: [ring] }, r)) {
+        const flat = [piece.rings[0], ...piece.rings.slice(1)];
+        const faces = THREE.ShapeUtils.triangulateShape(
+          flat[0].map(([x, , z]) => new THREE.Vector2(x, -z)),
+          flat.slice(1).map(h => h.map(([x, , z]) => new THREE.Vector2(x, -z))),
+        );
+        const geo = new THREE.BufferGeometry();
+        // A hair above the region's own fill, which it sits on.
+        geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(flat.flat().flatMap(([x, y, z]) => [x, y - 0.15, z])), 3));
+        geo.setIndex(faces.flat());
+        const mesh = new THREE.Mesh(geo, material);
+        mesh.renderOrder = 2;
+        scene().add(mesh);
+        meshes.push(mesh);
+      }
+    }
+    pulse = material;
+    onCleanup(() => {
+      for (const mesh of meshes) {
+        scene().remove(mesh);
+        mesh.geometry.dispose();
+      }
+      material.dispose();
+      if (pulse === material) pulse = undefined;
+    });
+  });
+
   // The obstacles on offer, each drawn as the ring a click would cut, so the margin is visible
   // before anything is changed. What Ring all takes is solid, what is over its size dashed. Only
   // the part inside the region is drawn: the cut clips to the outline, so the preview does too.
@@ -2089,6 +2150,8 @@ export default function RegionEditor(props: RegionEditorProps) {
           m.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
         }
         stepReplay(dt);
+        // The armed batch breathes, so it reads as "this is what would go" and not as more map.
+        if (pulse) pulse.opacity = 0.2 + 0.35 * (0.5 + 0.5 * Math.sin(performance.now() / 180));
       },
       onAfterRender: () => placeLabels(),
     });
@@ -2846,6 +2909,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             onRingAll={() => ringObstacles(bulk())}
             onCutPatches={() => cutRings(gaps())}
             onDefaults={resetObstacleDials}
+            onPreview={setArmed}
           />
         </Show>
         <Show when={cursor()}>{at => <CursorReadout at={at()} onCopy={copy} />}</Show>

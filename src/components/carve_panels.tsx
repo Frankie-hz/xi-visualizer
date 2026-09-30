@@ -52,7 +52,15 @@ export function CarvePanel(props: {
   onRingAll: () => void;
   onCutPatches: () => void;
   onDefaults: () => void;
+  /** Which batch the pointer or focus is on, so the map can show what it would cut. */
+  onPreview: (batch: "ringAll" | "patches" | null) => void;
 }) {
+  const previewing = (batch: "ringAll" | "patches") => ({
+    onMouseEnter: () => props.onPreview(batch),
+    onMouseLeave: () => props.onPreview(null),
+    onFocus: () => props.onPreview(batch),
+    onBlur: () => props.onPreview(null),
+  });
   return (
     <div class={PANEL}>
       <div class="flex items-center justify-between">
@@ -98,6 +106,7 @@ export function CarvePanel(props: {
           class="flex-1 px-2 py-1 bg-amber-700 hover:bg-amber-600 rounded disabled:opacity-40"
           disabled={!props.ringAll || props.cutting}
           title="Ring every obstacle up to the size above; each one goes through the clipper on its own"
+          {...previewing("ringAll")}
           onClick={() => props.onRingAll()}
         >
           Ring all ({props.ringAll})
@@ -106,6 +115,7 @@ export function CarvePanel(props: {
           class="flex-1 px-2 py-1 bg-violet-700 hover:bg-violet-600 rounded disabled:opacity-40"
           disabled={!props.patches || props.cutting}
           title="Cut every empty patch as a hole"
+          {...previewing("patches")}
           onClick={() => props.onCutPatches()}
         >
           Cut patches ({props.patches})
