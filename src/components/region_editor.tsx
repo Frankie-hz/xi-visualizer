@@ -3366,7 +3366,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             onDelete={deleteRegion}
             filter={filter()}
             onFilter={setFilter}
-            inside={insideActive().length}
+            inside={insideActive().filter(s => assign()[s.id]?.join() !== activeName()).length}
             onAssignInside={assignInside}
             canRefit={!!props.roam}
             onRefit={refitActive}

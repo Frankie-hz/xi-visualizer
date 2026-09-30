@@ -46,7 +46,7 @@ export default function RegionsTab(props: {
   onDelete: (name: string) => void;
   filter: string;
   onFilter: (text: string) => void;
-  /** Mobs standing inside the selected region by their own spawn point. */
+  /** Mobs standing inside the selected region by their own spawn point and not yet in it: what Assign inside would take. */
   inside: number;
   onAssignInside: (remove: boolean) => void;
   canRefit: boolean;
