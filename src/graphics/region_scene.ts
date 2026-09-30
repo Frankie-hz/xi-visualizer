@@ -69,6 +69,47 @@ export const paintOnce = (ref: number) => ({
 /** A stencil number for the `n`th fill drawn, cycling through the ones regions may use. */
 export const fillRef = (n: number) => (n % 254) + 1;
 
+/**
+ * The mesh's own colour on the ground plane, averaged per `cell` yalms over the triangles whose
+ * middle lies in each cell. Read once, while the mesh carries its material colours.
+ */
+export function groundColours(mesh: THREE.Mesh, cell = 4) {
+  const pos = mesh.geometry.getAttribute("position");
+  const color = mesh.geometry.getAttribute("color");
+  const sums = new Map<string, [number, number, number, number]>();
+  for (let t = 0; t + 2 < pos.count; t += 3) {
+    const x = (pos.getX(t) + pos.getX(t + 1) + pos.getX(t + 2)) / 3;
+    const z = (pos.getZ(t) + pos.getZ(t + 1) + pos.getZ(t + 2)) / 3;
+    const key = `${Math.floor(x / cell)},${Math.floor(z / cell)}`;
+    const sum = sums.get(key) ?? [0, 0, 0, 0];
+    sum[0] += color.getX(t);
+    sum[1] += color.getY(t);
+    sum[2] += color.getZ(t);
+    sum[3]++;
+    sums.set(key, sum);
+  }
+  return { cell, sums };
+}
+
+/** The average ground colour inside a ring, as HSL, from `groundColours`; undefined if none. */
+export function groundUnder(ground: ReturnType<typeof groundColours>, ring: readonly (readonly number[])[], inside: (x: number, z: number) => boolean) {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const [x, , z] of ring) (minX = Math.min(minX, x), maxX = Math.max(maxX, x), minZ = Math.min(minZ, z), maxZ = Math.max(maxZ, z));
+  const { cell, sums } = ground;
+  let r = 0, g = 0, b = 0, n = 0;
+  for (let ix = Math.floor(minX / cell); ix <= Math.floor(maxX / cell); ix++) {
+    for (let iz = Math.floor(minZ / cell); iz <= Math.floor(maxZ / cell); iz++) {
+      const sum = sums.get(`${ix},${iz}`);
+      if (!sum || !inside((ix + 0.5) * cell, (iz + 0.5) * cell)) continue;
+      (r += sum[0], g += sum[1], b += sum[2], n += sum[3]);
+    }
+  }
+  if (!n) return undefined;
+  const hsl = { h: 0, s: 0, l: 0 };
+  new THREE.Color(r / n, g / n, b / n).getHSL(hsl);
+  return hsl;
+}
+
 /** How many world units one screen pixel covers at the orbit target, for sizing things in pixels. */
 export function worldPerPixel(camera: THREE.PerspectiveCamera, target: THREE.Vector3, canvasHeight: number) {
   return (2 * Math.tan((camera.fov * Math.PI) / 360) * camera.position.distanceTo(target)) / canvasHeight;

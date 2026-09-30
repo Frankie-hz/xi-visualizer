@@ -5,7 +5,7 @@ import { convexHull, inRing, mostlyInside, ringDistance, signedArea, withinRing 
 import { createMapCamera, fitCameraToContents } from "../graphics/camera";
 import { buildFloorIndex, type FloorIndex } from "../graphics/floors";
 import { beaconMaterial, cometMaterial, handleMaterial, roamMaterial, spawnMaterial } from "../graphics/region_points";
-import { addNavMesh, addZoneMesh, fillRef, paintOnce, worldPerPixel } from "../graphics/region_scene";
+import { addNavMesh, addZoneMesh, fillRef, groundColours, groundUnder, paintOnce, worldPerPixel } from "../graphics/region_scene";
 import { setupBaseScene } from "../graphics/scene";
 import { createViewer } from "../graphics/viewer";
 import { ColorKind, colorMesh, prepareMeshData } from "../graphics/ximesh";
@@ -39,7 +39,7 @@ import {
 import type { Finding, Patrol, Region, RegionSet, Ring, Spawn, TrailPoint, Vertex } from "../regions";
 import type { RoamData } from "../roam";
 import { putOnGround } from "../terrain";
-import { COLORS, css } from "../theme";
+import { COLORS, contrastHue, css } from "../theme";
 import type { ZoneData } from "../types";
 import { copyText, isTyping } from "../util";
 import { CarvePanel, PlanPanel } from "./carve_panels";
@@ -355,11 +355,22 @@ export default function RegionEditor(props: RegionEditorProps) {
   // undoing a delete brings it back in its own. Regions the list no longer holds (a spawn pointing
   // at a deleted one) fall back to the name hash.
   const hueSlots = new Map<string, number>();
+  // The ground colour under each region, read off the mesh once it is built. Settled regions,
+  // so a drag does not resample the ground on every mouse move.
+  const [ground, setGround] = createSignal<ReturnType<typeof groundColours>>();
+  const groundHues = createMemo(() => {
+    const g = ground();
+    const out: Record<string, { h: number; s: number; l: number; } | undefined> = {};
+    if (!g) return out;
+    for (const r of settled()) if ((r.rings[0]?.length ?? 0) >= 3) out[r.name] = groundUnder(g, r.rings[0], (x, z) => inRing(r.rings[0], x, z));
+    return out;
+  });
   const hues = createMemo(() => {
     const map: Record<string, number> = {};
+    const under = groundHues();
     for (const r of regions()) {
       if (!hueSlots.has(r.name)) hueSlots.set(r.name, hueSlots.size);
-      map[r.name] = (hueSlots.get(r.name)! * GOLDEN + 0.11) % 1;
+      map[r.name] = contrastHue((hueSlots.get(r.name)! * GOLDEN + 0.11) % 1, under[r.name]);
     }
     return map;
   });
@@ -1520,6 +1531,7 @@ export default function RegionEditor(props: RegionEditorProps) {
   createMemo(() => {
     const { mesh, prep, dispose } = addZoneMesh(scene(), props.zoneData, 0.75);
     zoneMesh = mesh;
+    setGround(groundColours(mesh));
     mesh.visible = !untrack(() => props.nav);
     meshPrep = prep;
     floorIndex = buildFloorIndex(mesh, prep);
@@ -2035,17 +2047,18 @@ export default function RegionEditor(props: RegionEditorProps) {
           // which builds screen-space quads and can actually be thick.
           const pts = ring.flat();
           pts.push(...ring[0]); // Line2 has no loop mode
-          const geo = new LineGeometry();
-          geo.setPositions(pts);
-          const mat = materialFor(
-            `outline:${color.getHex()}`,
-            () => new LineMaterial({ color: color.getHex(), linewidth: 3, depthTest: false }),
-          );
-          mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
-          activeLineMaterials.push(mat);
-          const line = new Line2(geo, mat);
-          line.renderOrder = 3;
-          overlay.add(line);
+          // Cased like a road on a map, dark and wide under the colour, so the outline reads over
+          // ground of any colour, its own included.
+          for (const [hex, width, order] of [[0x0b0b12, 7, 3], [color.getHex(), 3, 4]] as const) {
+            const geo = new LineGeometry();
+            geo.setPositions(pts);
+            const mat = materialFor(`outline:${hex}:${width}`, () => new LineMaterial({ color: hex, linewidth: width, depthTest: false }));
+            mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
+            activeLineMaterials.push(mat);
+            const line = new Line2(geo, mat);
+            line.renderOrder = order;
+            overlay.add(line);
+          }
         } else {
           const geo = new THREE.BufferGeometry().setFromPoints(ring.map(([x, y, z]) => new THREE.Vector3(x, y, z)));
           const line = new THREE.LineLoop(
