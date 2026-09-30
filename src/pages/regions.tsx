@@ -121,7 +121,7 @@ function RegionsIntro() {
       <div>
         <h3 class="font-bold text-slate-100">Getting a change in</h3>
         <ol class="mt-1 list-decimal pl-5 space-y-0.5">
-          <li>Pick a zone above, preferably one with no regions yet.</li>
+          <li>Pick a zone above. Those with regions come first; the ones further down have none yet.</li>
           <li>
             Draw a region with <b>+ Region</b>, or have one built from the trails: in the mob list pick <b>Fixed</b>, then <b>Build a region</b>.
           </li>
@@ -1001,11 +1001,11 @@ export default function RegionsPage() {
         >
           <option value="">{folders().length ? `${folders().length} zones, pick one` : "no zones"}</option>
           <Show when={started().size} fallback={<For each={folders()}>{f => <option value={f}>{zoneLabel(f)}</option>}</For>}>
-            <optgroup label="No regions yet">
-              <For each={folders().filter(f => !started().has(f))}>{f => <option value={f}>{zoneLabel(f)}</option>}</For>
-            </optgroup>
             <optgroup label="Has regions">
               <For each={folders().filter(f => started().has(f))}>{f => <option value={f}>{zoneLabel(f)}</option>}</For>
+            </optgroup>
+            <optgroup label="No regions yet">
+              <For each={folders().filter(f => !started().has(f))}>{f => <option value={f}>{zoneLabel(f)}</option>}</For>
             </optgroup>
           </Show>
         </select>
