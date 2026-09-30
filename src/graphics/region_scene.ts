@@ -52,6 +52,23 @@ export function addNavMesh(scene: THREE.Object3D, bytes: ArrayBuffer) {
   };
 }
 
+/**
+ * Material settings that let one fill paint each pixel once. A region's fill keeps every vertex's
+ * height, so with holes it is a bent sheet of long thin triangles that overlap on screen from a low
+ * angle; translucent and without a depth test, each overlap doubled the colour into bands. The
+ * first triangle at a pixel marks it with `ref`, and later ones carrying the same `ref` skip it.
+ * Give each fill its own `ref`, 1 to 254 (255 is the carve preview's); the stencil clears per frame.
+ */
+export const paintOnce = (ref: number) => ({
+  stencilWrite: true,
+  stencilRef: ref,
+  stencilFunc: THREE.NotEqualStencilFunc,
+  stencilZPass: THREE.ReplaceStencilOp,
+});
+
+/** A stencil number for the `n`th fill drawn, cycling through the ones regions may use. */
+export const fillRef = (n: number) => (n % 254) + 1;
+
 /** How many world units one screen pixel covers at the orbit target, for sizing things in pixels. */
 export function worldPerPixel(camera: THREE.PerspectiveCamera, target: THREE.Vector3, canvasHeight: number) {
   return (2 * Math.tan((camera.fov * Math.PI) / 360) * camera.position.distanceTo(target)) / canvasHeight;

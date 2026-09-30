@@ -19,6 +19,8 @@ export interface ViewerOptions {
   controlsElement?: HTMLElement;
   /** Keep the drawing buffer after the frame, so a screenshot can read the canvas back. Costs memory. */
   preserveDrawingBuffer?: boolean;
+  /** A stencil buffer, which three.js no longer asks for by default. The region fills need it. */
+  stencil?: boolean;
   /** Extra canvases sharing this camera and controls, so dragging one moves all of them. */
   panes?: ViewerPane[];
   /** Match the canvas backing store to its parent on window resize. Default true. */
@@ -51,7 +53,7 @@ export interface Viewer {
 export function createViewer(canvas: HTMLCanvasElement, options: ViewerOptions = {}): Viewer {
   const scene = options.scene ?? setupBaseScene();
   const camera = options.camera ?? createMapCamera();
-  const gl = { antialias: true, alpha: true, preserveDrawingBuffer: options.preserveDrawingBuffer };
+  const gl = { antialias: true, alpha: true, preserveDrawingBuffer: options.preserveDrawingBuffer, stencil: options.stencil ?? false };
 
   const renderer = new THREE.WebGLRenderer({ canvas, ...gl });
   const panes = (options.panes ?? []).map(pane => ({

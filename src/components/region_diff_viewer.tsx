@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, 
 import * as THREE from "three";
 import { Line2, LineGeometry, LineMaterial, MapControls } from "three/examples/jsm/Addons.js";
 import { createMapCamera, fitCameraToContents } from "../graphics/camera";
-import { addNavMesh, addZoneMesh } from "../graphics/region_scene";
+import { addNavMesh, addZoneMesh, fillRef, paintOnce } from "../graphics/region_scene";
 import { setupBaseScene } from "../graphics/scene";
 import { cleanupNode } from "../graphics/util";
 import { createViewer } from "../graphics/viewer";
@@ -134,6 +134,7 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
     return made;
   };
 
+  let fills = 0; // numbers each fill for paintOnce
   const fill = (region: Region, color: number, opacity: number, into: THREE.Group = overlay) => {
     if ((region.rings[0]?.length ?? 0) < 3) return undefined;
     const flat = [region.rings[0], ...region.rings.slice(1).filter(h => h.length >= 3)];
@@ -144,7 +145,10 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(flat.flat().flat()), 3));
     geo.setIndex(faces.flat());
-    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, depthTest: false }));
+    const mesh = new THREE.Mesh(
+      geo,
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, depthTest: false, ...paintOnce(fillRef(fills++)) }),
+    );
     mesh.renderOrder = 1;
     into.add(mesh);
     return mesh.material;
@@ -450,6 +454,7 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
   onMount(() => {
     const projected = new THREE.Vector3();
     const viewer = createViewer(canvasElement, {
+      stencil: true, // for paintOnce
       scene: scene(),
       camera: camera(),
       onFrame: dt => {

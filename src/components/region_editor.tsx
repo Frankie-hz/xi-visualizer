@@ -5,7 +5,7 @@ import { convexHull, inRing, mostlyInside, ringDistance, signedArea, withinRing 
 import { createMapCamera, fitCameraToContents } from "../graphics/camera";
 import { buildFloorIndex, type FloorIndex } from "../graphics/floors";
 import { beaconMaterial, cometMaterial, handleMaterial, roamMaterial, spawnMaterial } from "../graphics/region_points";
-import { addNavMesh, addZoneMesh, worldPerPixel } from "../graphics/region_scene";
+import { addNavMesh, addZoneMesh, fillRef, paintOnce, worldPerPixel } from "../graphics/region_scene";
 import { setupBaseScene } from "../graphics/scene";
 import { createViewer } from "../graphics/viewer";
 import { ColorKind, colorMesh, prepareMeshData } from "../graphics/ximesh";
@@ -1751,7 +1751,14 @@ export default function RegionEditor(props: RegionEditorProps) {
       ? ringsAround(bulk(), obstacleMargin(), OBSTACLE_CELL, walkedCells()).map(onGround)
       : gaps();
     const base = new THREE.Color(batch === "ringAll" ? AMBER : VIOLET);
-    const fill = new THREE.MeshBasicMaterial({ color: base.clone(), transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthTest: false });
+    const fill = new THREE.MeshBasicMaterial({
+      color: base.clone(),
+      transparent: true,
+      opacity: 0.6,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      ...paintOnce(255),
+    });
     const edge = new LineMaterial({ color: 0xffffff, linewidth: 5, depthTest: false, transparent: true });
     const added: THREE.Object3D[] = [];
     const segments: number[] = [];
@@ -1989,7 +1996,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     activeLineMaterials.length = 0;
     handlePoints = undefined;
 
-    for (const r of list) {
+    for (const [index, r] of list.entries()) {
       if (!onRegionFloor(r)) continue;
       const isActive = r.name === activeRegion?.name;
       // Editing one polygon means the others are only in the way, and so do all of them while a
@@ -2009,10 +2016,11 @@ export default function RegionEditor(props: RegionEditorProps) {
         const geo = new THREE.BufferGeometry();
         geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(verts.flat()), 3));
         geo.setIndex(faces.flat());
+        const ref = fillRef(index);
         const fill = new THREE.Mesh(
           geo,
           materialFor(
-            `fill:${color.getHex()}:${isActive}`,
+            `fill:${color.getHex()}:${isActive}:${ref}`,
             () =>
               new THREE.MeshBasicMaterial({
                 color,
@@ -2020,6 +2028,7 @@ export default function RegionEditor(props: RegionEditorProps) {
                 opacity: isActive ? 0.45 : 0.3,
                 side: THREE.DoubleSide,
                 depthTest: false,
+                ...paintOnce(ref),
               }),
           ),
         );
@@ -2167,6 +2176,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     // The frame callbacks run from the next animation frame on, so they can close over the handlers
     // and materials declared further down this function.
     const viewer = createViewer(canvasElement, {
+      stencil: true, // for paintOnce
       scene: scene(),
       camera: camera(),
       onFrame: dt => {
