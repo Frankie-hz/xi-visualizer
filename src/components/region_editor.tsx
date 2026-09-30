@@ -32,6 +32,8 @@ import { COLORS, css } from "../theme";
 import type { ZoneData } from "../types";
 import { copyText, isTyping, onActivate } from "../util";
 import Dial, { type DialSpec } from "./dial";
+import { createHistory } from "./history";
+import HistoryTab from "./history_tab";
 import MobList from "./region_mob_list";
 import ShortcutsCard from "./region_shortcuts";
 import ReviewList from "./review_list";
@@ -560,13 +562,6 @@ export default function RegionEditor(props: RegionEditorProps) {
     walker: string | null;
     mirror: string[];
   }
-  interface Step {
-    label: string;
-    /** The state as it was before this step, which is what undoing it goes back to. */
-    before: Snapshot;
-  }
-  const [undoStack, setUndoStack] = createSignal<Step[]>([]);
-  const [redoStack, setRedoStack] = createSignal<Step[]>([]);
   const snap = (): Snapshot => ({
     regions: regions(),
     assign: assign(),
@@ -591,33 +586,7 @@ export default function RegionEditor(props: RegionEditorProps) {
 
   // Snapshots are taken at operation boundaries, so a whole vertex drag collapses into one step.
   // The label is what the step is called in the history list, so it names the change, not the click.
-  const checkpoint = (label: string) => {
-    setUndoStack(steps => [...steps, { label, before: snap() }].slice(-100));
-    setRedoStack([]);
-  };
-
-  const undo = () => {
-    const steps = undoStack();
-    const step = steps[steps.length - 1];
-    if (!step) return;
-    setUndoStack(steps.slice(0, -1));
-    setRedoStack(r => [...r, { label: step.label, before: snap() }]);
-    restore(step.before);
-  };
-
-  const redo = () => {
-    const steps = redoStack();
-    const step = steps[steps.length - 1];
-    if (!step) return;
-    setRedoStack(steps.slice(0, -1));
-    setUndoStack(u => [...u, { label: step.label, before: snap() }]);
-    restore(step.before);
-  };
-
-  /** Steps back to just before the numbered step, so the history list is clickable. */
-  const rewindTo = (index: number) => {
-    for (let i = undoStack().length; i > index; i--) undo();
-  };
+  const { undoStack, redoStack, checkpoint, undo, redo, rewindTo, forget } = createHistory(snap, restore);
 
   // --- obstacles: holes drawn around the collision mesh's steep faces ---
   // The dials: how far off the faces the ring sits, what counts as steep, how close faces must be
@@ -1230,10 +1199,10 @@ export default function RegionEditor(props: RegionEditorProps) {
     if (k === 0 && started === "add a region") {
       setRegions(rs => rs.filter(x => x.name !== r.name));
       setActiveName(null);
-      setUndoStack(s => s.slice(0, -1));
+      forget();
     } else if (k > 0) {
       editActive(c => void c.rings.splice(k, 1));
-      if (started === "start a hole") setUndoStack(s => s.slice(0, -1));
+      if (started === "start a hole") forget();
     }
   };
 
@@ -2366,7 +2335,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     const onMouseUp = (ev: MouseEvent) => {
       endSpawnDrag(ev);
       // Pressed on a corner and let go without moving it: nothing changed, so no step either.
-      if (drag && !drag.inserted && !drag.moved) setUndoStack(steps => steps.slice(0, -1));
+      if (drag && !drag.inserted && !drag.moved) forget();
       drag = null;
       controls!.enabled = true;
     };
@@ -3313,44 +3282,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         </div>
 
         <Show when={tab() === "history"}>
-          <div class="flex gap-2 mb-2">
-            <button
-              class="flex-1 px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:hover:bg-slate-700"
-              disabled={!undoStack().length}
-              onClick={undo}
-            >
-              Undo
-            </button>
-            <button
-              class="flex-1 px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:hover:bg-slate-700"
-              disabled={!redoStack().length}
-              onClick={redo}
-            >
-              Redo
-            </button>
-          </div>
-          <div class="flex-1 overflow-y-auto text-xs">
-            {/* Newest first, and clicking one takes the zone back to just before it ran. */}
-            <For each={[...redoStack()].reverse()}>
-              {step => <div class="py-0.5 px-1 text-slate-600 italic">{step.label}</div>}
-            </For>
-            <For
-              each={[...undoStack()].reverse()}
-              fallback={<div class="text-slate-500 p-2">Nothing changed yet.</div>}
-            >
-              {(step, i) => (
-                <div
-                  class="py-0.5 px-1 rounded cursor-pointer hover:bg-slate-700 text-slate-300"
-                  title="Take the zone back to just before this"
-                  tabIndex={0}
-                  onKeyDown={onActivate(() => rewindTo(undoStack().length - 1 - i()))}
-                  onClick={() => rewindTo(undoStack().length - 1 - i())}
-                >
-                  {step.label}
-                </div>
-              )}
-            </For>
-          </div>
+          <HistoryTab undoStack={undoStack()} redoStack={redoStack()} onUndo={undo} onRedo={redo} onRewind={rewindTo} />
         </Show>
 
         <Show when={tab() === "paths"}>
