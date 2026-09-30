@@ -1737,12 +1737,12 @@ export default function RegionEditor(props: RegionEditorProps) {
   const VIOLET = 0xc084fc;
 
   /**
-   * The batch whose button the pointer is on. Its ground is filled on the map, pulsing, so what
-   * Ring all or Cut patches would take is seen before it is taken: the part of each ring over ground
-   * the region still has, which is exactly what the cut removes.
+   * The batch whose button the pointer is on. What Ring all or Cut patches would take is shown
+   * before it is taken, loudly: the part of each ring over ground the region still has (exactly
+   * what the cut removes) filled and flashing, with a thick outline that throbs.
    */
   const [armed, setArmed] = createSignal<"ringAll" | "patches" | null>(null);
-  let pulse: THREE.MeshBasicMaterial | undefined;
+  let flashing: { fill: THREE.MeshBasicMaterial; edge: LineMaterial; base: THREE.Color; } | undefined;
   createEffect(() => {
     const batch = armed();
     const r = active();
@@ -1750,14 +1750,11 @@ export default function RegionEditor(props: RegionEditorProps) {
     const rings = batch === "ringAll"
       ? ringsAround(bulk(), obstacleMargin(), OBSTACLE_CELL, walkedCells()).map(onGround)
       : gaps();
-    const material = new THREE.MeshBasicMaterial({
-      color: batch === "ringAll" ? AMBER : VIOLET,
-      transparent: true,
-      opacity: 0.5,
-      side: THREE.DoubleSide,
-      depthTest: false,
-    });
-    const meshes: THREE.Mesh[] = [];
+    const base = new THREE.Color(batch === "ringAll" ? AMBER : VIOLET);
+    const fill = new THREE.MeshBasicMaterial({ color: base.clone(), transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthTest: false });
+    const edge = new LineMaterial({ color: 0xffffff, linewidth: 5, depthTest: false, transparent: true });
+    const added: THREE.Object3D[] = [];
+    const segments: number[] = [];
     for (const ring of rings) {
       for (const piece of regionIntersection({ rings: [ring] }, r)) {
         const flat = [piece.rings[0], ...piece.rings.slice(1)];
@@ -1769,22 +1766,49 @@ export default function RegionEditor(props: RegionEditorProps) {
         // A hair above the region's own fill, which it sits on.
         geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(flat.flat().flatMap(([x, y, z]) => [x, y - 0.15, z])), 3));
         geo.setIndex(faces.flat());
-        const mesh = new THREE.Mesh(geo, material);
-        mesh.renderOrder = 2;
-        scene().add(mesh);
-        meshes.push(mesh);
+        const mesh = new THREE.Mesh(geo, fill);
+        mesh.renderOrder = 6;
+        added.push(mesh);
+        for (const outline of flat) {
+          for (let i = 0; i < outline.length; i++) {
+            const a = outline[i], b = outline[(i + 1) % outline.length];
+            segments.push(a[0], a[1] - 0.35, a[2], b[0], b[1] - 0.35, b[2]);
+          }
+        }
       }
     }
-    pulse = material;
+    if (segments.length) {
+      const geo = new LineSegmentsGeometry();
+      geo.setPositions(segments);
+      const lines = new LineSegments2(geo, edge);
+      lines.renderOrder = 7;
+      added.push(lines);
+    }
+    for (const object of added) scene().add(object);
+    flashing = { fill, edge, base };
     onCleanup(() => {
-      for (const mesh of meshes) {
-        scene().remove(mesh);
-        mesh.geometry.dispose();
+      for (const object of added) {
+        scene().remove(object);
+        (object as THREE.Mesh).geometry.dispose();
       }
-      material.dispose();
-      if (pulse === material) pulse = undefined;
+      fill.dispose();
+      edge.dispose();
+      flashing = undefined;
     });
   });
+  /** Each frame of the armed preview: the fill flashes and the outline throbs. */
+  const flashFrame = (width: number, height: number) => {
+    const f = flashing;
+    if (!f) return;
+    const t = performance.now() / 1000;
+    const beat = 0.5 + 0.5 * Math.sin(t * 9); // about 1.4 flashes a second
+    f.fill.opacity = 0.15 + 0.7 * beat;
+    f.fill.color.copy(f.base).lerp(WHITE, 0.45 * beat);
+    f.edge.linewidth = 3 + 5 * beat;
+    f.edge.color.copy(f.base).lerp(WHITE, 1 - beat);
+    f.edge.resolution.set(width, height);
+  };
+  const WHITE = new THREE.Color(0xffffff);
 
   // The obstacles on offer, each drawn as the ring a click would cut, so the margin is visible
   // before anything is changed. What Ring all takes is solid, what is over its size dashed. Only
@@ -2150,8 +2174,7 @@ export default function RegionEditor(props: RegionEditorProps) {
           m.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
         }
         stepReplay(dt);
-        // The armed batch breathes, so it reads as "this is what would go" and not as more map.
-        if (pulse) pulse.opacity = 0.2 + 0.35 * (0.5 + 0.5 * Math.sin(performance.now() / 180));
+        flashFrame(canvasElement.clientWidth, canvasElement.clientHeight);
       },
       onAfterRender: () => placeLabels(),
     });
