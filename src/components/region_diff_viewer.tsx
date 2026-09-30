@@ -11,6 +11,7 @@ import type { Region, RegionsDiff, ZoneSide } from "../regions";
 import { COLORS, css } from "../theme";
 import type { ZoneData } from "../types";
 import { copyText } from "../util";
+import { CursorReadout, xyz } from "./map_overlays";
 
 export const STATUS_COLOR = { added: COLORS.added, removed: COLORS.removed, reshaped: COLORS.reshaped, unchanged: COLORS.unchanged } as const;
 
@@ -56,7 +57,6 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
   // Zone coordinates under the cursor, for reading a spot off the map and copying it.
   const [cursor, setCursor] = createSignal<THREE.Vector3 | undefined>();
   const [toast, setToast] = createSignal<string | undefined>();
-  const xyz = (p: THREE.Vector3) => [p.x, p.y, p.z].map(n => n.toFixed(3)).join(" ");
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
   const copy = async (text: string) => {
     setToast((await copyText(text)) ? `copied ${text}` : "the browser would not let this page use the clipboard");
@@ -578,15 +578,7 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
         </For>
         <span style={{ color: css(STATUS_COLOR.reshaped) }}>● mob reassigned</span>
       </div>
-      <Show when={cursor()}>
-        <div
-          class="absolute bottom-2 left-2 font-mono text-xs text-slate-200 bg-slate-900/75 rounded px-2 py-1 cursor-pointer select-none"
-          title="Ground position under the cursor. Click to copy, or alt+click the map for !pos"
-          onClick={() => copy(xyz(cursor()!))}
-        >
-          {xyz(cursor()!)}
-        </div>
-      </Show>
+      <Show when={cursor()}>{at => <CursorReadout at={at()} onCopy={copy} />}</Show>
       <Show when={toast()}>
         <div class="absolute bottom-2 right-2 text-xs text-slate-200 bg-slate-900/85 rounded px-2 py-1 pointer-events-none">{toast()}</div>
       </Show>

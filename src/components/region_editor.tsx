@@ -35,6 +35,7 @@ import { CarvePanel, PlanPanel } from "./carve_panels";
 import { type DialSpec } from "./dial";
 import { createHistory } from "./history";
 import HistoryTab from "./history_tab";
+import { CursorReadout, CursorTooltip, xyz } from "./map_overlays";
 import MobList from "./region_mob_list";
 import ShortcutsCard from "./region_shortcuts";
 import ReviewList from "./review_list";
@@ -325,8 +326,6 @@ export default function RegionEditor(props: RegionEditorProps) {
   const focusId = () => hover()?.spawn.id ?? rowFocus() ?? pinnedId();
   const pinnedSpawn = () => props.spawns.find(s => s.id === pinnedId());
   const walkerSpawn = () => props.spawns.find(s => s.id === walker());
-
-  const xyz = (p: THREE.Vector3) => [p.x, p.y, p.z].map(n => n.toFixed(3)).join(" ");
 
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
   /**
@@ -2866,15 +2865,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             onDefaults={resetObstacleDials}
           />
         </Show>
-        <Show when={cursor()}>
-          <div
-            class="absolute bottom-2 left-2 font-mono text-xs text-slate-200 bg-slate-900/75 rounded px-2 py-1 cursor-pointer select-none"
-            title="Ground position under the cursor. Click to copy, or alt+click the map for !pos"
-            onClick={() => copy(xyz(cursor()!))}
-          >
-            {xyz(cursor()!)}
-          </div>
-        </Show>
+        <Show when={cursor()}>{at => <CursorReadout at={at()} onCopy={copy} />}</Show>
         <Show when={menu()}>
           <div
             ref={menuElement}
@@ -3049,10 +3040,7 @@ export default function RegionEditor(props: RegionEditorProps) {
           </div>
         </Show>
         <Show when={obstacleHover() && mode() === "obstacles" && !menu()}>
-          <div
-            class="fixed bg-slate-900/90 text-white px-2 py-1 rounded text-xs pointer-events-none z-50"
-            style={{ left: `${obstacleHover()!.x + 12}px`, top: `${obstacleHover()!.y + 12}px` }}
-          >
+          <CursorTooltip x={obstacleHover()!.x} y={obstacleHover()!.y}>
             <div class="font-bold">
               {isCliff(obstacleHover()!.obstacle) ? "cliff line" : "obstacle"} · {obstacleArea(obstacleHover()!.obstacle, OBSTACLE_CELL).toFixed(0)} y²
             </div>
@@ -3060,25 +3048,19 @@ export default function RegionEditor(props: RegionEditorProps) {
               {(obstacleHover()!.obstacle.foot - obstacleHover()!.obstacle.top).toFixed(1)} y tall · click to ring it
               {obstacleArea(obstacleHover()!.obstacle, OBSTACLE_CELL) > obstacleBulkMax() ? " · over the ring-all size" : ""}
             </div>
-          </div>
+          </CursorTooltip>
         </Show>
         <Show when={holeHover() && !hover() && !menu()}>
-          <div
-            class="fixed bg-slate-900/90 text-white px-2 py-1 rounded text-xs pointer-events-none z-50"
-            style={{ left: `${holeHover()!.x + 12}px`, top: `${holeHover()!.y + 12}px` }}
-          >
+          <CursorTooltip x={holeHover()!.x} y={holeHover()!.y}>
             <div class="font-bold">hole {holeHover()!.index}</div>
             <div class="text-slate-400">
               {Math.abs(signedArea(active()?.rings[holeHover()!.index] ?? [])).toFixed(0)} y² · {active()?.rings[holeHover()!.index]?.length ?? 0} vertices
             </div>
             <div class="text-slate-500">right-click to delete, merge or grow it</div>
-          </div>
+          </CursorTooltip>
         </Show>
         <Show when={hover()}>
-          <div
-            class="fixed bg-slate-900 text-white px-2 py-1 rounded text-xs pointer-events-none z-50"
-            style={{ left: `${hover()!.x + 12}px`, top: `${hover()!.y + 12}px` }}
-          >
+          <CursorTooltip x={hover()!.x} y={hover()!.y}>
             <div class="font-bold">{hover()!.spawn.name}</div>
             <div class="text-slate-400">{hover()!.spawn.id}</div>
             <div class="text-slate-400">
@@ -3093,7 +3075,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             <Show when={props.roam?.ranges[hover()!.spawn.id]}>
               <div class="text-slate-400">{props.roam!.ranges[hover()!.spawn.id][1]} roam points</div>
             </Show>
-          </div>
+          </CursorTooltip>
         </Show>
       </div>
 
