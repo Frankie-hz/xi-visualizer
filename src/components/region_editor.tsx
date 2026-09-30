@@ -1643,158 +1643,79 @@ export default function RegionEditor(props: RegionEditorProps) {
     });
   });
 
-  // The obstacles on offer, each drawn as the ring a click would cut, so the margin is visible
-  // before anything is changed.
-  createEffect(() => {
-    const { bulk: small, big } = shownPreview();
-    if (!small.length && !big.length) return;
-    const added: { lines: LineSegments2; geo: LineSegmentsGeometry; }[] = [];
-    // Two looks: what Ring all takes solid, what is over its size dashed; both full amber. Only
-    // the part of a ring inside the region is drawn: the cut clips to the outline, so the preview
-    // shows the same.
-    const outline = active()?.rings[0] ?? [];
-    for (const [rings, key, dashed] of [[small, "obstacles", false], [big, "obstacles-big", true]] as const) {
-      if (!rings.length) continue;
-      const segments: number[] = [];
-      for (const ring of rings) {
-        for (let i = 0; i < ring.length; i++) {
-          const a = ring[i];
-          const b = ring[(i + 1) % ring.length];
-          if (outline.length && !inRing(outline, (a[0] + b[0]) / 2, (a[2] + b[2]) / 2)) continue;
-          // A hair above the ground so the line is not swallowed by the terrain it lies on.
-          segments.push(a[0], a[1] - 0.2, a[2], b[0], b[1] - 0.2, b[2]);
-        }
-      }
-      if (!segments.length) continue;
-      // WebGL draws LineBasicMaterial one pixel wide whatever it is told, so this is a wide line
-      // like the selected outline, sized in screen pixels. Segments geometry, not LineGeometry:
-      // that one takes a polyline and would join every ring to the next.
-      const geo = new LineSegmentsGeometry();
-      geo.setPositions(segments);
-      const mat = materialFor(
-        key,
-        () => new LineMaterial({ color: 0xffb020, linewidth: 2.5, depthTest: false, dashed, dashSize: 1, gapSize: 0.7 }),
-      ) as LineMaterial;
-      mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
-      obstacleLineMaterials.push(mat);
-      const lines = new LineSegments2(geo, mat);
-      if (dashed) lines.computeLineDistances();
-      lines.renderOrder = 3;
-      scene().add(lines);
-      added.push({ lines, geo });
-    }
-    onCleanup(() => {
-      for (const { lines, geo } of added) {
-        scene().remove(lines);
-        geo.dispose();
-      }
-    });
-  });
-
-  // Roam gaps on offer, dashed violet: the data's holes rather than the mesh's.
-  createEffect(() => {
-    const rings = gaps();
-    if (!rings.length) return;
+  /**
+   * Rings drawn as wide lines a little above the ground, for the carve previews. WebGL draws
+   * LineBasicMaterial one pixel wide whatever it is told, so these are screen-sized wide lines, as
+   * segments: a polyline geometry would join every ring to the next. `clipTo` keeps only the edges
+   * inside that ring. Called inside an effect, whose cleanup takes the lines away again.
+   */
+  const drawRingLines = (
+    rings: Ring[],
+    o: { key: string; color: number; width: number; lift: number; order: number; dashed?: boolean; clipTo?: Ring; },
+  ) => {
     const segments: number[] = [];
     for (const ring of rings) {
       for (let i = 0; i < ring.length; i++) {
         const a = ring[i], b = ring[(i + 1) % ring.length];
-        segments.push(a[0], a[1] - 0.2, a[2], b[0], b[1] - 0.2, b[2]);
-      }
-    }
-    const geo = new LineSegmentsGeometry();
-    geo.setPositions(segments);
-    const mat = materialFor(
-      "gaps",
-      () => new LineMaterial({ color: 0xc084fc, linewidth: 2.5, depthTest: false, dashed: true, dashSize: 1, gapSize: 0.7 }),
-    ) as LineMaterial;
-    mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
-    obstacleLineMaterials.push(mat);
-    const lines = new LineSegments2(geo, mat);
-    lines.computeLineDistances();
-    lines.renderOrder = 3;
-    scene().add(lines);
-    onCleanup(() => {
-      scene().remove(lines);
-      geo.dispose();
-    });
-  });
-
-  // The obstacle under the cursor, drawn as the ring a click would cut.
-  createEffect(() => {
-    const h = obstacleHover();
-    if (!h || mode() !== "obstacles") return;
-    const segments: number[] = [];
-    for (const ring of ringsAround([h.obstacle], obstacleMargin(), OBSTACLE_CELL, walkedCells()).map(onGround)) {
-      for (let i = 0; i < ring.length; i++) {
-        const a = ring[i], b = ring[(i + 1) % ring.length];
-        segments.push(a[0], a[1] - 0.3, a[2], b[0], b[1] - 0.3, b[2]);
+        if (o.clipTo?.length && !inRing(o.clipTo, (a[0] + b[0]) / 2, (a[2] + b[2]) / 2)) continue;
+        // A hair above the ground so the line is not swallowed by the terrain it lies on.
+        segments.push(a[0], a[1] - o.lift, a[2], b[0], b[1] - o.lift, b[2]);
       }
     }
     if (!segments.length) return;
     const geo = new LineSegmentsGeometry();
     geo.setPositions(segments);
-    const mat = materialFor("obstacle-hover", () => new LineMaterial({ color: 0xffffff, linewidth: 3.5, depthTest: false })) as LineMaterial;
+    const mat = materialFor(
+      o.key,
+      () => new LineMaterial({ color: o.color, linewidth: o.width, depthTest: false, dashed: !!o.dashed, dashSize: 1, gapSize: 0.7 }),
+    ) as LineMaterial;
     mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
     obstacleLineMaterials.push(mat);
     const lines = new LineSegments2(geo, mat);
-    lines.renderOrder = 5;
+    if (o.dashed) lines.computeLineDistances();
+    lines.renderOrder = o.order;
     scene().add(lines);
     onCleanup(() => {
       scene().remove(lines);
       geo.dispose();
     });
+  };
+  const AMBER = 0xffb020;
+  const VIOLET = 0xc084fc;
+
+  // The obstacles on offer, each drawn as the ring a click would cut, so the margin is visible
+  // before anything is changed. What Ring all takes is solid, what is over its size dashed. Only
+  // the part inside the region is drawn: the cut clips to the outline, so the preview does too.
+  createEffect(() => {
+    const { bulk: small, big } = shownPreview();
+    const clipTo = active()?.rings[0];
+    drawRingLines(small, { key: "obstacles", color: AMBER, width: 2.5, lift: 0.2, order: 3, clipTo });
+    drawRingLines(big, { key: "obstacles-big", color: AMBER, width: 2.5, lift: 0.2, order: 3, dashed: true, clipTo });
+  });
+
+  // Empty patches on offer, dashed violet: the data's holes rather than the mesh's.
+  createEffect(() => drawRingLines(gaps(), { key: "gaps", color: VIOLET, width: 2.5, lift: 0.2, order: 3, dashed: true }));
+
+  // The obstacle under the cursor, drawn as the ring a click would cut.
+  createEffect(() => {
+    const h = obstacleHover();
+    if (!h || mode() !== "obstacles") return;
+    const rings = ringsAround([h.obstacle], obstacleMargin(), OBSTACLE_CELL, walkedCells()).map(onGround);
+    drawRingLines(rings, { key: "obstacle-hover", color: 0xffffff, width: 3.5, lift: 0.3, order: 5 });
   });
 
   // The grow plan: the patch of unvisited ground the hole would become.
   createEffect(() => {
-    const plan = growPlan();
-    if (!plan?.ring) return;
-    const segments: number[] = [];
-    const ring = plan.ring;
-    for (let i = 0; i < ring.length; i++) {
-      const a = ring[i], b = ring[(i + 1) % ring.length];
-      segments.push(a[0], a[1] - 0.25, a[2], b[0], b[1] - 0.25, b[2]);
-    }
-    const geo = new LineSegmentsGeometry();
-    geo.setPositions(segments);
-    const mat = materialFor("grow", () => new LineMaterial({ color: 0xc084fc, linewidth: 2.5, depthTest: false })) as LineMaterial;
-    mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
-    obstacleLineMaterials.push(mat);
-    const lines = new LineSegments2(geo, mat);
-    lines.renderOrder = 4;
-    scene().add(lines);
-    onCleanup(() => {
-      scene().remove(lines);
-      geo.dispose();
-    });
+    const ring = growPlan()?.ring;
+    if (ring) drawRingLines([ring], { key: "grow", color: VIOLET, width: 2.5, lift: 0.25, order: 4 });
   });
 
   // The merge plan: the hull the group would become, and the holes going into it.
   createEffect(() => {
     const plan = mergePlan();
     if (!plan) return;
-    const segments: number[] = [];
-    const push = (ring: Ring) => {
-      for (let i = 0; i < ring.length; i++) {
-        const a = ring[i], b = ring[(i + 1) % ring.length];
-        segments.push(a[0], a[1] - 0.25, a[2], b[0], b[1] - 0.25, b[2]);
-      }
-    };
-    for (const k of plan.group) push(plan.entry.rings[k]);
-    if (plan.hull) push(plan.hull);
-    const geo = new LineSegmentsGeometry();
-    geo.setPositions(segments);
-    const mat = materialFor("merge", () => new LineMaterial({ color: 0xc084fc, linewidth: 2.5, depthTest: false })) as LineMaterial;
-    mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
-    obstacleLineMaterials.push(mat);
-    const lines = new LineSegments2(geo, mat);
-    lines.renderOrder = 4;
-    scene().add(lines);
-    onCleanup(() => {
-      scene().remove(lines);
-      geo.dispose();
-    });
+    const rings = [...plan.group.map(k => plan.entry.rings[k]), ...(plan.hull ? [plan.hull] : [])];
+    drawRingLines(rings, { key: "merge", color: VIOLET, width: 2.5, lift: 0.25, order: 4 });
   });
 
   // The active region's own mobs light up in its colour; everything else stays a dim backdrop.
