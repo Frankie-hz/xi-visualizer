@@ -1,5 +1,5 @@
 import { load } from "js-yaml";
-import { difference, union } from "polyclip-ts";
+import { difference, intersection, union } from "polyclip-ts";
 import type { Geom } from "polyclip-ts";
 import { inRing, signedArea } from "./geometry.ts";
 
@@ -929,6 +929,12 @@ export function regionDifference(a: Region, b: Region): Region[] {
   // Heights from `a` alone: the ground is `a`'s, and a vertex `b` had that `a` dropped -- a notch
   // in a wall, say -- is exactly the height this ground must not borrow.
   return regionsOf(difference(asGeom(a), asGeom(b)), a.rings.flat());
+}
+
+/** The ground `a` and `b` both cover: what cutting `a` out of `b` would take away. Heights from `b`. */
+export function regionIntersection(a: Region, b: Region): Region[] {
+  if ((a.rings[0]?.length ?? 0) < 3 || (b.rings[0]?.length ?? 0) < 3) return [];
+  return regionsOf(intersection(asGeom(a), asGeom(b)), b.rings.flat());
 }
 
 const flat = (ring: Ring): Geom => [ring.map(v => [v[0], v[2]] as [number, number])];

@@ -17,6 +17,7 @@ import {
   regionArea,
   regionAt,
   regionDifference,
+  regionIntersection,
   regionsFromPoints,
   repairRegion,
   routeFromTrail,
@@ -630,5 +631,13 @@ merged = mergeZone(
 );
 assert.deepStrictEqual(merged.conflicts, []);
 assert.deepStrictEqual(splitPlacements(merged.placements).assign, { "1": ["north"], "3": ["south"] }, "ours untouched, theirs taken");
+
+// What a cut would take: only the part of the ring over ground the region still has.
+{
+  const field: Region = { rings: [[[0, 0, 0], [10, 0, 0], [10, 0, 10], [0, 0, 10]], [[0, 0, 0], [3, 0, 0], [3, 0, 3], [0, 0, 3]].reverse() as Ring] };
+  const rock: Region = { rings: [[[-2, 0, -2], [5, 0, -2], [5, 0, 5], [-2, 0, 5]]] };
+  const taken = regionIntersection(rock, field);
+  assert.strictEqual(taken.reduce((sum, r) => sum + regionArea(r), 0), 25 - 9, "outside the outline and inside the old hole are not taken again");
+}
 
 console.log("ok");
