@@ -1,6 +1,6 @@
 import { useBeforeLeave, useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
-import RegionEditor from "../components/region_editor";
+import RegionEditor, { type EditorView } from "../components/region_editor";
 import { BTN, FIELD } from "../components/ui";
 import YamlView from "../components/yaml_view";
 import zones, { zoneFolders, zoneOfFolder } from "../data/zones";
@@ -207,7 +207,26 @@ function findDraft(folder: string, source: string): FoundDraft | undefined {
 export default function RegionsPage() {
   // /regions/<zone> picks the zone; ?repo=owner/name&ref=branch override where it comes from.
   const params = useParams<{ zone?: string; }>();
-  const [query] = useSearchParams<{ repo?: string; ref?: string; review?: string; }>();
+  const [query] = useSearchParams<{ repo?: string; ref?: string; review?: string; cam?: string; region?: string; floor?: string; }>();
+  /** The view a shared link asked for, read once when the zone opens. */
+  const linkedView = (): EditorView => ({
+    camera: query.cam?.split(",").map(Number),
+    region: query.region,
+    floor: query.floor ? Number(query.floor) : undefined,
+  });
+  /**
+   * Keeps the address bar pointing at what is on screen, so copying it shares this exact view.
+   * Written past the router, since telling it would count every camera move as a navigation.
+   */
+  const keepView = (view: EditorView) => {
+    const [path, search = ""] = location.hash.slice(1).split("?");
+    const params = new URLSearchParams(search);
+    for (const [key, value] of [["cam", view.camera?.join(",")], ["region", view.region], ["floor", view.floor?.toString()]] as const) {
+      if (value) params.set(key, value);
+      else params.delete(key);
+    }
+    history.replaceState(history.state, "", `#${path}${params.size ? `?${params}` : ""}`);
+  };
   const navigate = useNavigate();
   const repo = () => query.repo || DEFAULT_REPO;
 
@@ -1043,6 +1062,14 @@ export default function RegionsPage() {
             </button>
           </Show>
           <button class={BTN_PLAIN} onClick={copyPatched}>Copy YAML</button>
+          <button
+            class={BTN_PLAIN}
+            title="Copy a link to this zone as it is on screen: the camera, the region picked and the floor"
+            onClick={() =>
+              copyText(location.href).then(ok => (ok ? setStatus("Link copied") : setError("The browser would not let this page use the clipboard")))}
+          >
+            Copy link
+          </button>
           <Show when={!reviewing()}>
             <button
               class={BTN_PLAIN}
@@ -1377,6 +1404,8 @@ export default function RegionsPage() {
                   {_key => (
                     <RegionEditor
                       readOnly={reviewing()}
+                      view={untrack(linkedView)}
+                      onView={keepView}
                       zoneData={zoneMesh()!}
                       spawns={spawns()!}
                       regions={restored()?.regions ?? regions()}

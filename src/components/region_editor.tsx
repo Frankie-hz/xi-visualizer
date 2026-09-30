@@ -83,6 +83,18 @@ interface RegionEditorProps {
   /** The zone's navmesh, drawn in place of the collision mesh while present. */
   nav?: ArrayBuffer;
   onChange: (regions: RegionSet, assign: Record<string, string[]>, paths: Record<string, Patrol>) => void;
+  /** Where to look when the zone opens, from a shared link. */
+  view?: EditorView;
+  /** Where it is looking now, each time that settles, so the page can keep it in its link. */
+  onView?: (view: EditorView) => void;
+}
+
+/** What a link can say about the view: the camera, the region picked, the floor shown. */
+export interface EditorView {
+  /** Orbit target then camera position, world space. */
+  camera?: number[];
+  region?: string;
+  floor?: number;
 }
 
 // "obstacles" is a click mode too: each click rings the steep faces under it with a hole.
@@ -2630,6 +2642,36 @@ export default function RegionEditor(props: RegionEditorProps) {
     window.addEventListener("keydown", onKeyDown);
 
     if (spawnPoints) fitCameraToContents(camera(), controls, fn => fn(spawnPoints!));
+
+    // A shared link opens where it was taken, over the default framing.
+    const opened = props.view;
+    if (opened?.camera?.length === 6 && opened.camera.every(Number.isFinite)) {
+      controls.target.set(opened.camera[0], opened.camera[1], opened.camera[2]);
+      camera().position.set(opened.camera[3], opened.camera[4], opened.camera[5]);
+      controls.update();
+    }
+    if (opened?.floor !== undefined && floors().includes(opened.floor)) setFloor(opened.floor);
+    if (opened?.region && regions().some(r => r.name === opened.region)) setActiveName(opened.region);
+
+    // Reported once it stops moving: a drag changes the camera every frame.
+    let viewTimer: ReturnType<typeof setTimeout> | undefined;
+    const reportView = () => {
+      clearTimeout(viewTimer);
+      viewTimer = setTimeout(() => {
+        const t = controls!.target, p = camera().position;
+        props.onView?.({
+          camera: [t.x, t.y, t.z, p.x, p.y, p.z].map(n => Math.round(n * 10) / 10),
+          region: untrack(activeName) ?? undefined,
+          floor: untrack(floor) ?? undefined,
+        });
+      }, 400);
+    };
+    controls.addEventListener("change", reportView);
+    createEffect(on([activeName, floor], reportView, { defer: true }));
+    onCleanup(() => {
+      clearTimeout(viewTimer);
+      controls?.removeEventListener("change", reportView);
+    });
 
     const projected = new THREE.Vector3();
     // Scene is flipped on y/z, so zone coordinates negate on the way to world space.
