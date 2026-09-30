@@ -1,16 +1,14 @@
 import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import * as THREE from "three";
-import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { Line2, LineGeometry, LineMaterial, LineSegments2, LineSegmentsGeometry, MapControls } from "three/examples/jsm/Addons.js";
 import { convexHull, inRing, mostlyInside, ringDistance, signedArea, withinRing } from "../geometry";
 import { createMapCamera, fitCameraToContents } from "../graphics/camera";
 import { buildFloorIndex, type FloorIndex } from "../graphics/floors";
-import { buildNavMeshGroup, parseNavMesh } from "../graphics/navmesh";
 import { beaconMaterial, cometMaterial, handleMaterial, roamMaterial, spawnMaterial } from "../graphics/region_points";
+import { addNavMesh, addZoneMesh, worldPerPixel } from "../graphics/region_scene";
 import { setupBaseScene } from "../graphics/scene";
-import { cleanupNode } from "../graphics/util";
 import { createViewer } from "../graphics/viewer";
-import { ColorKind, colorMesh, createZoneMesh, prepareMeshData } from "../graphics/ximesh";
+import { ColorKind, colorMesh, prepareMeshData } from "../graphics/ximesh";
 import {
   cellKey,
   cellOf,
@@ -37,10 +35,6 @@ import Dial, { type DialSpec } from "./dial";
 import MobList from "./region_mob_list";
 import ShortcutsCard from "./region_shortcuts";
 import ReviewList from "./review_list";
-
-THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
-THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
-THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 interface RegionEntry extends Region {
   name: string;
@@ -1509,24 +1503,15 @@ export default function RegionEditor(props: RegionEditorProps) {
   const DRAWN_POINT_CAP = 600_000;
 
   createMemo(() => {
-    const prep = prepareMeshData(props.zoneData.mesh);
-    const mesh = createZoneMesh(props.zoneData.id, props.zoneData.mesh, prep, ColorKind.Materials);
-    // ximesh writes byte colours without flagging them normalized, which blows them out to white.
-    // Fixing that plus dimming the material keeps the terrain readable *under* the overlay.
-    (mesh.geometry.getAttribute("color") as THREE.BufferAttribute).normalized = true;
-    (mesh.material as THREE.MeshBasicMaterial).color.setScalar(0.75);
+    const { mesh, prep, dispose } = addZoneMesh(scene(), props.zoneData, 0.75);
     zoneMesh = mesh;
     mesh.visible = !untrack(() => props.nav);
     meshPrep = prep;
     floorIndex = buildFloorIndex(mesh, prep);
     setFloors(floorIndex.floors);
     setFloor(null);
-    scene().add(mesh);
     scene().add(overlay);
-    onCleanup(() => {
-      scene().remove(mesh);
-      cleanupNode(mesh);
-    });
+    onCleanup(dispose);
   });
 
   createEffect(() => {
@@ -1540,20 +1525,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     const bytes = props.nav;
     if (zoneMesh) zoneMesh.visible = !bytes;
     if (!bytes) return;
-    const group = buildNavMeshGroup(parseNavMesh(bytes), {
-      showSurface: true,
-      showEdges: true,
-      colorByTile: false,
-      colorByComponent: false,
-      showOffMesh: false,
-      joinByLinks: false,
-      opacity: 0.55,
-    });
-    scene().add(group);
-    onCleanup(() => {
-      scene().remove(group);
-      cleanupNode(group);
-    });
+    onCleanup(addNavMesh(scene(), bytes));
   });
 
   /**
@@ -2205,9 +2177,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     // current zoom — otherwise a fixed radius is unhittable when zoomed out.
     const grabRadius = (pixels: number) => {
       const cam = camera();
-      const dist = cam.position.distanceTo(controls!.target);
-      const worldPerPixel = (2 * Math.tan((cam.fov * Math.PI) / 360) * dist) / canvasElement.clientHeight;
-      raycaster.params.Points!.threshold = pixels * worldPerPixel;
+      raycaster.params.Points!.threshold = pixels * worldPerPixel(cam, controls!.target, canvasElement.clientHeight);
     };
 
     const pickSpawn = (): Spawn | undefined => {
@@ -2593,8 +2563,7 @@ export default function RegionEditor(props: RegionEditorProps) {
       // each per frame, so they only appear once the view is close enough for them to be worth
       // reading. A region being edited hides them too, the way it hides everything else.
       const cam = camera();
-      const perPixel = (2 * Math.tan((cam.fov * Math.PI) / 360) * cam.position.distanceTo(controls!.target))
-        / canvasElement.clientHeight;
+      const perPixel = worldPerPixel(cam, controls!.target, canvasElement.clientHeight);
       const readable = !only && !walker() && perPixel < 0.5;
       // Zoomed out, every one of several hundred is hidden and stays hidden. Hiding them once and
       // then leaving the loop alone is the difference between a few hundred projections a frame
@@ -2679,8 +2648,7 @@ export default function RegionEditor(props: RegionEditorProps) {
 
       // Barbs sized in world units from the camera distance, so the arrow keeps its size on screen.
       const cam = camera();
-      const perPixel = (2 * Math.tan((cam.fov * Math.PI) / 360) * cam.position.distanceTo(controls!.target))
-        / canvasElement.clientHeight;
+      const perPixel = worldPerPixel(cam, controls!.target, canvasElement.clientHeight);
       const len = Math.max(0.2, perPixel * 12); // in world units, but that is 12 pixels at any zoom
       const ahead = trail[(head + (step > 30 ? 2 : 1)) % trail.length];
       const dx = ahead.x - hx;

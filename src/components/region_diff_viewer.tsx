@@ -1,22 +1,16 @@
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js";
 import * as THREE from "three";
-import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from "three-mesh-bvh";
 import { Line2, LineGeometry, LineMaterial, MapControls } from "three/examples/jsm/Addons.js";
 import { createMapCamera, fitCameraToContents } from "../graphics/camera";
-import { buildNavMeshGroup, parseNavMesh } from "../graphics/navmesh";
+import { addNavMesh, addZoneMesh } from "../graphics/region_scene";
 import { setupBaseScene } from "../graphics/scene";
 import { cleanupNode } from "../graphics/util";
 import { createViewer } from "../graphics/viewer";
-import { ColorKind, createZoneMesh, prepareMeshData } from "../graphics/ximesh";
 import { regionDifference } from "../regions";
 import type { Region, RegionsDiff, ZoneSide } from "../regions";
 import { COLORS, css } from "../theme";
 import type { ZoneData } from "../types";
 import { copyText } from "../util";
-
-THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
-THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
-THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 export const STATUS_COLOR = { added: COLORS.added, removed: COLORS.removed, reshaped: COLORS.reshaped, unchanged: COLORS.unchanged } as const;
 
@@ -77,35 +71,16 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
     const bytes = props.nav;
     if (zoneMesh) zoneMesh.visible = !bytes;
     if (!bytes) return;
-    const group = buildNavMeshGroup(parseNavMesh(bytes), {
-      showSurface: true,
-      showEdges: true,
-      colorByTile: false,
-      colorByComponent: false,
-      showOffMesh: false,
-      joinByLinks: false,
-      opacity: 0.55,
-    });
-    scene().add(group);
-    onCleanup(() => {
-      scene().remove(group);
-      cleanupNode(group);
-    });
+    onCleanup(addNavMesh(scene(), bytes));
   });
 
   createMemo(() => {
-    const prep = prepareMeshData(props.zoneData.mesh);
-    // Coloured by material as the editor does: the mesh is unlit, so one flat grey has no walls,
-    // no water and no floor in it, and a region on the map might as well be on a blank page.
-    const mesh = createZoneMesh(props.zoneData.id, props.zoneData.mesh, prep, ColorKind.Materials);
-    (mesh.geometry.getAttribute("color") as THREE.BufferAttribute).normalized = true;
-    (mesh.material as THREE.MeshBasicMaterial).color.setScalar(0.5); // quiet backdrop for the diff
+    // Quieter than the editor's: here the regions are the whole point.
+    const { mesh, dispose } = addZoneMesh(scene(), props.zoneData, 0.5);
     zoneMesh = mesh;
-    scene().add(mesh);
     scene().add(overlay);
     onCleanup(() => {
-      scene().remove(mesh);
-      cleanupNode(mesh);
+      dispose();
       if (zoneMesh === mesh) zoneMesh = undefined;
     });
   });
