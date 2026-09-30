@@ -2674,8 +2674,14 @@ export default function RegionEditor(props: RegionEditorProps) {
       finishDraw();
     };
 
+    // A tooltip for what was under the pointer goes when the pointer leaves the map.
+    const onMouseLeave = () => {
+      setHoleHover(null);
+      if (!spawnDrag) setHover(null);
+    };
     canvasElement.addEventListener("mousedown", onMouseDown);
     canvasElement.addEventListener("mousemove", onMouseMove);
+    canvasElement.addEventListener("mouseleave", onMouseLeave);
     canvasElement.addEventListener("mouseup", onMouseUp);
     canvasElement.addEventListener("click", onClick);
     canvasElement.addEventListener("contextmenu", onContextMenu);
@@ -2872,6 +2878,7 @@ export default function RegionEditor(props: RegionEditorProps) {
       window.removeEventListener("keydown", onKeyDown);
       canvasElement.removeEventListener("mousedown", onMouseDown);
       canvasElement.removeEventListener("mousemove", onMouseMove);
+      canvasElement.removeEventListener("mouseleave", onMouseLeave);
       canvasElement.removeEventListener("mouseup", onMouseUp);
       canvasElement.removeEventListener("click", onClick);
       canvasElement.removeEventListener("contextmenu", onContextMenu);
