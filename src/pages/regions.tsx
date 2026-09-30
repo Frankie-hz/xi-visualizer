@@ -1,6 +1,7 @@
 import { useBeforeLeave, useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import RegionEditor from "../components/region_editor";
+import { BTN, FIELD } from "../components/ui";
 import YamlView from "../components/yaml_view";
 import zones, { zoneFolders, zoneOfFolder } from "../data/zones";
 import {
@@ -94,10 +95,9 @@ const APP_SLUG = import.meta.env.VITE_GH_APP_SLUG || "lsb-roam-regions-editor";
 // One button vocabulary for the whole page. Anything that acts like a button looks like one,
 // including the links -- an <a> is the right element for something that opens github.com, but it
 // has no business being the only underlined blue thing in a row of buttons.
-const BTN = "px-2 py-1 rounded no-underline whitespace-nowrap";
-const BTN_PLAIN = `${BTN} bg-slate-700 hover:bg-slate-600 text-white`;
-const BTN_QUIET = `${BTN} bg-slate-600 hover:bg-slate-500 text-white`;
-const BTN_GO = `${BTN} bg-emerald-600 hover:bg-emerald-500 text-white`;
+const BTN_PLAIN = BTN.plain;
+const BTN_QUIET = BTN.quiet;
+const BTN_GO = BTN.go;
 
 /** What a first visit sees before a zone is picked: what this is for, and how a change gets in. */
 function RegionsIntro() {
@@ -989,12 +989,12 @@ export default function RegionsPage() {
   const [zoneMesh] = createResource(zoneId, id => loadZoneMesh(id, setStatus));
 
   return (
-    <section class="p-8">
+    <section class="p-8 plain-ui">
       <div class="flex flex-wrap items-center gap-3 text-sm">
         <h1 class="text-2xl font-bold mr-2">Spawn Regions</h1>
         {/* value depends on folders() so it re-applies once the options exist */}
         <select
-          class="px-2 py-1 bg-slate-700 rounded max-w-64"
+          class={`${FIELD} max-w-64`}
           value={folders().includes(params.zone ?? "") ? params.zone! : ""}
           title={local() ? "served from a local folder" : `${repo()}@${ref()}`}
           onChange={e => navigate(zoneHref(e.currentTarget.value))}
@@ -1022,8 +1022,7 @@ export default function RegionsPage() {
           </span>
           <Show when={!reviewing()}>
             <button
-              class={BTN}
-              classList={{ "bg-emerald-600 hover:bg-emerald-500 text-white": dirty() && !saving(), "bg-slate-700 text-slate-400": !dirty() || saving() }}
+              class={dirty() && !saving() ? BTN.go : BTN.plain}
               disabled={!dirty() || saving()}
               onClick={() => runSave()}
               title={local()
@@ -1054,8 +1053,7 @@ export default function RegionsPage() {
             </button>
           </Show>
           <button
-            class={BTN}
-            classList={{ "bg-slate-600 text-white": showYaml(), "bg-slate-700 hover:bg-slate-600 text-white": !showYaml() }}
+            class={showYaml() ? BTN.quiet : BTN.plain}
             title="Show the files as they would be written"
             onClick={() => setShowYaml(v => !v)}
           >
@@ -1071,7 +1069,7 @@ export default function RegionsPage() {
               Start a new branch
             </button>
             <button
-              class={confirmReset() ? `${BTN} bg-red-700 hover:bg-red-600 text-white` : BTN_PLAIN}
+              class={confirmReset() ? BTN.danger : BTN_PLAIN}
               title={`Delete ${branchName()} from your fork. The work on it is not recoverable from here, and an open pull request for it would be left with nothing to merge.`}
               onClick={() => (confirmReset() ? resetBranch() : setConfirmReset(true))}
               onBlur={() => setConfirmReset(false)}
@@ -1335,7 +1333,7 @@ export default function RegionsPage() {
               {files()!.folder} has changed on {ref()} since; Restore merges your edits onto the current version.
             </Show>
           </span>
-          <button class={`${BTN} bg-amber-600 hover:bg-amber-500 text-white`} onClick={restoreDraft}>Restore</button>
+          <button class={BTN.warn} onClick={restoreDraft}>Restore</button>
           <button class={BTN_QUIET} onClick={() => clearDraft(files()!.folder)}>Discard</button>
         </div>
       </Show>

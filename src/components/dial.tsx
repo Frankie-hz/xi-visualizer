@@ -17,7 +17,7 @@ export default function Dial(props: DialSpec) {
       <span class="w-24 shrink-0 whitespace-nowrap text-slate-300">{props.label}</span>
       <input
         type="range"
-        class="flex-1"
+        class="flex-1 min-w-0"
         min={props.min}
         max={props.max}
         step={props.step}

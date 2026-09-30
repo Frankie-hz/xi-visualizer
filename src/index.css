@@ -24,7 +24,9 @@ input:focus {
     @apply hover:cursor-pointer text-blue-200 hover:text-blue-400;
   }
 
-  button {
+  /* Pages marked .plain-ui style every control themselves (see components/ui.ts), so these
+     app-wide defaults stay out of their way instead of being overridden one class at a time. */
+  button:not(.plain-ui *) {
     @apply my-1 py-1.5 px-3 rounded-lg font-medium 
         text-center
         shadow-lg
@@ -37,11 +39,11 @@ input:focus {
         disabled:hover:border-slate-600;
   }
 
-  button.active {
+  button.active:not(.plain-ui *) {
     @apply bg-green-800;
   }
 
-  input, select {
+  input:not(.plain-ui *), select:not(.plain-ui *) {
     @apply block m-1 py-1 px-2 rounded-md
         bg-slate-700 border border-slate-400 
         placeholder:text-slate-400

@@ -1,6 +1,7 @@
 import { useSearchParams } from "@solidjs/router";
 import { createEffect, createResource, createSignal, ErrorBoundary, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import RegionDiffViewer, { STATUS_COLOR } from "../components/region_diff_viewer";
+import { BTN, FIELD } from "../components/ui";
 import zones, { zoneOfFolder } from "../data/zones";
 import { ghPublic, ghPublicPages, parsePr, rawUrl, UPSTREAM, UPSTREAM_BASE, ZONES_DIR } from "../github";
 import { storedToken } from "../github_auth";
@@ -301,7 +302,7 @@ export default function RegionsDiffPage() {
       ?? (headBranches.error && `${headRepo()}: ${(headBranches.error as Error).message}`);
 
   return (
-    <section class="p-8">
+    <section class="p-8 plain-ui">
       <div class="flex flex-wrap items-center gap-3 text-sm">
         <h1 class="text-2xl font-bold mr-2">Regions Diff</h1>
         <form
@@ -309,13 +310,13 @@ export default function RegionsDiffPage() {
           onSubmit={e => (e.preventDefault(), openPr())}
         >
           <input
-            class="px-2 py-1 bg-slate-700 rounded w-72"
+            class={`${FIELD} w-72`}
             placeholder="Paste a pull request link or number"
             value={pasted()}
             onInput={e => setPasted(e.currentTarget.value)}
           />
           <button
-            class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 disabled:hover:bg-emerald-600"
+            class={BTN.go}
             type="submit"
             disabled={!pasted().trim()}
           >
@@ -376,7 +377,7 @@ export default function RegionsDiffPage() {
               evidence the regions were drawn from, and they are only over there. */
           }
           <a
-            class="px-2 py-1 rounded no-underline whitespace-nowrap bg-slate-700 hover:bg-slate-600 text-white"
+            class={BTN.plain}
             href={editorHref()}
             title="Open this zone's proposed version in the editor, over the roam data, without being able to change it"
           >
@@ -670,7 +671,7 @@ function Picker(props: { options: string[]; value?: string; empty: string; onCha
     el.value = props.options.includes(props.value ?? "") ? props.value! : "";
   });
   return (
-    <select ref={el} class="px-2 py-1 bg-slate-700 rounded max-w-56" onChange={e => props.onChange(e.currentTarget.value)}>
+    <select ref={el} class={`${FIELD} max-w-56`} onChange={e => props.onChange(e.currentTarget.value)}>
       <option value="">{props.empty}</option>
       <For each={props.options}>{o => <option value={o}>{o}</option>}</For>
     </select>

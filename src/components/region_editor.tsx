@@ -3252,7 +3252,7 @@ export default function RegionEditor(props: RegionEditorProps) {
       <div class="w-80 flex flex-col bg-slate-800 rounded-lg p-2 overflow-hidden text-sm">
         <div class="flex gap-1 mb-2" role="tablist">
           <button
-            class="flex-1 px-2 py-1 rounded"
+            class="flex-1 px-1 py-1 rounded text-xs whitespace-nowrap"
             classList={{ "bg-slate-600": tab() === "regions", "bg-slate-700 text-slate-400": tab() !== "regions" }}
             role="tab"
             aria-selected={tab() === "regions"}
@@ -3261,7 +3261,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             Regions ({regions().length})
           </button>
           <button
-            class="flex-1 px-2 py-1 rounded"
+            class="flex-1 px-1 py-1 rounded text-xs whitespace-nowrap"
             classList={{ "bg-slate-600": tab() === "paths", "bg-slate-700 text-slate-400": tab() !== "paths" }}
             role="tab"
             aria-selected={tab() === "paths"}
@@ -3270,7 +3270,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             Routes ({Object.keys(paths()).length})
           </button>
           <button
-            class="flex-1 px-2 py-1 rounded"
+            class="flex-1 px-1 py-1 rounded text-xs whitespace-nowrap"
             classList={{ "bg-slate-600": tab() === "review", "bg-slate-700 text-slate-400": tab() !== "review" }}
             title="Checks every region and how well each covers its mobs' trails. Runs while this tab is open; ? means the regions have changed since the last check."
             role="tab"
@@ -3280,7 +3280,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             Review ({reviewStale() ? "?" : findings().filter(f => f.level !== "info").length})
           </button>
           <button
-            class="flex-1 px-2 py-1 rounded"
+            class="flex-1 px-1 py-1 rounded text-xs whitespace-nowrap"
             classList={{ "bg-slate-600": tab() === "history", "bg-slate-700 text-slate-400": tab() !== "history" }}
             role="tab"
             aria-selected={tab() === "history"}
