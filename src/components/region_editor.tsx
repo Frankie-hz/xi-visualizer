@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import * as THREE from "three";
 import { Line2, LineGeometry, LineMaterial, LineSegments2, LineSegmentsGeometry, MapControls } from "three/examples/jsm/Addons.js";
 import { convexHull, inRing, mostlyInside, ringDistance, signedArea, withinRing } from "../geometry";
@@ -44,6 +44,7 @@ import type { ZoneData } from "../types";
 import { copyText, isTyping } from "../util";
 import { CarvePanel, PlanPanel } from "./carve_panels";
 import { type DialSpec } from "./dial";
+import EditorMenu, { type MenuActions, type MenuTarget } from "./editor_menu";
 import { createHistory } from "./history";
 import HistoryTab from "./history_tab";
 import { CursorReadout, CursorTooltip, xyz } from "./map_overlays";
@@ -302,17 +303,7 @@ export default function RegionEditor(props: RegionEditorProps) {
   const [toast, setToast] = createSignal<{ text: string; warn: boolean; } | undefined>();
   const [rowFocus, setRowFocus] = createSignal<string | null>(null);
   const [pinnedId, setPinnedId] = createSignal<string | null>(null);
-  const [menu, setMenu] = createSignal<
-    | { x: number; y: number; }
-      & (
-        | { kind: "region"; name: string; }
-        | { kind: "hole"; name: string; index: number; }
-        | { kind: "ground"; name: string; x0: number; z0: number; }
-        | { kind: "spawn"; spawn: Spawn; }
-        | { kind: "route"; lead: string; }
-      )
-    | null
-  >(null);
+  const [menu, setMenu] = createSignal<MenuTarget | null>(null);
 
   // The menu opens at the cursor, which near the right or bottom edge put half of it off screen.
   // Pulled back inside once it has a size, and focused so the keyboard can reach it.
@@ -327,13 +318,6 @@ export default function RegionEditor(props: RegionEditorProps) {
       el.querySelector("button")?.focus({ preventScroll: true });
     });
   });
-
-  type Menu = NonNullable<ReturnType<typeof menu>>;
-  /** The open menu, if it is of this kind, typed as that kind. */
-  const menuAs = <K extends Menu["kind"]>(kind: K) => {
-    const m = menu();
-    return m?.kind === kind ? (m as Extract<Menu, { kind: K; }>) : null;
-  };
 
   // Hovering a dot on the map or a row in the member list picks out that mob's roam trail; clicking
   // the row pins it, so the trail stays put while you reshape the polygon around it.
@@ -2714,6 +2698,71 @@ export default function RegionEditor(props: RegionEditorProps) {
     });
   });
 
+  /** Grows a hole from its middle over the ground no member mob was recorded on. */
+  const growFromHole = (name: string, index: number) => {
+    const ring = regions().find(r => r.name === name)?.rings[index];
+    if (!ring?.length) return;
+    const x = ring.reduce((t, v) => t + v[0], 0) / ring.length;
+    const z = ring.reduce((t, v) => t + v[2], 0) / ring.length;
+    setGrow({ name, x, z, y: ring[0][1] });
+  };
+
+  const toggleReplay = (id: string) => {
+    if (replayId() === id) return setReplayId(null);
+    if (trailPoints([id]).length < 2) return flash(`no roam trail for ${props.spawns.find(s => s.id === id)?.name ?? id}`, "warn");
+    setReplayId(id);
+  };
+
+  const assignToActive = (spawn: Spawn) => {
+    const name = activeName();
+    if (!name) return;
+    checkpoint(`assign ${spawn.name} to ${name}`);
+    setAssign(a => ({ ...a, [spawn.id]: [name] }));
+  };
+
+  /** Drops a route and every mob walking it with the lead, as one step. */
+  const dropRouteGroup = (ids: string[]) => {
+    checkpoint(`drop the route for ${mobs(ids.length)}`);
+    setPaths(all => {
+      const next = { ...all };
+      for (const id of ids) delete next[id];
+      return next;
+    });
+    if (ids.includes(walker() ?? "")) editWalker(null);
+    flash(`dropped the route for ${mobs(ids.length)}`);
+  };
+
+  const menuActions: MenuActions = {
+    canEdit,
+    close: () => setMenu(null),
+    mobsIn: name => props.spawns.filter(s => assign()[s.id]?.includes(name)).length,
+    toRoute: convertToPatrol,
+    repair: repairShape,
+    centre: centerOn,
+    deleteRegion,
+    holeArea: (name, index) => Math.abs(signedArea(regions().find(r => r.name === name)?.rings[index] ?? [])),
+    nearHoles: (name, index) => {
+      const r = regions().find(x => x.name === name);
+      return r ? nearHoles(r, index, mergeReach()).length : 0;
+    },
+    mergeReach,
+    merge: (name, index) => setMerge({ name, index }),
+    grow: growFromHole,
+    deleteHole,
+    holeFromRoam: (name, x, z) => setGrow({ name, x, z, y: lastYOf(name, x, z) }),
+    traceRoute: startPath,
+    replaying: id => replayId() === id,
+    toggleReplay,
+    assignTarget: activeName,
+    assign: assignToActive,
+    flyTo: s => flyTo(s.x, s.y, s.z),
+    group: lead => routeGroups().find(g => g.lead === lead),
+    nameOf: id => props.spawns.find(s => s.id === id)?.name ?? id,
+    editLegs: selectRoute,
+    retrace,
+    dropRoute: dropRouteGroup,
+  };
+
   const jumpTo = (f: Finding) => {
     if (f.spawnId) {
       const s = props.spawns.find(x => x.id === f.spawnId);
@@ -2953,168 +3002,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         </Show>
         <Show when={cursor()}>{at => <CursorReadout at={at()} onCopy={copy} />}</Show>
         <Show when={menu()}>
-          <div
-            ref={menuElement}
-            role="menu"
-            class="fixed z-[100] min-w-44 bg-slate-900 border border-slate-600 rounded shadow-lg py-1 text-xs"
-            style={{ left: `${menu()!.x}px`, top: `${menu()!.y}px` }}
-          >
-            <Show when={menuAs("region")?.name}>
-              {name => (
-                <>
-                  <div class="px-3 py-1 text-slate-500">{name()}</div>
-                  <Show when={canEdit()}>
-                    <MenuItem
-                      onClick={() => (convertToPatrol(name()), setMenu(null))}
-                    >
-                      Turn into a route ({mobs(props.spawns.filter(s => assign()[s.id]?.includes(name())).length)})
-                    </MenuItem>
-                    <MenuItem onClick={() => (repairShape(name()), setMenu(null))}>
-                      Repair the shape
-                    </MenuItem>
-                  </Show>
-                  <MenuItem onClick={() => (centerOn(name()), setMenu(null))}>
-                    Centre on it
-                  </MenuItem>
-                  <Show when={canEdit()}>
-                    <MenuItem danger onClick={() => (deleteRegion(name()), setMenu(null))}>
-                      Delete region
-                    </MenuItem>
-                  </Show>
-                </>
-              )}
-            </Show>
-            <Show when={menuAs("hole")}>
-              {hole => (
-                <>
-                  <div class="px-3 py-1 text-slate-500">
-                    {hole().name} · hole {hole().index} · {Math.abs(signedArea(active()?.rings[hole().index] ?? [])).toFixed(0)} y²
-                  </div>
-                  <MenuItem
-                    onClick={() => (setMerge({ name: hole().name, index: hole().index }), setMenu(null))}
-                  >
-                    Merge nearby holes… ({active() ? nearHoles(active()!, hole().index, mergeReach()).length : 0} within {mergeReach()}y)
-                  </MenuItem>
-                  <MenuItem
-                    title="Grow this hole over the ground around it that no member mob was recorded on"
-                    onClick={() => {
-                      const p = { x: 0, z: 0 };
-                      const ring = active()?.rings[hole().index];
-                      if (ring) (p.x = ring.reduce((t, v) => t + v[0], 0) / ring.length, p.z = ring.reduce((t, v) => t + v[2], 0) / ring.length);
-                      setGrow({ name: hole().name, x: p.x, z: p.z, y: ring?.[0]?.[1] ?? 0 });
-                      setMenu(null);
-                    }}
-                  >
-                    Grow to roam data…
-                  </MenuItem>
-                  <MenuItem
-                    danger
-                    onClick={() => (deleteHole(hole().name, hole().index), setMenu(null))}
-                  >
-                    Delete hole
-                  </MenuItem>
-                </>
-              )}
-            </Show>
-            <Show when={menuAs("ground")}>
-              {spot => (
-                <>
-                  <div class="px-3 py-1 text-slate-500">{spot().name} · {spot().x0.toFixed(1)}, {spot().z0.toFixed(1)}</div>
-                  <MenuItem
-                    title="Cut a hole over the ground around this spot that no member mob was recorded on"
-                    onClick={() => {
-                      setGrow({ name: spot().name, x: spot().x0, z: spot().z0, y: lastYOf(spot().name, spot().x0, spot().z0) });
-                      setMenu(null);
-                    }}
-                  >
-                    Hole from roam data…
-                  </MenuItem>
-                </>
-              )}
-            </Show>
-            <Show when={menuAs("spawn")?.spawn}>
-              {spawn => (
-                <>
-                  <div class="px-3 py-1 text-slate-500">{spawn().name} {spawn().id}</div>
-                  <Show when={canEdit()}>
-                    <MenuItem
-                      onClick={() => (startPath(spawn()), setMenu(null))}
-                    >
-                      Trace a route
-                    </MenuItem>
-                  </Show>
-                  <MenuItem
-                    onClick={() => {
-                      setMenu(null);
-                      if (replayId() === spawn().id) return setReplayId(null);
-                      if (trailPoints([spawn().id]).length < 2) return flash(`no roam trail for ${spawn().name}`, "warn");
-                      setReplayId(spawn().id);
-                    }}
-                  >
-                    {replayId() === spawn().id ? "Stop the replay" : "Replay its trail"}
-                  </MenuItem>
-                  <Show when={canEdit() && activeName()}>
-                    <MenuItem
-                      onClick={() => {
-                        checkpoint(`assign ${spawn().name} to ${activeName()}`);
-                        setAssign(a => ({ ...a, [spawn().id]: [activeName()!] }));
-                        setMenu(null);
-                      }}
-                    >
-                      Assign to {activeName()}
-                    </MenuItem>
-                  </Show>
-                  <MenuItem onClick={() => (flyTo(spawn().x, spawn().y, spawn().z), setMenu(null))}>
-                    Centre on it
-                  </MenuItem>
-                </>
-              )}
-            </Show>
-            <Show when={menuAs("route") && routeGroups().find(g => g.lead === menuAs("route")!.lead)}>
-              {group => (
-                <>
-                  <div class="px-3 py-1 text-slate-500">
-                    {props.spawns.find(s => s.id === group().lead)?.name ?? group().lead}
-                    {group().ids.length > 1 ? ` and ${group().ids.length - 1} more` : ""}
-                  </div>
-                  <Show when={canEdit()}>
-                    <MenuItem onClick={() => (selectRoute(group().lead), setMenu(null))}>
-                      Edit the legs
-                    </MenuItem>
-                    <MenuItem onClick={() => (retrace(group().lead), setMenu(null))}>
-                      Re-trace from the roam trail
-                    </MenuItem>
-                  </Show>
-                  <MenuItem
-                    onClick={() => (setReplayId(replayId() === group().lead ? null : group().lead), setMenu(null))}
-                  >
-                    {replayId() === group().lead ? "Stop the replay" : "Replay the trail it came from"}
-                  </MenuItem>
-                  <Show when={canEdit()}>
-                    <MenuItem
-                      danger
-                      onClick={() => {
-                        // Read the group before dropping it: the accessor is gone the moment the
-                        // routes it was built from are, and reading it then throws.
-                        const ids = [...group().ids];
-                        checkpoint(`drop the route for ${mobs(ids.length)}`);
-                        setPaths(all => {
-                          const next = { ...all };
-                          for (const id of ids) delete next[id];
-                          return next;
-                        });
-                        if (ids.includes(walker() ?? "")) editWalker(null);
-                        flash(`dropped the route for ${mobs(ids.length)}`);
-                        setMenu(null);
-                      }}
-                    >
-                      Drop the route
-                    </MenuItem>
-                  </Show>
-                </>
-              )}
-            </Show>
-          </div>
+          {target => <EditorMenu target={target()} ref={el => (menuElement = el)} actions={menuActions} />}
         </Show>
         <Show when={toast()}>
           <div
@@ -3273,20 +3161,5 @@ export default function RegionEditor(props: RegionEditorProps) {
         </Show>
       </div>
     </div>
-  );
-}
-
-/** One entry in the map's context menu. `danger` for the ones that delete something. */
-function MenuItem(props: { danger?: boolean; title?: string; onClick: () => void; children: JSX.Element; }) {
-  return (
-    <button
-      role="menuitem"
-      class="block w-full text-left px-3 py-1 hover:bg-slate-700 focus:bg-slate-700 outline-none"
-      classList={{ "text-red-400": props.danger }}
-      title={props.title}
-      onClick={() => props.onClick()}
-    >
-      {props.children}
-    </button>
   );
 }
