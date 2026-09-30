@@ -22,13 +22,20 @@ export function addZoneMesh(scene: THREE.Object3D, zone: ZoneData, brightness: n
   const mesh = createZoneMesh(zone.id, zone.mesh, prep, ColorKind.Materials);
   // ximesh writes byte colours without flagging them normalized, which blows them out to white.
   (mesh.geometry.getAttribute("color") as THREE.BufferAttribute).normalized = true;
-  (mesh.material as THREE.MeshBasicMaterial).color.setScalar(brightness);
-  scene.add(mesh);
+  // Lit, from a low sun off to one side: unlit, a hillside and the flat beside it were one colour,
+  // and a vertex that had climbed a wall looked like one that had not.
+  (mesh.material as THREE.Material).dispose();
+  const lit = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.FrontSide });
+  lit.color.setScalar(brightness * 1.25);
+  (mesh as THREE.Mesh).material = lit;
+  const sun = new THREE.DirectionalLight(0xfff4e0, 1.2);
+  sun.position.set(-400, 900, 250);
+  scene.add(mesh, sun, sun.target);
   return {
     mesh,
     prep,
     dispose: () => {
-      scene.remove(mesh);
+      scene.remove(mesh, sun, sun.target);
       cleanupNode(mesh);
     },
   };
