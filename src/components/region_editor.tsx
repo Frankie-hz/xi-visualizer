@@ -1783,6 +1783,33 @@ export default function RegionEditor(props: RegionEditorProps) {
   const AMBER = 0xffb020;
   const VIOLET = 0xc084fc;
 
+  /** The region under the cursor while none is selected, drawn glowing in its own colour. */
+  const [hoverRegion, setHoverRegion] = createSignal<string | null>(null);
+  let glow: LineMaterial | undefined;
+  createEffect(() => {
+    const name = hoverRegion();
+    const r = name && !active() ? regions().find(x => x.name === name) : undefined;
+    if (!r) return;
+    const material = new LineMaterial({ color: colorOf(r.name).getHex(), linewidth: 4, depthTest: false, transparent: true });
+    const lines: Line2[] = [];
+    // The outline alone: glowing every hole too turned a carved region into a cluster of blobs.
+    for (const ring of r.rings.slice(0, 1)) {
+      if (ring.length < 2) continue;
+      const geo = new LineGeometry();
+      geo.setPositions([...ring.flat(), ...ring[0]]);
+      const line = new Line2(geo, material);
+      line.renderOrder = 5;
+      scene().add(line);
+      lines.push(line);
+    }
+    glow = material;
+    onCleanup(() => {
+      for (const line of lines) (scene().remove(line), line.geometry.dispose());
+      material.dispose();
+      if (glow === material) glow = undefined;
+    });
+  });
+
   /**
    * The batch whose button the pointer is on. What Ring all or Cut patches would take is shown
    * before it is taken, loudly: the part of each ring over ground the region still has (exactly
@@ -2284,6 +2311,12 @@ export default function RegionEditor(props: RegionEditorProps) {
         }
         stepReplay(dt);
         flashFrame(canvasElement.clientWidth, canvasElement.clientHeight);
+        if (glow) {
+          const beat = 0.5 + 0.5 * Math.sin(performance.now() / 260);
+          glow.linewidth = 3 + 4 * beat;
+          glow.opacity = 0.55 + 0.45 * beat;
+          glow.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
+        }
       },
       onAfterRender: () => placeLabels(),
     });
@@ -2433,7 +2466,18 @@ export default function RegionEditor(props: RegionEditorProps) {
 
     const onMouseMove = (ev: MouseEvent) => {
       aim(ev);
-      setCursor(groundPoint());
+      const ground = groundPoint();
+      setCursor(ground);
+      // With nothing selected, the region under the cursor is the one a click would pick.
+      if (!drag && !spawnDrag && mode() === "select" && !active()) {
+        const p = ground;
+        const name = p ? regionAt(asSet(regions()), p.x, p.z, p.y) : null;
+        setHoverRegion(name);
+        canvasElement.style.cursor = name ? "pointer" : "";
+      } else if (hoverRegion()) {
+        setHoverRegion(null);
+        canvasElement.style.cursor = "";
+      }
       if (!drag && !spawnDrag && mode() === "select" && canEdit()) {
         const act = active();
         const p = act ? pickZonePoint(lastY(act)) : null;
