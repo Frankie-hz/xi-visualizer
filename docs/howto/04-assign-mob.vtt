@@ -1,0 +1,33 @@
+WEBVTT
+
+1
+00:00:01.119 --> 00:00:12.521
+This is Valkurm Dunes. A mob with no region spawns on the same fixed point every time. Assigned to a region, it spawns anywhere inside it instead.
+
+2
+00:00:12.521 --> 00:00:25.522
+The mob list on the left has a Fixed filter for the mobs still on a point. Type in the box to narrow it down, here to the goblin bounty hunters.
+
+3
+00:00:25.523 --> 00:00:30.522
+Hovering a row shows that mob's recorded trail on the map.
+
+4
+00:00:30.522 --> 00:00:38.725
+Its trail lies almost entirely inside region thirty-nine, the same ground that region's other mobs roam. Select that region.
+
+5
+00:00:38.725 --> 00:00:46.925
+With a region selected, each row has a plus button. Click it to assign the mob to the region.
+
+6
+00:00:46.925 --> 00:00:59.125
+To place every unplaced mob standing inside the selected region at once, use Assign inside, under the region list. The count on it says how many it will take.
+
+7
+00:00:59.126 --> 00:01:12.127
+Both goblins now spawn anywhere in region thirty-nine. The list shows the region each one belongs to, and with hide mobs that have a region ticked, their dots leave the map.
+
+8
+00:01:12.127 --> 00:01:22.729
+A mob's row also has a right-click menu, and the cross beside it in the region's mob list takes it back out. Save when done.

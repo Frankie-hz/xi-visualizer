@@ -1,0 +1,41 @@
+WEBVTT
+
+1
+00:00:00.719 --> 00:00:19.720
+This is Jugner Forest. Every tree or rock inside a region that is not cut out as a hole is ground where the server may try to spawn a mob. Cutting them one at a time is slow; the Carve holes tool finds them for you.
+
+2
+00:00:19.720 --> 00:00:26.327
+Select the region, here east three-ten. Some of its trees have holes, several do not.
+
+3
+00:00:26.327 --> 00:00:37.731
+The Spawns button shows it: green is where the server would put a mob, red a spot it throws away because it is off the walkable ground.
+
+4
+00:00:37.732 --> 00:00:47.932
+Open Carve holes. Amber outlines are obstacles found in the zone's collision mesh; violet dashed ones are patches no mob was ever recorded on.
+
+5
+00:00:47.933 --> 00:00:52.136
+Hover Ring all to preview everything it would cut.
+
+6
+00:00:52.136 --> 00:00:56.046
+Click it, and each obstacle becomes a hole.
+
+7
+00:00:56.046 --> 00:01:05.848
+Cut patches does the same for the empty ground. The clearance dial above it keeps each patch that far from where mobs walked.
+
+8
+00:01:05.849 --> 00:01:24.049
+A cut that would split the region in two is left alone, and says so. Anything left dashed is too big for Ring all, usually a cliff or a hillside: click it on the map to cut it on its own, or leave it.
+
+9
+00:01:24.049 --> 00:01:32.654
+Press Escape to leave the tool. The new holes are ordinary holes: drag, grow or delete them like any other.
+
+10
+00:01:32.654 --> 00:01:41.256
+Every cut is one step in History, so Control Z takes back the last one if it went too far.

@@ -1,0 +1,37 @@
+WEBVTT
+
+1
+00:00:00.488 --> 00:00:13.094
+This is the spawn regions editor, open on West Ronfaure. Each coloured shape is a region: when a mob placed by it spawns, the server picks a spot somewhere inside.
+
+2
+00:00:13.094 --> 00:00:26.897
+Opening the Review tab checks every region against the recorded trails. Back in the list, each region now shows how much of its mobs' trails it covers. North-west one-twelve is at eighty-five percent.
+
+3
+00:00:26.898 --> 00:00:35.098
+Click the region in the list, or on the map, to select it. The editor zooms in on it.
+
+4
+00:00:35.098 --> 00:00:47.299
+The dots are roam trails: where this region's own mobs were actually recorded walking. Here they spill past the edge, onto ground the server will never spawn them on.
+
+5
+00:00:47.300 --> 00:01:00.701
+Drag the corners out, one by one, until the dots are inside. The big squares are corners; the small ones in the middle of an edge add a new corner when dragged.
+
+6
+00:01:00.701 --> 00:01:08.505
+A corner you don't want goes with a right-click on it, and Control Z undoes the last change.
+
+7
+00:01:08.505 --> 00:01:19.106
+For a region that is off everywhere, Refit rebuilds the whole outline from its mobs' trails in one go. Here, a few corners were enough.
+
+8
+00:01:19.107 --> 00:01:32.512
+Open Review again to recount, and back in the list the coverage has gone up. That figure is the one to watch, since it is measured against where the mobs really went.
+
+9
+00:01:32.512 --> 00:01:41.512
+When the outline looks right, sign in and Save: the change goes to your own branch, ready for a pull request.

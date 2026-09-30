@@ -2693,6 +2693,44 @@ export default function RegionEditor(props: RegionEditorProps) {
 
     if (spawnPoints) fitCameraToContents(camera(), controls, fn => fn(spawnPoints!));
 
+    // For scripts that drive the editor in a browser (scripts/howto): where things are on screen,
+    // and what the editor holds. The dev server only; a build carries none of it.
+    if (import.meta.env.DEV) {
+      (window as any).__regionEditor = {
+        /** Screen position, in page pixels, of a zone point. */
+        project: (x: number, y: number, z: number) => {
+          const v = new THREE.Vector3(x, -y, -z).project(camera());
+          const rect = canvasElement.getBoundingClientRect();
+          return { x: rect.left + (v.x * 0.5 + 0.5) * rect.width, y: rect.top + (-v.y * 0.5 + 0.5) * rect.height, onScreen: v.z < 1 };
+        },
+        regions: () => regions(),
+        active: () => activeName(),
+        assign: () => assign(),
+        spawns: () => props.spawns,
+        coverage: () => coverage(),
+        /** Glides to frame a zone point from a distance, keeping the view angle. */
+        look: (x: number, y: number, z: number, distance = 60, ms = 1200) =>
+          new Promise<void>(done => {
+            const dir = new THREE.Vector3().subVectors(camera().position, controls!.target).normalize();
+            const fromTarget = controls!.target.clone(), fromPos = camera().position.clone();
+            const toTarget = new THREE.Vector3(x, -y, -z);
+            const toPos = toTarget.clone().addScaledVector(dir, distance);
+            const start = performance.now();
+            const step = () => {
+              const t = Math.min(1, (performance.now() - start) / ms), e = t * t * (3 - 2 * t);
+              controls!.target.lerpVectors(fromTarget, toTarget, e);
+              camera().position.lerpVectors(fromPos, toPos, e);
+              controls!.update();
+              if (t < 1) requestAnimationFrame(step);
+              else done();
+            };
+            step();
+          }),
+        trail: (id: string) => trailPoints([id]),
+      };
+      onCleanup(() => delete (window as any).__regionEditor);
+    }
+
     // A shared link opens where it was taken, over the default framing.
     const opened = props.view;
     if (opened?.camera?.length === 6 && opened.camera.every(Number.isFinite)) {

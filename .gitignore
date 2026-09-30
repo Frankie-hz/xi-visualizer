@@ -5,3 +5,4 @@ dist
 public/pathdata_gz
 .dev.vars
 .idea/
+docs/howto/*.webm
