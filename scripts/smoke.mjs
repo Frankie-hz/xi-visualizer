@@ -140,6 +140,25 @@ try {
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
 
+  // a plan from the roam data opens from the map's menu, takes the map, and Esc hands it back
+  const spot = await label("e_46");
+  await page.evaluate(() =>
+    [...document.querySelectorAll('div[title*="right-click for more"]')].find(d => d.style.display === "block" && d.innerText.startsWith("e_46")).click()
+  );
+  await settle(1500);
+  await page.mouse.click(spot.x + 40, spot.y + 40, { button: "right" });
+  await settle(500);
+  const planMenu = (await menu()) ?? "";
+  assert.match(planMenu, /roam data/, `the menu inside the region offers a hole from the roam data, got "${planMenu}"`);
+  await clickMenu("roam data");
+  await settle(1500);
+  assert.match(await text(), /Hole from roam data/i, "the plan panel opened");
+  await page.keyboard.press("Escape");
+  await settle(400);
+  assert.doesNotMatch(await text(), /Hole from roam data/i, "and Esc closed it");
+  assert.match(await text(), /Editing region e_46/, "leaving the region selected");
+  await page.keyboard.press("Escape");
+
   // reviewing: the same menu offers nothing that changes the zone, and a click still selects
   await page.goto(`${URL}?review=1`, { waitUntil: "domcontentloaded" });
   await settle(ZONE_READY);

@@ -71,6 +71,28 @@ interface RegionEditorProps {
 
 // "obstacles" is a click mode too: each click rings the steep faces under it with a hole.
 type Mode = "select" | "draw" | "obstacles";
+
+interface GrowPlan {
+  name: string;
+  x: number;
+  z: number;
+  y: number;
+}
+interface MergePlan {
+  name: string;
+  index: number;
+}
+/**
+ * What the map is doing with a click. One of these at a time: kept as separate flags they could all
+ * be set at once, and a click then did whichever branch came first, under a panel that belonged to
+ * another. A grow or merge plan remembers the tool it was opened from, to go back to.
+ */
+type Tool =
+  | { kind: "select"; }
+  | { kind: "draw"; /** Which ring of the active region a click adds to; routes ignore it. */ ring: number; }
+  | { kind: "carve"; }
+  | { kind: "grow"; plan: GrowPlan; back: "select" | "carve"; }
+  | { kind: "merge"; plan: MergePlan; back: "select" | "carve"; };
 /** Grid the collision mesh's steep faces are read on, in yalms. */
 const OBSTACLE_CELL = 0.5;
 
@@ -105,7 +127,39 @@ export default function RegionEditor(props: RegionEditorProps) {
     props.assign ?? Object.fromEntries(props.spawns.filter(s => s.regions?.length).map(s => [s.id, s.regions!])),
   );
   const [activeName, setActiveName] = createSignal<string | null>(null);
-  const [mode, setMode] = createSignal<Mode>("select");
+  const [tool, setTool] = createSignal<Tool>({ kind: "select" });
+  /** The click mode, as the handlers read it. A plan keeps the mode it was opened from. */
+  const mode = (): Mode => {
+    const t = tool();
+    if (t.kind === "draw") return "draw";
+    if (t.kind === "carve") return "obstacles";
+    if (t.kind === "select") return "select";
+    return t.back === "carve" ? "obstacles" : "select";
+  };
+  const setMode = (next: Mode | ((now: Mode) => Mode)) => {
+    const m = typeof next === "function" ? next(mode()) : next;
+    setTool(m === "draw" ? { kind: "draw", ring: 0 } : m === "obstacles" ? { kind: "carve" } : { kind: "select" });
+  };
+  const planBack = () => (mode() === "obstacles" ? "carve" : "select") as "select" | "carve";
+  const grow = () => {
+    const t = tool();
+    return t.kind === "grow" ? t.plan : null;
+  };
+  /** Opens a grow plan, or closes the one open and goes back to where it was opened from. */
+  const setGrow = (plan: GrowPlan | null) => {
+    const t = tool();
+    if (plan) setTool({ kind: "grow", plan, back: planBack() });
+    else if (t.kind === "grow") setTool({ kind: t.back });
+  };
+  const merge = () => {
+    const t = tool();
+    return t.kind === "merge" ? t.plan : null;
+  };
+  const setMerge = (plan: MergePlan | null) => {
+    const t = tool();
+    if (plan) setTool({ kind: "merge", plan, back: planBack() });
+    else if (t.kind === "merge") setTool({ kind: t.back });
+  };
   // Patrol routes, keyed by the spawn that walks them. A spawn has a region or a route, never both.
   const [paths, setPaths] = createSignal<Record<string, Patrol>>(
     props.paths ?? Object.fromEntries(props.spawns.filter(s => s.path).map(s => [s.id, { legs: s.path!, loop: s.loop }])),
@@ -173,7 +227,6 @@ export default function RegionEditor(props: RegionEditorProps) {
    * already there). It is the data's own answer to "how big is this obstacle": the samples stop
    * where the mobs stopped. Two steps, like a merge: a plan with a dial, then Apply.
    */
-  const [grow, setGrow] = createSignal<{ name: string; x: number; z: number; y: number; } | null>(null);
   const [growClearance, setGrowClearance] = createSignal(OBSTACLE_DEFAULTS.clearance);
   const growPlan = createMemo(() => {
     const g = grow();
@@ -211,7 +264,6 @@ export default function RegionEditor(props: RegionEditorProps) {
    * Apply commits it. The merged hole is the convex hull of the group's vertices, since two
    * obstacles a mob cannot pass between are one obstacle to it. Undo brings the pieces back.
    */
-  const [merge, setMerge] = createSignal<{ name: string; index: number; } | null>(null);
   const [mergeReach, setMergeReach] = createSignal(OBSTACLE_DEFAULTS.reach);
   const mergePlan = createMemo(() => {
     const m = merge();
@@ -1153,11 +1205,11 @@ export default function RegionEditor(props: RegionEditorProps) {
   // Which ring of the active region a click in draw mode adds to: the outline, or the hole that
   // "+ Hole" just started. Always the last ring, as it was, sent Draw on a region with holes into
   // the newest hole rather than the outline.
-  const [drawRing, setDrawRing] = createSignal(0);
-  const startDraw = (ring: number) => {
-    setDrawRing(ring);
-    setMode("draw");
+  const drawRing = () => {
+    const t = tool();
+    return t.kind === "draw" ? t.ring : 0;
   };
+  const startDraw = (ring: number) => setTool({ kind: "draw", ring });
   const startHole = () => {
     const r = active();
     if (!r) return;
@@ -1170,6 +1222,7 @@ export default function RegionEditor(props: RegionEditorProps) {
    * so backing out of "+ Region" or "+ Hole" leaves neither an empty row nor a no-op in History.
    */
   const finishDraw = () => {
+    const k = drawRing();
     setMode("select");
     const id = walker();
     if (id) {
@@ -1178,7 +1231,6 @@ export default function RegionEditor(props: RegionEditorProps) {
       return;
     }
     const r = active();
-    const k = drawRing();
     if (!r || (r.rings[k]?.length ?? 3) >= 3) return;
     const started = undoStack().at(-1)?.label;
     if (k === 0 && started === "add a region") {
@@ -2359,11 +2411,13 @@ export default function RegionEditor(props: RegionEditorProps) {
         if (p) copy(`!pos ${xyz(p)}`);
         return;
       }
+      // A grow or merge plan is open over the map: its preview is what is being decided on, from
+      // whichever tool it was opened in.
+      if (grow() || merge()) return;
       if (canEdit() && mode() !== "obstacles" && pickHandle()) return;
 
       if (mode() === "obstacles") {
-        // A grow or merge plan is open over the map: its preview is what is being decided on.
-        if (grow() || merge() || cutting()) return;
+        if (cutting()) return;
         const p = pickZonePoint(lastY(active()));
         const o = p && obstacleAt(obstacles(), p.x, p.z, obstacleMargin(), OBSTACLE_CELL);
         if (o) ringObstacles([o]);
@@ -2467,9 +2521,9 @@ export default function RegionEditor(props: RegionEditorProps) {
       if (mode() !== "draw") {
         // Not drawing, so there is nothing to finish: Escape backs out of whatever is selected.
         if (ev.key !== "Escape") return;
-        if (grow()) setGrow(null);
-        else if (merge()) setMerge(null);
-        else if (mode() === "obstacles") setMode("select");
+        const t = tool();
+        if (t.kind === "grow" || t.kind === "merge") setTool({ kind: t.back });
+        else if (t.kind === "carve") setMode("select");
         else if (replayId()) setReplayId(null);
         else if (walker()) editWalker(null);
         else setActiveName(null);
