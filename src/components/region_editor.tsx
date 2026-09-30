@@ -594,6 +594,9 @@ export default function RegionEditor(props: RegionEditorProps) {
   // to be one obstacle, how tall and how wide an obstacle must be to show at all, and how big one
   // may be before "ring all" skips it.
   const TALL_FACE = 2; // yalms of face height in one cell: a trunk or a rock wall, not a bank or a root
+  // How far above and below the walked ground a steep face may lie and still stand on this storey.
+  const STOREY_ABOVE = 3;
+  const STOREY_BELOW = 2;
   const [obstacleMargin, setObstacleMargin] = createSignal(OBSTACLE_DEFAULTS.margin); // yalms
   const [obstacleSlope, setObstacleSlope] = createSignal(OBSTACLE_DEFAULTS.slope); // degrees from level
   const [obstacleJoin, setObstacleJoin] = createSignal(OBSTACLE_DEFAULTS.join); // yalms
@@ -767,7 +770,14 @@ export default function RegionEditor(props: RegionEditorProps) {
       const z = (pos[o + 2] + pos[o + 5] + pos[o + 8]) / 3;
       // Inside the outline, holes included: an obstacle half inside an old hole is still one
       // obstacle, and its ring is what grows that hole to fit it.
-      return x >= minX && x <= maxX && z >= minZ && z <= maxZ && inRing(r.rings[0], x, z);
+      if (x < minX || x > maxX || z < minZ || z > maxZ || !inRing(r.rings[0], x, z)) return false;
+      // And on this storey: a face that never comes near the ground the mobs walk on here is a
+      // wall of the floor above or below, which in a zone of storeys lies under the same outline
+      // and was ringed as a 25-yalm "cliff" across open floor. y points down, so above is less.
+      const ground = sampleFloor(x, z, lastYOf(r.name, x, z));
+      const top = Math.min(pos[o + 1], pos[o + 4], pos[o + 7]);
+      const bottom = Math.max(pos[o + 1], pos[o + 4], pos[o + 7]);
+      return top <= ground + STOREY_BELOW && bottom >= ground - STOREY_ABOVE - obstacleClimb();
     };
     const scan = { cell: OBSTACLE_CELL, up, join: obstacleJoin(), climb: obstacleClimb(), avoid: walkedCells(), keep };
     const found = findObstacles(pos, scan);
