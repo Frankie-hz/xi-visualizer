@@ -1,18 +1,18 @@
-export async function compress(inString) {
+export async function compress(inString: BodyInit) {
   const compressedStream = new Response(inString).body!.pipeThrough(
     new CompressionStream("deflate"),
   );
   return await new Response(compressedStream).arrayBuffer();
 }
 
-export async function decompress(bytes, format: CompressionFormat = "deflate") {
+export async function decompress(bytes: BodyInit, format: CompressionFormat = "deflate") {
   const decompressedStream = new Response(bytes).body!.pipeThrough(
     new DecompressionStream(format),
   );
   return await new Response(decompressedStream).arrayBuffer();
 }
 
-export async function fetchProgress(url: string, setProgress: (progress: number) => any): Promise<ArrayBuffer> {
+export async function fetchProgress(url: string, setProgress: (progress: number | undefined) => void): Promise<ArrayBuffer> {
   const response = await fetch(url);
   if (!response.ok) {
     const error: any = new Error(`${url.split("/").pop()} → HTTP ${response.status}`);
@@ -23,7 +23,7 @@ export async function fetchProgress(url: string, setProgress: (progress: number)
   const contentLength = response.headers.get("content-length");
   const total = contentLength ? parseInt(contentLength, 10) : null;
 
-  const reader = response.body.getReader();
+  const reader = response.body!.getReader();
   const chunks: Uint8Array<ArrayBuffer>[] = [];
   let bytesRead = 0;
 

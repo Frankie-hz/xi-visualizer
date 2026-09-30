@@ -533,7 +533,7 @@ export default function RegionsDiffPage() {
               </Show>
 
               {/* Two pins and a line between them say a spawn changed region; this says which way. */}
-              <Show when={focus()?.spawn && sides()!.diff.moved.find(m => m.id === focus()!.spawn)}>
+              <Show when={sides()!.diff.moved.find(m => m.id === focus()?.spawn)}>
                 {found => (
                   <div class="absolute top-10 left-2 bg-slate-900/85 rounded px-3 py-2 text-sm pointer-events-none">
                     <span class="text-slate-300">{found().name}</span> <span class="text-slate-500">{found().id}</span>

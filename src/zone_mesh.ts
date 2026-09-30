@@ -1,5 +1,5 @@
-import type { ZoneData } from "./components/zone_model";
 import zones from "./data/zones";
+import type { ZoneData } from "./types";
 import { decompress, fetchProgress } from "./util";
 
 /** How a zone's name is spelled in the ximesh and navmesh file names. */

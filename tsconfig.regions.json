@@ -1,0 +1,7 @@
+{
+  // The regions tool, held to strict typing. The rest of the app is not yet, so it keeps the looser
+  // tsconfig.json; everything these pages import is checked strictly along with them.
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "strict": true, "noUnusedLocals": true, "noEmit": true },
+  "include": ["src/pages/regions.tsx", "src/pages/regions_diff.tsx", "src/vite-env.d.ts"]
+}

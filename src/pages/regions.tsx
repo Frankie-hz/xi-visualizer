@@ -25,7 +25,6 @@ import {
   whoAmI,
   ZONES_DIR,
 } from "../github";
-import type { ZoneOnBranch } from "../github";
 import { canSignIn, completeSignIn, isCallback, signOut, startSignIn as beginSignIn, storedToken } from "../github_auth";
 import {
   commitMessage,

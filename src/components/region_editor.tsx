@@ -31,12 +31,12 @@ import type { Finding, Patrol, Region, RegionSet, Ring, Spawn, TrailPoint, Verte
 import type { RoamData } from "../roam";
 import { GROUND_SNAP, putOnGround, SPIKE } from "../terrain";
 import { COLORS, css } from "../theme";
+import type { ZoneData } from "../types";
 import { copyText, isTyping, onActivate } from "../util";
 import Dial, { type DialSpec } from "./dial";
 import MobList from "./region_mob_list";
 import ShortcutsCard from "./region_shortcuts";
 import ReviewList from "./review_list";
-import type { ZoneData } from "./zone_model";
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -92,7 +92,7 @@ const GOLDEN = 0.61803398875; // successive regions land far apart on the colour
 const PATH_COLOR = COLORS.route;
 
 export default function RegionEditor(props: RegionEditorProps) {
-  let canvasElement: HTMLCanvasElement;
+  let canvasElement!: HTMLCanvasElement;
   let controls: MapControls | undefined;
 
   const scene = createMemo(() => setupBaseScene());
@@ -1606,7 +1606,6 @@ export default function RegionEditor(props: RegionEditorProps) {
     const on = regionFloors()[r.name];
     return floor() === null || on === undefined || on === null || on === floor();
   };
-  const onFloor = (x: number, y: number, z: number) => floor() === null || !floorIndex || floorIndex.at(x, y, z) === floor();
   const spawnOnFloor = (s: Spawn) => {
     const on = spawnFloors()[s.id];
     return floor() === null || on === undefined || on === null || on === floor();

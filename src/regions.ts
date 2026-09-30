@@ -784,7 +784,6 @@ export function regionsFromPoints(points: TrailPoint[], cell = 6, close = 2): Re
 
   const pad = close + 3; // keeps the grown shape clear of the grid border
   const w = Math.ceil((maxX - minX) / cell) + pad * 2 + 1;
-  const h = Math.ceil((maxZ - minZ) / cell) + pad * 2 + 1;
   const key = (x: number, z: number) => z * w + x;
 
   const heights = new Map<number, [number, number]>(); // cell -> [y sum, count]

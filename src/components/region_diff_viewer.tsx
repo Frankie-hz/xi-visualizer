@@ -11,8 +11,8 @@ import { ColorKind, createZoneMesh, prepareMeshData } from "../graphics/ximesh";
 import { regionDifference } from "../regions";
 import type { Region, RegionsDiff, ZoneSide } from "../regions";
 import { COLORS, css } from "../theme";
+import type { ZoneData } from "../types";
 import { copyText } from "../util";
-import type { ZoneData } from "./zone_model";
 
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
 THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree;
@@ -39,7 +39,7 @@ interface DiffViewerProps {
 }
 
 export default function RegionDiffViewer(props: DiffViewerProps) {
-  let canvasElement: HTMLCanvasElement;
+  let canvasElement!: HTMLCanvasElement;
   let controls: MapControls | undefined;
 
   const scene = createMemo(() => setupBaseScene());
@@ -272,14 +272,15 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
    * that sets off from one and arrives at the other says it without a legend, and the region it
    * left is held bright while it goes and fades once it has gone.
    */
-  let walking: {
+  interface Walk {
     /** One dot per pair of ends: a mob given several regions is going to each of them. */
     legs: { from: THREE.Vector3; to: THREE.Vector3; dot: THREE.Object3D; }[];
     /** The regions it left and the ones it was given, each material with the opacity it peaks at. */
     leaving: Faded[];
     arriving: Faded[];
     elapsed: number;
-  } | null = null;
+  }
+  let walking: Walk | null = null;
   type Faded = { material: THREE.Material; peak: number; };
   const faded = (materials: (THREE.Material | undefined)[]): Faded[] =>
     materials.flatMap(m => (m ? [{ material: m, peak: (m as THREE.Material & { opacity: number; }).opacity }] : []));
@@ -421,7 +422,7 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
       for (const { at } of tos) (marker.add(pin(at, STATUS_COLOR.added)), box.expandByPoint(at));
 
       // A dot for every way it could have gone: one region to several is a dot to each of them.
-      const legs: NonNullable<typeof walking>["legs"] = [];
+      const legs: Walk["legs"] = [];
       const labels: string[] = [];
       for (const { at: from, name: fromName } of froms) {
         for (const { at: to, name: toName } of tos) {

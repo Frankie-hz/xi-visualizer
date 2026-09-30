@@ -1,6 +1,6 @@
 // @ts-ignore
-import Stats from "three/addons/libs/stats.module.js";
 import * as THREE from "three";
+import Stats from "three/addons/libs/stats.module.js";
 
 import { IoHelpCircle, IoSettings } from "solid-icons/io";
 import { batch, createEffect, createMemo, createSignal, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
@@ -11,14 +11,13 @@ import { CSS2DObject, CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRe
 import { addMapControls, adjustCameraAspect, fitCameraToContents } from "../graphics/camera";
 import { setupBaseScene } from "../graphics/scene";
 import { cleanupNode, roundDecimals } from "../graphics/util";
-import { ByZone } from "../types";
-import AreaMenu, { Area, centreOf, circleOf, circlePoints, deriveAreaYs as deriveAreaYRange, Point, rotateAbout } from "./area_menu";
 import { ColorKind, colorMesh, createZoneMesh, getHitData, getMapId, markLineCollisions, prepareMeshData, RayHit } from "../graphics/ximesh";
-import { ZoneInfoBox, TargetInfo } from "./zone_info_box";
-import { ZoneRayTestingBox } from "./zone_ray_testing_box";
+import { ByZone, type ZoneData } from "../types";
+import AreaMenu, { Area, centreOf, circleOf, circlePoints, deriveAreaYs as deriveAreaYRange, Point, rotateAbout } from "./area_menu";
 import PathNodes from "./path_nodes";
 import SelectionBox, { type SelectionBoxResult } from "./selection_box";
-
+import { TargetInfo, ZoneInfoBox } from "./zone_info_box";
+import { ZoneRayTestingBox } from "./zone_ray_testing_box";
 
 // Add the extension functions
 THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree;
@@ -27,25 +26,21 @@ THREE.Mesh.prototype.raycast = acceleratedRaycast;
 
 interface ZoneDataProps {
   zoneData: ByZone<ZoneData>;
-  sourceKey?: string,
+  sourceKey?: string;
   defaultSettings?: ZoneModelSettingsDefault;
 }
 
 interface ZoneModelSettings {
-  showInfoBox: boolean,
-  showNodeManager: boolean,
-  showAreaManager: boolean,
-  showRayTesting: boolean,
-  colorKind: ColorKind,
+  showInfoBox: boolean;
+  showNodeManager: boolean;
+  showAreaManager: boolean;
+  showRayTesting: boolean;
+  colorKind: ColorKind;
 }
 
 type ZoneModelSettingsDefault = Partial<ZoneModelSettings>;
 
-export interface ZoneData {
-  id: number;
-  name: string;
-  mesh: ArrayBuffer;
-}
+export type { ZoneData } from "../types";
 
 const enum MenuPopup {
   None = 0,
@@ -75,7 +70,7 @@ export default function ZoneModel(props: ZoneDataProps) {
     showRayTesting: false,
     colorKind: ColorKind.Materials,
     ...props.defaultSettings,
-  }
+  };
 
   // Update local storage on change
   const generalSettings = createMutable<ZoneModelSettings>({
@@ -94,14 +89,14 @@ export default function ZoneModel(props: ZoneDataProps) {
 
   const scene = createMemo(() => {
     return setupBaseScene();
-  })
+  });
 
   const camera = createMemo(() => {
     const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 5000);
     camera.position.set(0, 1000, 0);
     camera.lookAt(0, 0, 0);
     return camera;
-  })
+  });
 
   const raycaster = new THREE.Raycaster();
   raycaster.firstHitOnly = true;
@@ -121,7 +116,7 @@ export default function ZoneModel(props: ZoneDataProps) {
 
   // Create zones
   const zoneMeshes = createMemo(() => {
-    const zoneMeshes: { [zoneid: number]: THREE.Mesh } = {};
+    const zoneMeshes: { [zoneid: number]: THREE.Mesh; } = {};
     for (const zoneId in props.zoneData) {
       const zoneData = props.zoneData[zoneId];
       const prep = prepMeshData()[zoneId];
@@ -129,7 +124,7 @@ export default function ZoneModel(props: ZoneDataProps) {
       mesh.visible = false;
 
       zoneMeshes[zoneData.id] = mesh;
-      console.log("Adding zone", zoneId)
+      console.log("Adding zone", zoneId);
       scene().add(mesh);
     }
 
@@ -151,7 +146,6 @@ export default function ZoneModel(props: ZoneDataProps) {
       zoneMeshes()[zoneId].visible = parseInt(zoneId) == getSelectedZone();
     }
   });
-
 
   let canvasElement: HTMLCanvasElement;
   let labelRendererElement: HTMLDivElement;
@@ -497,7 +491,7 @@ export default function ZoneModel(props: ZoneDataProps) {
   ): number | undefined {
     origin.x = point.x;
     origin.z = -point.z;
-    raycaster.set(origin, direction)
+    raycaster.set(origin, direction);
     const intersections = raycaster.intersectObject(zoneMesh, false);
     if (intersections.length == 0) {
       return undefined;
@@ -617,7 +611,7 @@ export default function ZoneModel(props: ZoneDataProps) {
   }
 
   function updateYRangeForPoint(
-    range: { yMin: number, yMax: number },
+    range: { yMin: number; yMax: number; },
     point: Point,
     zoneMesh: THREE.Mesh,
     origin: THREE.Vector3,
@@ -625,7 +619,7 @@ export default function ZoneModel(props: ZoneDataProps) {
   ) {
     origin.x = point.x;
     origin.z = -point.z;
-    raycaster.set(origin, direction)
+    raycaster.set(origin, direction);
     const intersections = raycaster.intersectObject(zoneMesh, false);
     for (const intersection of intersections) {
       const y = intersection.point.y;
@@ -723,7 +717,6 @@ export default function ZoneModel(props: ZoneDataProps) {
           shape.holes.push(new THREE.Shape(hole.map(p => new THREE.Vector2(p.x, p.z))));
         }
       }
-
 
       // Determine where the area should be displayed on the Y-axis
       const areaYRange = deriveAreaYRange(area);
@@ -981,7 +974,8 @@ export default function ZoneModel(props: ZoneDataProps) {
   createEffect(on([getStartPos, getEndPos], (
     value: [THREE.Vector3 | undefined, THREE.Vector3 | undefined],
     _prevValue?: [THREE.Vector3 | undefined, THREE.Vector3 | undefined],
-    prevLine?: THREE.Line) => {
+    prevLine?: THREE.Line,
+  ) => {
     if (!value[0] || !value[1]) {
       if (prevLine) {
         onCleanup(() => {
@@ -1001,7 +995,7 @@ export default function ZoneModel(props: ZoneDataProps) {
     if (!line) {
       const geo = new THREE.BufferGeometry();
       const positions = new Float32Array(2 * 3);
-      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
 
       const mat = new THREE.LineBasicMaterial({
         color: new THREE.Color(1, 0, 0),
@@ -1026,7 +1020,7 @@ export default function ZoneModel(props: ZoneDataProps) {
     return line;
   }));
 
-  createEffect(on(() => generalSettings.colorKind, (colorKind) => {
+  createEffect(on(() => generalSettings.colorKind, colorKind => {
     const meshes = zoneMeshes();
     const prep = prepMeshData();
     for (const zoneId of Object.keys(meshes)) {
@@ -1036,25 +1030,30 @@ export default function ZoneModel(props: ZoneDataProps) {
   }));
 
   const toggleButton = (text: string, setter: (b: boolean) => any, getter: () => boolean) => {
-    return <label class="inline-flex items-center cursor-pointer select-none"
-      onClick={(e) => {
-        setter(!getter())
-        e.preventDefault();
-      }}>
-      <input type="checkbox" class="sr-only peer" checked={getter()} />
-      <div class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600 dark:peer-checked:bg-blue-600"></div>
-      <span class="ms-1 text-sm font-medium">{text}</span>
-    </label>
-  }
+    return (
+      <label
+        class="inline-flex items-center cursor-pointer select-none"
+        onClick={e => {
+          setter(!getter());
+          e.preventDefault();
+        }}
+      >
+        <input type="checkbox" class="sr-only peer" checked={getter()} />
+        <div class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600 dark:peer-checked:bg-blue-600">
+        </div>
+        <span class="ms-1 text-sm font-medium">{text}</span>
+      </label>
+    );
+  };
 
-  const settingsMenu =
+  const settingsMenu = (
     <div class="pointer-events-auto cursor-pointer bg-black bg-opacity-80 p-2 rounded-tr text-sm flex flex-col gap-2">
       <div class="flex flex-row items-baseline">
         <label for="color-select">Coloring:</label>
         <select
           id="color-select"
           value={generalSettings.colorKind}
-          onChange={(ev) => {
+          onChange={ev => {
             generalSettings.colorKind = parseInt(ev.target.value);
           }}
         >
@@ -1066,33 +1065,38 @@ export default function ZoneModel(props: ZoneDataProps) {
         </select>
       </div>
 
-      {toggleButton("Node Manager", (v) => {
+      {toggleButton("Node Manager", v => {
         generalSettings.showNodeManager = v;
       }, () => generalSettings.showNodeManager)}
 
-      {toggleButton("Area Manager", (v) => {
+      {toggleButton("Area Manager", v => {
         generalSettings.showAreaManager = v;
       }, () => generalSettings.showAreaManager)}
 
-      {toggleButton("Info Box", (v) => {
+      {toggleButton("Info Box", v => {
         generalSettings.showInfoBox = v;
       }, () => generalSettings.showInfoBox)}
 
-      {toggleButton("Ray Testing", (v) => {
+      {toggleButton("Ray Testing", v => {
         generalSettings.showRayTesting = v;
       }, () => generalSettings.showRayTesting)}
 
-      <button onClick={() => {
-        for (const key in defaultGeneralSettings) {
-          generalSettings[key] = defaultGeneralSettings[key];
-        }
-        localStorage.removeItem(generalSettingsKey);
-      }}>Reset settings</button>
+      <button
+        onClick={() => {
+          for (const key in defaultGeneralSettings) {
+            generalSettings[key] = defaultGeneralSettings[key];
+          }
+          localStorage.removeItem(generalSettingsKey);
+        }}
+      >
+        Reset settings
+      </button>
 
       <button onClick={() => setMenuPopup(MenuPopup.None)}>Close settings</button>
-    </div>;
+    </div>
+  );
 
-  const helpMenu =
+  const helpMenu = (
     <div class="pointer-events-auto cursor-pointer bg-black bg-opacity-80 p-2 rounded-tr text-sm" onClick={() => setMenuPopup(MenuPopup.None)}>
       Click this to hide it again.
       <ul class="list-disc list-inside">
@@ -1104,16 +1108,16 @@ export default function ZoneModel(props: ZoneDataProps) {
         </li>
         <li>
           <b>Add a new area node:</b>{" "}
-          With the Area Manager expanded: CTRL + left-click. If an existing node is selected, the new one will be inserted after it. While having a node selected, you can also press
-          SHIFT + N to create a copy.
+          With the Area Manager expanded: CTRL + left-click. If an existing node is selected, the new one will be inserted after it. While having a node
+          selected, you can also press SHIFT + N to create a copy.
         </li>
         <li>
           <b>Select a node:</b> Select a node by either clicking it in the world, or on it in the Area Manager.
         </li>
         <li>
           <b>Move a node:</b>{" "}
-          Select the node, then hold SHIFT + arrow keys to move it along the X- and/or Z-axis. Hold CTRL to move it faster. The coordinates can also be
-          edited directly in the Area Manager.
+          Select the node, then hold SHIFT + arrow keys to move it along the X- and/or Z-axis. Hold CTRL to move it faster. The coordinates can also be edited
+          directly in the Area Manager.
         </li>
         <li>
           <b>Area to Lua:</b> Click the copy button next to an area in the Area Manager to get Lua code defining it into your clipboard.
@@ -1122,11 +1126,11 @@ export default function ZoneModel(props: ZoneDataProps) {
           <b>Lua to areas:</b> Paste text containing Lua code that defines the areas (i.e. a zone Setup.lua file)
         </li>
       </ul>
-    </div>;
+    </div>
+  );
 
   return (
     <div>
-
       <div class="relative" style={{ height: "70vh" }}>
         <canvas tabIndex={0} class="block w-full h-full outline-none" ref={canvasElement}>
         </canvas>
@@ -1201,7 +1205,8 @@ export default function ZoneModel(props: ZoneDataProps) {
             setStartPos={setStartPos}
             getEndPos={getEndPos}
             setEndPos={setEndPos}
-          ></ZoneRayTestingBox>
+          >
+          </ZoneRayTestingBox>
         </Show>
 
         {/* Performance stats */}
@@ -1227,7 +1232,6 @@ export default function ZoneModel(props: ZoneDataProps) {
           </Switch>
         </div>
       </div>
-
-    </div >
+    </div>
   );
 }
