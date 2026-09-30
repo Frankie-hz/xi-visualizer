@@ -408,10 +408,12 @@ export async function findSitting(
 ): Promise<Sitting> {
   const baseSha = (await gh(token, `/repos/${baseRepo}/git/ref/heads/${base}`)).object.sha as string;
   const refs = (await ghMaybe(token, `/repos/${fork}/git/matching-refs/heads/regions/`)) ?? [];
-  // Newest first, which the date in the name gives for free.
-  const names = refs.map((r: any) => String(r.ref).replace("refs/heads/", "")).sort().reverse();
+  const names: string[] = refs.map((r: any) => String(r.ref).replace("refs/heads/", ""));
 
+  // Every branch still in progress, and the newest of them by its last commit. By name only works
+  // while every name is a date: one named by hand sorts wherever its letters put it.
   const owner = fork.split("/")[0];
+  let best: { sitting: Sitting; at: string; } | undefined;
   for (const branch of names) {
     const diff = await ghMaybe(token, `/repos/${fork}/compare/${baseSha}...${branch}`);
     if (!diff || diff.ahead_by === 0) continue; // merged, or never had anything
@@ -421,17 +423,23 @@ export async function findSitting(
     const pulls: any[] = (await ghMaybe(token, `/repos/${baseRepo}/pulls?head=${owner}:${encodeURIComponent(branch)}&state=all&per_page=10`)) ?? [];
     if (pulls.length && pulls.every(p => p.state === "closed")) continue;
     const open = pulls.find(p => p.state === "open");
-    const head = diff.commits?.at(-1)?.sha;
-    return {
-      branch,
-      ancestor: diff.merge_base_commit?.sha,
-      ...(head ? { head } : {}),
-      zones: zonesInCommits(diff.commits),
-      ...(open ? { pr: { number: open.number, url: open.html_url } } : {}),
+    const last = diff.commits?.at(-1);
+    // Undated commits sort by name among themselves, which is the old order.
+    const at = `${last?.commit?.committer?.date ?? ""}|${branch}`;
+    if (best && best.at >= at) continue;
+    best = {
+      at,
+      sitting: {
+        branch,
+        ancestor: diff.merge_base_commit?.sha,
+        ...(last?.sha ? { head: last.sha } : {}),
+        zones: zonesInCommits(diff.commits),
+        ...(open ? { pr: { number: open.number, url: open.html_url } } : {}),
+      },
     };
   }
   // Never a name already on the fork: that branch is finished, and moving it would rewrite it.
-  return { branch: freeBranchName(names, today), zones: [] };
+  return best?.sitting ?? { branch: freeBranchName(names, today), zones: [] };
 }
 
 /** Every regions/* branch on the fork, newest name first, which the date in the name gives. */

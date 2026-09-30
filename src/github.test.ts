@@ -228,6 +228,21 @@ fakeGitHub({
 });
 assert.strictEqual((await findSitting("t", FORK, UPSTREAM, "regions-master", TODAY)).branch, "regions/2026-08-23");
 
+// A branch named by hand is newer than a dated one when its last commit is.
+fakeGitHub({
+  ...sittingRoutes,
+  "/repos/someone/server/git/matching-refs/heads/regions/": [{ ref: "refs/heads/regions/2026-08-23" }, { ref: "refs/heads/regions/barges" }],
+  "/repos/someone/server/compare/base-sha...regions/2026-08-23": {
+    ahead_by: 1,
+    commits: [{ sha: "old", commit: { message: "a: x", committer: { date: "2026-08-23T10:00:00Z" } } }],
+  },
+  "/repos/someone/server/compare/base-sha...regions/barges": {
+    ahead_by: 1,
+    commits: [{ sha: "new", commit: { message: "b: y", committer: { date: "2026-08-20T10:00:00Z" } } }],
+  },
+});
+assert.strictEqual((await findSitting("t", FORK, UPSTREAM, "regions-master", TODAY)).branch, "regions/2026-08-23", "the later commit wins");
+
 // A new branch must not land on a name already in use: pointing an existing ref at the base and
 // rebuilding it is a reset of whatever pull request was open for it, not a new branch.
 assert.strictEqual(freeBranchName([], "regions/2026-09-01"), "regions/2026-09-01");
