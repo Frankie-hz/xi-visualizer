@@ -1,5 +1,5 @@
 import { useSearchParams } from "@solidjs/router";
-import { createEffect, createResource, createSignal, ErrorBoundary, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createResource, createSignal, ErrorBoundary, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import RegionDiffViewer, { STATUS_COLOR } from "../components/region_diff_viewer";
 import { BTN, FIELD } from "../components/ui";
 import zones, { zoneOfFolder } from "../data/zones";
@@ -255,6 +255,11 @@ export default function RegionsDiffPage() {
     const at = list.findIndex(c => (c.name && c.name === now?.name) || (c.spawn && c.spawn === now?.spawn));
     setFocus(list[at < 0 ? (dir > 0 ? 0 : list.length - 1) : (at + dir + list.length) % list.length]);
   };
+  // A pull request opens on its first zone, the biggest change, rather than on a list to pick from.
+  createEffect(() => {
+    const first = cmp()?.zones[0]?.zone;
+    if (first && !untrack(() => query.zone)) setQuery({ zone: first }, { replace: true });
+  });
   const stepZone = (dir: 1 | -1) => {
     const list = cmp()?.zones ?? [];
     if (!list.length) return;
