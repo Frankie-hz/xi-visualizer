@@ -1294,6 +1294,8 @@ export default function RegionEditor(props: RegionEditorProps) {
     checkpoint(`simplify ${entry.name}`);
     editActive(r => (r.rings = r.rings.map(ring => simplifyRing(ring, Infinity, Math.ceil(ring.length * 0.75)))));
     const after = active()?.rings.reduce((n, ring) => n + ring.length, 0) ?? before;
+    // Nothing to take out: no step in History for it, and no claim that it did something.
+    if (after === before) return (forget(), flash(`${entry.name} is as simple as it gets`));
     flash(`simplified ${entry.name}: ${before} → ${after} vertices, holes included`);
   };
 
