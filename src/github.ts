@@ -415,31 +415,32 @@ export async function findSitting(
   // Every branch still in progress, and the newest of them by its last commit. By name only works
   // while every name is a date: one named by hand sorts wherever its letters put it.
   const owner = fork.split("/")[0];
-  let best: { sitting: Sitting; at: string; } | undefined;
-  for (const branch of names) {
+  // Checked side by side: one after another, somebody with a few old branches waited on every
+  // request in turn before their zone would open.
+  const candidates = await Promise.all(names.map(async branch => {
     const diff = await ghMaybe(token, `/repos/${fork}/compare/${baseSha}...${branch}`);
-    if (!diff || diff.ahead_by === 0) continue; // merged, or never had anything
+    if (!diff || diff.ahead_by === 0) return undefined; // merged, or never had anything
     // A squash or rebase merge leaves the branch ahead of base for good, since base got new commits
     // rather than these ones. Its pull request is what says it is finished, and so is one closed
     // without merging: starting fresh beats quietly reopening work somebody set aside.
     const pulls: any[] = (await ghMaybe(token, `/repos/${baseRepo}/pulls?head=${owner}:${encodeURIComponent(branch)}&state=all&per_page=10`)) ?? [];
-    if (pulls.length && pulls.every(p => p.state === "closed")) continue;
+    if (pulls.length && pulls.every(p => p.state === "closed")) return undefined;
     const open = pulls.find(p => p.state === "open");
     const last = diff.commits?.at(-1);
-    // Undated commits sort by name among themselves, which is the old order.
-    const at = `${last?.commit?.committer?.date ?? ""}|${branch}`;
-    if (best && best.at >= at) continue;
-    best = {
-      at,
+    return {
+      // Undated commits sort by name among themselves, which is the old order.
+      at: `${last?.commit?.committer?.date ?? ""}|${branch}`,
       sitting: {
         branch,
         ancestor: diff.merge_base_commit?.sha,
         ...(last?.sha ? { head: last.sha } : {}),
         zones: zonesInCommits(diff.commits),
         ...(open ? { pr: { number: open.number, url: open.html_url } } : {}),
-      },
+      } as Sitting,
     };
-  }
+  }));
+  let best: { sitting: Sitting; at: string; } | undefined;
+  for (const c of candidates) if (c && (!best || c.at > best.at)) best = c;
   // Never a name already on the fork: that branch is finished, and moving it would rewrite it.
   return best?.sitting ?? { branch: freeBranchName(names, today), zones: [] };
 }
