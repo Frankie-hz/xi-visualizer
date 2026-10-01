@@ -9,7 +9,7 @@
     "build": "vite build",
     "serve": "vite preview",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.regions.json",
-    "test": "node src/regions.test.ts && node src/obstacles.test.ts && node src/geometry.test.ts && node src/terrain.test.ts && node src/theme.test.ts && node src/spawn_sim.test.ts && node src/components/history.test.ts && node src/regions_files.test.ts && node src/github.test.ts && node src/github_auth.test.ts && node src/map_grid.test.ts && node workers/github-relay.test.mjs",
+    "test": "node src/regions.test.ts && node src/obstacles.test.ts && node src/geometry.test.ts && node src/terrain.test.ts && node src/theme.test.ts && node src/spawn_sim.test.ts && node src/components/history.test.ts && node src/regions_files.test.ts && node src/github.test.ts && node src/github_auth.test.ts && node src/map_grid.test.ts && node src/zone_features.test.ts && node workers/github-relay.test.mjs",
     "smoke": "node scripts/smoke.mjs",
     "relay": "node scripts/relay-dev.mjs",
     "relay:deploy": "npx wrangler@4 deploy -c workers/wrangler.toml",

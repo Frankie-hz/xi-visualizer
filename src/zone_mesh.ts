@@ -3,7 +3,7 @@ import type { ZoneData } from "./types";
 import { decompress, fetchProgress } from "./util";
 
 /** How a zone's name is spelled in the ximesh and navmesh file names. */
-const meshFileName = (name: string) =>
+export const meshFileName = (name: string) =>
   name.replaceAll(" - ", "-").replaceAll(" ", "_").replaceAll("'", "").replaceAll("(", "").replaceAll(")", "").replaceAll("#", "");
 
 /** Downloads and decompresses a zone's ximesh, reporting progress as it goes. */

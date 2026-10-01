@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import * as THREE from "three";
 import { Line2, LineGeometry, LineMaterial, LineSegments2, LineSegmentsGeometry, MapControls } from "three/examples/jsm/Addons.js";
+import { zoneOfFolder } from "../data/zones";
 import { inRing, signedArea } from "../geometry";
 import { createMapCamera, fitCameraToContents } from "../graphics/camera";
 import { buildFloorIndex, type FloorIndex } from "../graphics/floors";
@@ -31,6 +32,7 @@ import { indexNav, simulate, SNAP_TOLERANCE } from "../spawn_sim";
 import { COLORS, contrastHue, css } from "../theme";
 import type { ZoneData } from "../types";
 import { copyText, isTyping } from "../util";
+import type { TriggerArea, ZoneLine } from "../zone_features";
 import { loadNavMesh } from "../zone_mesh";
 import { createCarve, type GrowPlan, type MergePlan, OBSTACLE_CELL, type RegionEntry } from "./carve";
 import { CarvePanel, PlanPanel } from "./carve_panels";
@@ -70,6 +72,16 @@ interface RegionEditorProps {
   view?: EditorView;
   /** Where it is looking now, each time that settles, so the page can keep it in its link. */
   onView?: (view: EditorView) => void;
+  /** The zone's trigger areas and zone lines, from the server's files, to draw for reference. */
+  features?: EditorFeatures;
+}
+
+/** What the server's files place in a zone besides its mobs. */
+export interface EditorFeatures {
+  triggers: { areas: TriggerArea[]; computed: number; };
+  lines: ZoneLine[];
+  /** Zone lines from other zones into this one, each with the zone it comes from. */
+  arrivals: (ZoneLine & { comesFrom: string; })[];
 }
 
 /** What a link can say about the view: the camera, the region picked, the floor shown. */
@@ -1413,6 +1425,100 @@ export default function RegionEditor(props: RegionEditorProps) {
   });
   const gridLabelRefs = new Map<string, HTMLDivElement>();
 
+  // The zone's trigger areas and zone lines, drawn over the map for reference. Trigger areas pink,
+  // zone line entrances cyan, the boxes zone lines from elsewhere land in green.
+  const [showZoneInfo, setShowZoneInfo] = createSignal(false);
+  const zoneInfo = () => (showZoneInfo() ? props.features : undefined);
+  const placeName = (folder: string) => zoneOfFolder(folder)?.name ?? folder;
+  /** The ground under x/z near a height, or that height when the mesh has nothing there. */
+  const groundBelow = (x: number, z: number, nearY: number) => {
+    const tree = zoneMesh?.geometry.boundsTree;
+    const hit = tree?.raycastFirst(new THREE.Ray(new THREE.Vector3(x, nearY - 20, z), new THREE.Vector3(0, 1, 0)), THREE.DoubleSide, 0, 200);
+    return hit ? hit.point.y : nearY;
+  };
+  const featureLabels = createMemo(() => {
+    const f = zoneInfo();
+    if (!f) return [];
+    const y = untrack(viewGround)?.y ?? 0;
+    return [
+      ...f.triggers.areas.map(a => ({
+        key: `t${a.id}:${a.kind}`,
+        text: `trigger ${a.id}`,
+        tone: "text-pink-300",
+        at: (a.kind === "cuboid"
+          ? [(a.min[0] + a.max[0]) / 2, Math.min(a.min[1], a.max[1]), (a.min[2] + a.max[2]) / 2]
+          : a.kind === "sphere"
+          ? a.centre
+          : [a.x, groundBelow(a.x, a.z, y), a.z]) as Vertex,
+      })),
+      ...f.lines.map(l => ({ key: `l${l.id}`, text: `to ${placeName(l.to)}`, tone: "text-cyan-300", at: l.from })),
+      ...f.arrivals.map(l => ({ key: `a${l.comesFrom}:${l.id}`, text: `from ${placeName(l.comesFrom)}`, tone: "text-green-300", at: l.at })),
+    ];
+  });
+  const featureLabelRefs = new Map<string, HTMLDivElement>();
+  createEffect(() => {
+    const f = zoneInfo();
+    if (!f) return;
+    const y = untrack(viewGround)?.y ?? 0;
+    const pink: number[] = [], cyan: number[] = [], green: number[] = [];
+    const segment = (into: number[], a: Vertex, b: Vertex) => into.push(...a, ...b);
+    const loop = (into: number[], points: Vertex[]) => points.forEach((p, i) => segment(into, p, points[(i + 1) % points.length]));
+    const circle = (into: number[], x: number, cy: number, z: number, r: number) =>
+      loop(into, Array.from({ length: 48 }, (_, i) => [x + Math.cos((i / 48) * Math.PI * 2) * r, cy, z + Math.sin((i / 48) * Math.PI * 2) * r] as Vertex));
+    for (const a of f.triggers.areas) {
+      if (a.kind === "cuboid") {
+        // The server turns a point into the box's frame about its middle; the corners go the other way.
+        const cx = (a.min[0] + a.max[0]) / 2, cz = (a.min[2] + a.max[2]) / 2;
+        const c = Math.cos(a.rotation), sn = Math.sin(a.rotation);
+        const corner = (x: number, yy: number, z: number): Vertex => {
+          const u = x - cx, v = z - cz;
+          return [cx + u * c - v * sn, yy, cz + u * sn + v * c];
+        };
+        const rect = (
+          yy: number,
+        ) => [corner(a.min[0], yy, a.min[2]), corner(a.max[0], yy, a.min[2]), corner(a.max[0], yy, a.max[2]), corner(a.min[0], yy, a.max[2])];
+        const top = rect(a.min[1]), bottom = rect(a.max[1]);
+        loop(pink, top);
+        loop(pink, bottom);
+        top.forEach((p, i) => segment(pink, p, bottom[i]));
+      } else if (a.kind === "sphere") circle(pink, a.centre[0], a.centre[1], a.centre[2], a.radius);
+      else circle(pink, a.x, groundBelow(a.x, a.z, y), a.z, a.radius);
+    }
+    // A zone line's own size is the client's; a small diamond marks where it is.
+    for (const l of f.lines) {
+      loop(cyan, [[l.from[0] + 3, l.from[1], l.from[2]], [l.from[0], l.from[1], l.from[2] + 3], [l.from[0] - 3, l.from[1], l.from[2]], [
+        l.from[0],
+        l.from[1],
+        l.from[2] - 3,
+      ]]);
+    }
+    for (const l of f.arrivals) {
+      const [w, d] = [l.scale[0] / 2, l.scale[1] / 2];
+      loop(green, [[l.at[0] - w, l.at[1], l.at[2] - d], [l.at[0] + w, l.at[1], l.at[2] - d], [l.at[0] + w, l.at[1], l.at[2] + d], [
+        l.at[0] - w,
+        l.at[1],
+        l.at[2] + d,
+      ]]);
+    }
+    const added: THREE.LineSegments[] = [];
+    for (const [points, color] of [[pink, 0xf472b6], [cyan, 0x22d3ee], [green, 0x4ade80]] as const) {
+      if (!points.length) continue;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(points), 3));
+      const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.9 }));
+      lines.renderOrder = 7;
+      scene().add(lines);
+      added.push(lines);
+    }
+    onCleanup(() => {
+      for (const lines of added) {
+        scene().remove(lines);
+        lines.geometry.dispose();
+        (lines.material as THREE.Material).dispose();
+      }
+    });
+  });
+
   /** The region under the cursor while none is selected, drawn glowing in its own colour. */
   const [hoverRegion, setHoverRegion] = createSignal<string | null>(null);
   let glow: LineMaterial | undefined;
@@ -2449,6 +2555,10 @@ export default function RegionEditor(props: RegionEditorProps) {
     let spawnLabelsShown = true;
 
     const placeLabels = () => {
+      for (const label of featureLabels()) {
+        const el = featureLabelRefs.get(label.key);
+        if (el) place(el, label.at);
+      }
       const g = grid();
       if (g) {
         const big = g.size / worldPerPixel(camera(), controls!.target, canvasElement.clientHeight) > 90;
@@ -2695,6 +2805,20 @@ export default function RegionEditor(props: RegionEditorProps) {
       <div class="flex-1 relative">
         <canvas class="block w-full h-full outline-none" ref={canvasElement!} />
         <div class="absolute inset-0 overflow-hidden pointer-events-none">
+          <For each={featureLabels()}>
+            {label => {
+              onCleanup(() => featureLabelRefs.delete(label.key));
+              return (
+                <div
+                  ref={el => featureLabelRefs.set(label.key, el)}
+                  class={`absolute left-0 top-0 text-xs font-bold whitespace-nowrap select-none bg-slate-900/70 rounded px-1 ${label.tone}`}
+                  style={{ display: "none" }}
+                >
+                  {label.text}
+                </div>
+              );
+            }}
+          </For>
           <For each={grid()?.squares ?? []}>
             {sq => {
               onCleanup(() => gridLabelRefs.delete(sq.name));
@@ -2831,6 +2955,13 @@ export default function RegionEditor(props: RegionEditorProps) {
           onSimulate={() => setSimulating(on => !on)}
           grid={showGrid()}
           onGrid={() => setShowGrid(on => !on)}
+          zoneInfo={showZoneInfo()}
+          zoneInfoNote={props.features
+            ? `${props.features.triggers.areas.length} trigger areas, ${props.features.lines.length} zone lines out and ${props.features.arrivals.length} in${
+              props.features.triggers.computed ? `; ${props.features.triggers.computed} trigger areas are worked out by the script and not shown` : ""
+            }`
+            : "Loading the zone's server files…"}
+          onZoneInfo={() => setShowZoneInfo(on => !on)}
         />
         <Show when={simulating() && active()}>
           <div class="absolute top-11 left-2 z-20 w-72 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-1">

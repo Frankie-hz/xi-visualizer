@@ -1,6 +1,6 @@
 import { useBeforeLeave, useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { createEffect, createMemo, createResource, createSignal, ErrorBoundary, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
-import RegionEditor, { type EditorView } from "../components/region_editor";
+import RegionEditor, { type EditorFeatures, type EditorView } from "../components/region_editor";
 import { BTN, FIELD } from "../components/ui";
 import YamlView from "../components/yaml_view";
 import zones, { zoneFolders, zoneOfFolder } from "../data/zones";
@@ -46,7 +46,8 @@ import { copyText, isMissing } from "../util";
 // The wording of a pull request is prose, so it lives in a file that can be edited as prose.
 import prTemplate from "../pr_template.md?raw";
 import { loadRoam } from "../roam";
-import { loadNavMesh, loadZoneMesh } from "../zone_mesh";
+import { parseTriggerAreas, parseZoneLines } from "../zone_features";
+import { loadNavMesh, loadZoneMesh, meshFileName } from "../zone_mesh";
 
 // data/zones/<zone>/{regions.yaml,mobs.yaml} straight out of the LSB checkout.
 interface ZoneFiles {
@@ -1022,6 +1023,30 @@ export default function RegionsPage() {
   // Its own line: the download's progress ending in "nothing" wiped whatever else the status said.
   const [meshProgress, setMeshProgress] = createSignal<string>();
   const [zoneMesh] = createResource(zoneId, id => loadZoneMesh(id, setMeshProgress));
+  /**
+   * What else the server's files say about the zone open, for drawing over the map: the trigger
+   * areas its Zone.lua registers, its zone lines, and where the zone lines into it land. Read from
+   * the same place as the zone's own files; a local folder has no scripts, so no triggers there.
+   */
+  const [features] = createResource(
+    () => (files() ? { folder: files()!.folder, repo: repo(), ref: ref(), local: local() } : undefined),
+    async ({ folder, repo, ref, local }): Promise<EditorFeatures> => {
+      const read = (path: string) => fetch(path).then(r => (r.ok ? r.text() : ""), () => "");
+      const zoneYaml = (zone: string) =>
+        read(local ? `${LOCAL}/${zone}/zone.yaml` : `https://raw.githubusercontent.com/${repo}/${ref}/${ZONES}/${zone}/zone.yaml`);
+      const name = zoneOfFolder(folder)?.name;
+      const [own, lua] = await Promise.all([
+        zoneYaml(folder),
+        local || !name ? "" : read(`https://raw.githubusercontent.com/${repo}/${ref}/scripts/zones/${meshFileName(name)}/Zone.lua`),
+      ]);
+      const lines = own ? parseZoneLines(own) : [];
+      const neighbours = [...new Set(lines.map(l => l.to))];
+      const arrivals =
+        (await Promise.all(neighbours.map(async n => parseZoneLines(await zoneYaml(n)).filter(l => l.to === folder).map(l => ({ ...l, comesFrom: n })))))
+          .flat();
+      return { triggers: lua ? parseTriggerAreas(lua) : { areas: [], computed: 0 }, lines, arrivals };
+    },
+  );
 
   return (
     <section class="p-8 plain-ui">
@@ -1447,6 +1472,7 @@ export default function RegionsPage() {
                         paths={restored()?.paths}
                         roam={showRoam() && !roam.loading && !roam.error ? roam() : undefined}
                         nav={showNav() && !nav.loading && !nav.error ? nav() : undefined}
+                        features={features.state === "ready" ? features() : undefined}
                         onChange={(r, a, p) => {
                           pending = { regions: r, assign: a, paths: p };
                           // Compared against the last saved state, not by re-patching: this runs on

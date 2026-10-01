@@ -29,6 +29,10 @@ export default function MapToolbar(props: {
   readOnly?: boolean;
   grid: boolean;
   onGrid: () => void;
+  zoneInfo: boolean;
+  /** What showing the zone info would show, for its tooltip. */
+  zoneInfoNote: string;
+  onZoneInfo: () => void;
 }) {
   return (
     <div class="absolute top-2 left-2 flex gap-1 text-xs">
@@ -100,6 +104,18 @@ export default function MapToolbar(props: {
           <path d="M2 5.5h12M2 10.5h12M5.5 2v12M10.5 2v12" />
         </Icon>
         Grid
+      </button>
+      <button
+        class={`${TOOL} ${props.zoneInfo ? "bg-pink-600 hover:bg-pink-500 text-white" : IDLE}`}
+        aria-pressed={props.zoneInfo}
+        title={`The zone's trigger areas (pink) and zone lines, where they start (cyan) and where those from other zones land (green). ${props.zoneInfoNote}`}
+        onClick={() => props.onZoneInfo()}
+      >
+        <Icon>
+          <rect x="2.5" y="4" width="7" height="7" />
+          <path d="M11 7.5h3M12.5 6l1.5 1.5-1.5 1.5" />
+        </Icon>
+        Zone info
       </button>
     </div>
   );
