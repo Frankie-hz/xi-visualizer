@@ -6,3 +6,4 @@ public/pathdata_gz
 .dev.vars
 .idea/
 docs/howto/*.webm
+docs/howto/*.wav

@@ -16,4 +16,12 @@ node scripts/howto/record.mjs              # all four
 node scripts/howto/record.mjs 02-expand-hole
 ```
 
-This needs Playwright's Chromium and ffmpeg under `%LOCALAPPDATA%\ms-playwright`, or `BROWSER` and `FFMPEG` set. The scenes are in `scripts/howto/scenes.mjs`. They work out positions from the editor at record time, so an upstream change to these regions can change what a video shows; re-read the transcript against the video after recording.
+Then, to narrate them with [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M), locally and with no account (the model, about 300 MB, downloads on first use):
+
+```
+node scripts/howto/voice.mjs               # VOICE=am_michael etc. for another voice
+```
+
+That writes `<scene>.narrated.webm` and the bare `<scene>.narration.wav` beside each video. Each cue is spoken on its own and placed at its start time, so the voice stays in sync; a line too long for its slot is sped up, up to 1.2×.
+
+Recording needs Playwright's Chromium and ffmpeg under `%LOCALAPPDATA%\ms-playwright`, or `BROWSER` and `FFMPEG` set. The scenes are in `scripts/howto/scenes.mjs`. They work out positions from the editor at record time, so an upstream change to these regions can change what a video shows; re-read the transcript against the video after recording.
