@@ -14,6 +14,7 @@ import { gridPos } from "../map_grid";
 import {
   cellKey,
   cellOf,
+  cellsInside,
   elongation,
   emptyPatches,
   findObstacles,
@@ -236,6 +237,40 @@ export default function RegionEditor(props: RegionEditorProps) {
   /** Holes of the active region within `reach` yalms of hole `index`, itself excluded. */
   const nearHoles = (r: Region, index: number, reach = 2) =>
     r.rings.map((ring, k) => k).filter(k => k >= 1 && k !== index && r.rings[k].length >= 3 && ringDistance(r.rings[index], r.rings[k]) <= reach);
+  /**
+   * lastYOf for the many spots of one scan: the region's corners bucketed once, then the nearest
+   * found among the buckets around a spot. Walking every corner for every spot was most of the time
+   * the carve tool took to open on a big region.
+   */
+  const heightsNear = (r: Region) => {
+    const SIZE = 8;
+    const buckets = new Map<string, Vertex[]>();
+    for (const v of r.rings.flat()) {
+      const key = `${Math.floor(v[0] / SIZE)},${Math.floor(v[2] / SIZE)}`;
+      const list = buckets.get(key);
+      if (list) list.push(v);
+      else buckets.set(key, [v]);
+    }
+    return (x: number, z: number) => {
+      const cx = Math.floor(x / SIZE), cz = Math.floor(z / SIZE);
+      let best = 0, near = Infinity;
+      // Widening square rings of buckets, and one more past the first hit, since a corner in the
+      // next ring out can still be nearer than one in the corner of this one.
+      for (let ring = 0, last = 400; ring <= last; ring++) {
+        for (let dx = -ring; dx <= ring; dx++) {
+          for (let dz = -ring; dz <= ring; dz++) {
+            if (Math.max(Math.abs(dx), Math.abs(dz)) !== ring) continue;
+            for (const [vx, vy, vz] of buckets.get(`${cx + dx},${cz + dz}`) ?? []) {
+              const d = (vx - x) ** 2 + (vz - z) ** 2;
+              if (d < near) (near = d, best = vy);
+            }
+          }
+        }
+        if (near < Infinity && last === 400) last = ring + 1;
+      }
+      return best;
+    };
+  };
   /** A height to build a ring at near a spot: the nearest vertex of the region. */
   const lastYOf = (name: string, x: number, z: number) => {
     const entry = regions().find(r => r.name === name);
@@ -851,6 +886,9 @@ export default function RegionEditor(props: RegionEditorProps) {
       minZ = Math.min(minZ, z);
       maxZ = Math.max(maxZ, z);
     }
+    const heightAt = heightsNear(r);
+    // By the cell a face falls in, which is the grid the obstacles are built on anyway.
+    const insideCell = cellsInside(r.rings[0], OBSTACLE_CELL);
     const keep = (t: number) => {
       if (only !== null && perVertex[t * 3] !== only) return false;
       const o = t * 9;
@@ -858,11 +896,11 @@ export default function RegionEditor(props: RegionEditorProps) {
       const z = (pos[o + 2] + pos[o + 5] + pos[o + 8]) / 3;
       // Inside the outline, holes included: an obstacle half inside an old hole is still one
       // obstacle, and its ring is what grows that hole to fit it.
-      if (x < minX || x > maxX || z < minZ || z > maxZ || !inRing(r.rings[0], x, z)) return false;
+      if (x < minX || x > maxX || z < minZ || z > maxZ || !insideCell(Math.floor(x / OBSTACLE_CELL), Math.floor(z / OBSTACLE_CELL))) return false;
       // And on this storey: a face that never comes near the ground the mobs walk on here is a
       // wall of the floor above or below, which in a zone of storeys lies under the same outline
       // and was ringed as a 25-yalm "cliff" across open floor. y points down, so above is less.
-      const ground = sampleFloor(x, z, lastYOf(r.name, x, z));
+      const ground = sampleFloor(x, z, heightAt(x, z));
       const top = Math.min(pos[o + 1], pos[o + 4], pos[o + 7]);
       const bottom = Math.max(pos[o + 1], pos[o + 4], pos[o + 7]);
       return top <= ground + STOREY_BELOW && bottom >= ground - STOREY_ABOVE - obstacleClimb();
@@ -988,7 +1026,9 @@ export default function RegionEditor(props: RegionEditorProps) {
    */
   const [gapMinArea, setGapMinArea] = createSignal(OBSTACLE_DEFAULTS.gapMinArea); // square yalms
   const rawGaps = createMemo<Ring[]>(() => {
-    const r = active();
+    // Settled, like the obstacle scan: this is a flood fill over the whole region, not something to
+    // redo for every move of a dragged corner.
+    const r = settledActive();
     if (mode() !== "obstacles" || !r || (r.rings[0]?.length ?? 0) < 3 || !walkedCells().size) return [];
     const cell = OBSTACLE_CELL;
     const outline = r.rings[0];
@@ -997,9 +1037,10 @@ export default function RegionEditor(props: RegionEditorProps) {
     // A patch that already lies inside a hole has nothing left to cut.
     const holes = r.rings.slice(1).filter(h => h.length >= 3);
     const out: Ring[] = [];
+    const heightAt = heightsNear(r);
     for (const cells of patches) {
       const [ix, iz] = cellOf(cells.values().next().value!);
-      const y = sampleFloor((ix + 0.5) * cell, (iz + 0.5) * cell, lastYOf(r.name, (ix + 0.5) * cell, (iz + 0.5) * cell));
+      const y = sampleFloor((ix + 0.5) * cell, (iz + 0.5) * cell, heightAt((ix + 0.5) * cell, (iz + 0.5) * cell));
       for (const ring of traceCells(new Map([...cells].map(k => [k, y])), cell, y)) {
         if (holes.some(h => ring.every(([x, , z]) => withinRing(h, x, z, OBSTACLE_CELL / 2)))) continue;
         out.push(onGround(ring.map(([x, , z]) => [x, sampleFloor(x, z, y), z] as Vertex)));

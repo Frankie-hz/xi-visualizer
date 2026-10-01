@@ -1,6 +1,7 @@
 // node src/obstacles.test.ts
 import assert from "node:assert";
-import { cellKey, emptyPatches, findObstacles, floodPatch, groundNear, obstacleArea, obstacleAt, ringAround, ringsAround } from "./obstacles.ts";
+import { inRing } from "./geometry.ts";
+import { cellKey, cellsInside, emptyPatches, findObstacles, floodPatch, groundNear, obstacleArea, obstacleAt, ringAround, ringsAround } from "./obstacles.ts";
 import type { Ring } from "./regions.ts";
 
 // A square trunk one yalm across standing on flat ground: four vertical quads (two triangles
@@ -145,6 +146,20 @@ assert.strictEqual(findObstacles(new Float32Array([...floor, ...trunk(0, 0, 0.5,
   assert.ok(!floodPatch(cellKey(10, 10), near, outline, 0.5, 400).touchesEdge);
   assert.ok(floodPatch(cellKey(1, 1), near, outline, 0.5, 4000).touchesEdge);
   assert.ok(floodPatch(cellKey(1, 1), near, outline, 0.5, 10).overBudget, "and stops at its budget");
+}
+
+// The per-row answer is the same as walking the ring for every cell, notches and all.
+{
+  const ring: Ring = [[0, 0, 0], [10, 0, 0.3], [10.2, 0, 7], [5.1, 0, 3.3], [4.7, 0, 9.4], [0.4, 0, 8.8], [2.2, 0, 4.4]];
+  const inside = cellsInside(ring, 0.5);
+  let disagree = 0, n = 0;
+  for (let ix = -2; ix < 24; ix++) {
+    for (let iz = -2; iz < 22; iz++) {
+      n++;
+      if (inside(ix, iz) !== inRing(ring, (ix + 0.5) * 0.5, (iz + 0.5) * 0.5)) disagree++;
+    }
+  }
+  assert.strictEqual(disagree, 0, `cellsInside agrees with inRing on all ${n} cells`);
 }
 
 console.log("ok");

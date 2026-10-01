@@ -1,4 +1,4 @@
-import { inRing, segmentDistance, signedArea } from "./geometry.ts";
+import { segmentDistance, signedArea } from "./geometry.ts";
 import { simplifyRing } from "./regions.ts";
 import type { Ring, Vertex } from "./regions.ts";
 
@@ -306,8 +306,10 @@ function openPockets(grown: Map<number, number>, avoid: Set<number>) {
       const parent = new Map<number, number>([[k, -1]]);
       const wave = [k];
       let exit = -1;
-      while (wave.length && exit < 0) {
-        const cur = wave.shift()!;
+      // Read by index: shift() moves the whole array each time, which on a big blob made this
+      // breadth-first walk quadratic.
+      for (let head = 0; head < wave.length && exit < 0; head++) {
+        const cur = wave[head];
         const [cx, cz] = unkey(cur);
         for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
           const nk = keyOf(cx + dx, cz + dz);
@@ -486,12 +488,53 @@ export interface Patch {
 }
 
 /**
+ * Whether a cell's middle lies inside a ring, as inRing would say, from where the ring crosses each
+ * row: worked out once per row, rather than walking the whole ring for every cell, which on a big
+ * region was a million cells times hundreds of corners each time the carve tool looked.
+ */
+export function cellsInside(outline: Ring, cell: number): (ix: number, iz: number) => boolean {
+  const rows = new Map<number, number[]>();
+  const crossings = (iz: number) => {
+    let xs = rows.get(iz);
+    if (xs) return xs;
+    const z = (iz + 0.5) * cell;
+    xs = [];
+    for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+      const [xi, , zi] = outline[i], [xj, , zj] = outline[j];
+      if ((zi > z) !== (zj > z)) xs.push(((xj - xi) * (z - zi)) / (zj - zi) + xi);
+    }
+    xs.sort((a, b) => a - b);
+    rows.set(iz, xs);
+    return xs;
+  };
+  return (ix, iz) => {
+    const xs = crossings(iz);
+    const x = (ix + 0.5) * cell;
+    // Inside when an odd number of crossings lie to the right, as inRing counts them.
+    let lo = 0, hi = xs.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (xs[mid] <= x) lo = mid + 1;
+      else hi = mid;
+    }
+    return (xs.length - lo) % 2 === 1;
+  };
+}
+
+/**
  * The cells four-connected to `start` that lie inside the outline and are not `blocked`, up to
  * `budget` of them. Four-connected so a patch cannot leak through a diagonal gap between two
  * blocked cells. Cells reached are added to `seen`, so a scan can skip them afterwards.
  */
-export function floodPatch(start: number, blocked: Set<number>, outline: Ring, cell: number, budget: number, seen = new Set<number>()): Patch {
-  const inside = (ix: number, iz: number) => inRing(outline, (ix + 0.5) * cell, (iz + 0.5) * cell);
+export function floodPatch(
+  start: number,
+  blocked: Set<number>,
+  outline: Ring,
+  cell: number,
+  budget: number,
+  seen = new Set<number>(),
+  inside = cellsInside(outline, cell),
+): Patch {
   const cells = new Set<number>([start]);
   seen.add(start);
   const queue = [start];
@@ -529,11 +572,12 @@ export function emptyPatches(outline: Ring, near: Set<number>, cell: number, min
   }
   const seen = new Set<number>();
   const out: Set<number>[] = [];
+  const inside = cellsInside(outline, cell);
   for (let ix = Math.floor(minX / cell); ix <= Math.floor(maxX / cell); ix++) {
     for (let iz = Math.floor(minZ / cell); iz <= Math.floor(maxZ / cell); iz++) {
       const start = keyOf(ix, iz);
-      if (seen.has(start) || near.has(start) || !inRing(outline, (ix + 0.5) * cell, (iz + 0.5) * cell)) continue;
-      const patch = floodPatch(start, near, outline, cell, maxCells, seen);
+      if (seen.has(start) || near.has(start) || !inside(ix, iz)) continue;
+      const patch = floodPatch(start, near, outline, cell, maxCells, seen, inside);
       if (!patch.touchesEdge && !patch.overBudget && patch.cells.size >= minCells) out.push(patch.cells);
     }
   }
