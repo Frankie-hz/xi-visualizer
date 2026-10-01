@@ -570,8 +570,11 @@ export default function RegionsPage() {
     }
   };
 
+  /** Counts zone loads, so one that comes back after a newer one was asked for is dropped. */
+  let opening = 0;
   const openZone = async (folder: string) => {
     if (!folder) return;
+    const mineToOpen = ++opening;
     setStatus(`Loading ${folder}…`);
     try {
       // The working branch first when it carries this zone, since that is where the newest version
@@ -586,9 +589,13 @@ export default function RegionsPage() {
       const raw = (name: string) => fetch(url(name)).then(r => (r.ok ? r.text() : Promise.reject(new Error(`${name} → HTTP ${r.status}`))));
       // Most zones have no regions.yaml yet; drawing the first region is what creates it.
       const [regionsYaml, mobsYaml] = await Promise.all([raw("regions.yaml").catch(() => ""), raw("mobs.yaml")]);
+      // Picked another zone while this one was on its way: showing it now would put the wrong
+      // zone under the newer choice, and Save would commit to it.
+      if (mineToOpen !== opening) return;
       open({ folder, regionsYaml, mobsYaml, fromBranch: !local() && mine.repo === forkRepo() });
       setStatus(undefined);
     } catch (e) {
+      if (mineToOpen !== opening) return;
       setFiles(undefined);
       setStatus(undefined);
       setError(`${folder}: ${e}`);
@@ -607,6 +614,8 @@ export default function RegionsPage() {
       return;
     }
     edited = false;
+    // The last zone's shapes are not this one's: until the editor reports in, there is nothing pending.
+    pending = undefined;
     setFiles(next);
     setSpawns(parsed);
     setRegions(regionSet);
