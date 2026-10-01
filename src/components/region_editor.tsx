@@ -1613,7 +1613,6 @@ export default function RegionEditor(props: RegionEditorProps) {
   const spawnLabelRefs = new Map<string, HTMLDivElement>();
   const handleMap: Handle[] = [];
   const activeLineMaterials: LineMaterial[] = [];
-  const obstacleLineMaterials: LineMaterial[] = [];
   const drawnSpawns: number[] = [];
   let handlePoints: THREE.Points | undefined;
   let spawnPoints: THREE.Points | undefined;
@@ -1831,7 +1830,6 @@ export default function RegionEditor(props: RegionEditorProps) {
       () => new LineMaterial({ color: o.color, linewidth: o.width, depthTest: false, dashed: !!o.dashed, dashSize: 1, gapSize: 0.7 }),
     ) as LineMaterial;
     mat.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
-    obstacleLineMaterials.push(mat);
     const lines = new LineSegments2(geo, mat);
     if (o.dashed) lines.computeLineDistances();
     lines.renderOrder = o.order;
@@ -2367,9 +2365,12 @@ export default function RegionEditor(props: RegionEditorProps) {
       scene: scene(),
       camera: camera(),
       onFrame: dt => {
-        for (const m of [...activeLineMaterials, stalkMaterial, ...obstacleLineMaterials]) {
-          m.resolution.set(canvasElement.clientWidth, canvasElement.clientHeight);
-        }
+        // Wide lines are sized in pixels, so they follow the canvas. The cached materials cover
+        // every carve and plan preview, each once, however often those are redrawn.
+        const w = canvasElement.clientWidth, h = canvasElement.clientHeight;
+        for (const m of activeLineMaterials) m.resolution.set(w, h);
+        for (const m of overlayMaterials.values()) if (m instanceof LineMaterial) m.resolution.set(w, h);
+        stalkMaterial.resolution.set(w, h);
         stepReplay(dt);
         flashFrame(canvasElement.clientWidth, canvasElement.clientHeight);
         if (glow) {
