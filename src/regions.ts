@@ -1,7 +1,7 @@
 import { load } from "js-yaml";
 import { difference, intersection, union } from "polyclip-ts";
 import type { Geom } from "polyclip-ts";
-import { inRing, ringsIndex, signedArea } from "./geometry.ts";
+import { cellOutlines, inRing, ringsIndex, signedArea } from "./geometry.ts";
 
 // A vertex is [x, y, z]: earcut triangulates on x/z and carries y through, so the polygon
 // describes the floor surface itself. Stacked floors are told apart by whose floor is nearer.
@@ -859,23 +859,8 @@ export function regionsFromPoints(points: TrailPoint[], cell = 6, close = 2): Re
   // without inflating the outline, then grow once more so every sampled point sits inside it.
   const grown = dilate(erode(dilate(filled, close + 1), close), 1);
 
-  // Every cell edge with no occupied neighbour is a boundary edge. Shared edges cancel out, so
-  // what remains chains into closed loops: the outline plus any holes.
-  // ponytail: a corner where two loops pinch diagonally would collide in this map. Growing by a
-  // full 8-neighbourhood fills those, so it cannot happen from this pipeline's own output.
-  const corner = (x: number, z: number) => z * (w + 1) + x;
-  const edges = new Map<number, number>();
-  for (const k of grown) {
-    const x = k % w;
-    const z = (k - x) / w;
-    if (!grown.has(key(x, z - 1))) edges.set(corner(x, z), corner(x + 1, z));
-    if (!grown.has(key(x + 1, z))) edges.set(corner(x + 1, z), corner(x + 1, z + 1));
-    if (!grown.has(key(x, z + 1))) edges.set(corner(x + 1, z + 1), corner(x, z + 1));
-    if (!grown.has(key(x - 1, z))) edges.set(corner(x, z + 1), corner(x, z));
-  }
-
-  // Height at a corner: whichever of the four cells touching it were actually visited, widening
-  // the search a little because the boundary sits on grown cells rather than sampled ones.
+  // Height at a corner: whichever of the cells around it were actually visited, widening the search
+  // a little because the boundary sits on grown cells rather than sampled ones.
   const fallback = points.reduce((s, p) => s + p.y, 0) / points.length;
   const heightAt = (x: number, z: number) => {
     for (let radius = 1; radius <= 3; radius++) {
@@ -892,35 +877,18 @@ export function regionsFromPoints(points: TrailPoint[], cell = 6, close = 2): Re
     return fallback;
   };
 
-  const rings: Ring[] = [];
-  while (edges.size) {
-    const start = edges.keys().next().value as number;
-    const ring: Ring = [];
-    let at = start;
-    while (true) {
-      const next = edges.get(at);
-      if (next === undefined) break;
-      edges.delete(at);
-      const x = at % (w + 1);
-      const z = (at - x) / (w + 1);
-      ring.push([minX + (x - pad) * cell, heightAt(x, z), minZ + (z - pad) * cell]);
-      at = next;
-      if (at === start) break;
-    }
-    if (ring.length >= 4) rings.push(ring);
-  }
-
-  // Winding tells outlines from holes, so separate clusters stay separate regions instead of being
-  // mistaken for holes in the biggest one. Specks a few cells across are sampling noise.
+  // Traced by d3-contour, each outline with its holes. Specks a few cells across are sampling noise,
+  // and the staircase along the boundary carries no information.
+  const h = Math.ceil((maxZ - minZ) / cell) + pad * 2 + 1;
   const speck = cell * cell * 4;
-  const outlines = rings.filter(r => signedArea(r) >= speck).sort((a, b) => signedArea(b) - signedArea(a));
-  const holes = rings.filter(r => -signedArea(r) >= speck);
-  // Boundary staircases carry no information, and cutting them costs no coverage in practice.
+  const toZone = (ring: [number, number][]): Ring =>
+    ring.map(([x, z]) => [minX + (x - pad) * cell, heightAt(Math.round(x), Math.round(z)), minZ + (z - pad) * cell] as Vertex);
   const smooth = (r: Ring) => simplifyRing(r, cell * cell * 4);
-
-  return outlines.map(outline => ({
-    rings: [smooth(outline), ...holes.filter(h => inRing(outline, h[0][0], h[0][2])).map(smooth)],
-  }));
+  return cellOutlines(w, h, (x, z) => grown.has(key(x, z)))
+    .map(({ outline, holes }) => ({ outline: toZone(outline), holes: holes.map(toZone) }))
+    .filter(({ outline }) => signedArea(outline) >= speck)
+    .sort((a, b) => signedArea(b.outline) - signedArea(a.outline))
+    .map(({ outline, holes }) => ({ rings: [smooth(outline), ...holes.filter(h => -signedArea(h) >= speck).map(smooth)] }));
 }
 
 /**

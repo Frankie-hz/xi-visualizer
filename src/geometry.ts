@@ -1,5 +1,6 @@
 // Ring arithmetic on the x/z plane, shared by the region model, the obstacle scan and the editor.
 // Heights ride along untouched: floors are told apart by y elsewhere, never here.
+import { contours } from "d3-contour";
 import { polygonArea, polygonContains, polygonHull } from "d3-polygon";
 import Flatbush from "flatbush";
 import type { Ring, Vertex } from "./regions.ts";
@@ -91,4 +92,27 @@ export function nearestHeight(vertices: Vertex[]): (x: number, z: number) => num
   for (const [x, , z] of vertices) index.add(x, z, x, z);
   index.finish();
   return (x, z) => vertices[index.neighbors(x, z, 1)[0]][1];
+}
+
+/**
+ * The outlines of the filled cells of a grid, each with its holes, traced by d3-contour. In cell
+ * units, cell (x, z) covering x..x+1 and z..z+1; corners come out cut at 45 degrees through the
+ * middle of the cell edge, as marching squares draws them. Outlines wind with positive area.
+ */
+export function cellOutlines(
+  width: number,
+  height: number,
+  filled: (x: number, z: number) => boolean,
+): { outline: [number, number][]; holes: [number, number][][]; }[] {
+  // A border of empty cells, so shapes touching the edge of the grid still close.
+  const W = width + 2, H = height + 2;
+  const values = new Array<number>(W * H).fill(0);
+  for (let z = 0; z < height; z++) for (let x = 0; x < width; x++) if (filled(x, z)) values[(z + 1) * W + x + 1] = 1;
+  const [shape] = contours().size([W, H]).smooth(false).thresholds([0.5])(values);
+  const ring = (points: number[][], positive: boolean) => {
+    const out = points.slice(0, -1).map(([x, z]) => [x - 1, z - 1] as [number, number]);
+    const area = -polygonArea(out);
+    return (area > 0) === positive ? out : out.reverse();
+  };
+  return shape.coordinates.map(([outline, ...holes]) => ({ outline: ring(outline, true), holes: holes.map(h => ring(h, false)) }));
 }
