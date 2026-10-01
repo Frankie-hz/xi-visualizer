@@ -61,10 +61,26 @@ export function parseRegionsYaml(text: string): RegionSet {
   const doc = load(text) as any;
   const out: RegionSet = {};
   for (const [name, r] of Object.entries<any>(doc?.regions ?? {})) {
-    out[name] = { rings: [r?.poly ?? [], ...(r?.holes ?? [])] };
+    out[name] = { rings: [ringOf(r?.poly ?? [], `${name}.poly`), ...listOf(r?.holes ?? [], `${name}.holes`).map((h, i) => ringOf(h, `${name}.holes[${i}]`))] };
   }
   return out;
 }
+
+/**
+ * Checked as it is read, so a malformed file is refused with where it went wrong rather than
+ * handed to the editor, which drew a blank map and stayed that way.
+ */
+const listOf = (v: unknown, where: string): unknown[] => {
+  if (!Array.isArray(v)) throw new Error(`${where} should be a list`);
+  return v;
+};
+const ringOf = (v: unknown, where: string): Ring =>
+  listOf(v, where).map((p, i) => {
+    if (!Array.isArray(p) || p.length < 3 || !p.slice(0, 3).every(n => Number.isFinite(Number(n)))) {
+      throw new Error(`${where}[${i}] should be a point, [x, y, z]`);
+    }
+    return [Number(p[0]), Number(p[1]), Number(p[2])] as Vertex;
+  });
 
 export function parseMobsYaml(text: string): Spawn[] {
   const doc = hasNoDocument(text) ? undefined : (load(text) as any);

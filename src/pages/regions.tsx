@@ -1,5 +1,5 @@
 import { useBeforeLeave, useNavigate, useParams, useSearchParams } from "@solidjs/router";
-import { createEffect, createMemo, createResource, createSignal, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, ErrorBoundary, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import RegionEditor, { type EditorView } from "../components/region_editor";
 import { BTN, FIELD } from "../components/ui";
 import YamlView from "../components/yaml_view";
@@ -1394,32 +1394,47 @@ export default function RegionsPage() {
               <div style={{ display: showYaml() ? "none" : "block" }}>
                 <Show when={editorKey()} keyed>
                   {_key => (
-                    <RegionEditor
-                      readOnly={reviewing()}
-                      view={untrack(linkedView)}
-                      onView={keepView}
-                      zoneData={zoneMesh()!}
-                      spawns={spawns()!}
-                      regions={restored()?.regions ?? regions()}
-                      assign={restored()?.assign}
-                      paths={restored()?.paths}
-                      roam={showRoam() && !roam.loading && !roam.error ? roam() : undefined}
-                      nav={showNav() && !nav.loading && !nav.error ? nav() : undefined}
-                      onChange={(r, a, p) => {
-                        pending = { regions: r, assign: a, paths: p };
-                        // Compared against the last saved state, not by re-patching: this runs on
-                        // every mouse move during a vertex drag and mobs.yaml is thousands of lines.
-                        const base = baseline();
-                        const sameAssign = Object.keys(a).length === Object.keys(base.assign).length
-                          && Object.entries(a).every(([id, n]) => base.assign[id] === n);
-                        const isDirty = !sameAssign || emitRegionsBlock(r) !== base.block || JSON.stringify(p) !== base.paths;
-                        setDirty(isDirty);
-                        setEdits(n =>
-                          n + 1
-                        );
-                        scheduleDraft(isDirty);
-                      }}
-                    />
+                    // A crash in the editor otherwise leaves a blank map and nothing to do about it.
+                    <ErrorBoundary
+                      fallback={err => (
+                        <div class="mt-4 max-w-2xl rounded border border-red-800 bg-red-950/40 p-4 text-sm text-slate-200 space-y-2">
+                          <div class="font-bold text-red-300">The editor stopped on this zone</div>
+                          <div class="font-mono text-xs text-red-200">{String(err?.message ?? err)}</div>
+                          <div>Reloading the zone offers any unsaved edits back as a draft.</div>
+                          <button
+                            class={BTN_PLAIN}
+                            onClick={() => openZone(files()!.folder)}
+                          >
+                            Reload {zoneLabel(files()!.folder)}
+                          </button>
+                        </div>
+                      )}
+                    >
+                      <RegionEditor
+                        readOnly={reviewing()}
+                        view={untrack(linkedView)}
+                        onView={keepView}
+                        zoneData={zoneMesh()!}
+                        spawns={spawns()!}
+                        regions={restored()?.regions ?? regions()}
+                        assign={restored()?.assign}
+                        paths={restored()?.paths}
+                        roam={showRoam() && !roam.loading && !roam.error ? roam() : undefined}
+                        nav={showNav() && !nav.loading && !nav.error ? nav() : undefined}
+                        onChange={(r, a, p) => {
+                          pending = { regions: r, assign: a, paths: p };
+                          // Compared against the last saved state, not by re-patching: this runs on
+                          // every mouse move during a vertex drag and mobs.yaml is thousands of lines.
+                          const base = baseline();
+                          const sameAssign = Object.keys(a).length === Object.keys(base.assign).length
+                            && Object.entries(a).every(([id, n]) => base.assign[id] === n);
+                          const isDirty = !sameAssign || emitRegionsBlock(r) !== base.block || JSON.stringify(p) !== base.paths;
+                          setDirty(isDirty);
+                          setEdits(n => n + 1);
+                          scheduleDraft(isDirty);
+                        }}
+                      />
+                    </ErrorBoundary>
                   )}
                 </Show>
               </div>

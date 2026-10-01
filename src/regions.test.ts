@@ -109,6 +109,9 @@ assert.ok(camps.every(p => split.some(r => containsXZ(r, p.x, p.z))), "every poi
 // yet, and treating them as failures made 299 of 300 zones refuse to open.
 assert.deepStrictEqual(parseRegionsYaml(""), {}, "a zone with no regions.yaml has no regions");
 assert.deepStrictEqual(parseRegionsYaml("  \n\n"), {}, "nor does a blank one");
+assert.throws(() => parseRegionsYaml("regions:\n  a:\n    poly: [1, 2, 3]\n"), /a\.poly\[0\] should be a point/, "a flat list is not an outline");
+assert.throws(() => parseRegionsYaml("regions:\n  a:\n    poly: [[0, 0, 0]]\n    holes: 5\n"), /a\.holes should be a list/, "holes must be a list of rings");
+assert.throws(() => parseRegionsYaml("regions:\n  a:\n    poly: [[0, x, 0]]\n"), /a\.poly\[0\]/, "a point needs numbers");
 assert.deepStrictEqual(parseRegionsYaml("# yaml-language-server: $schema=x\n"), {}, "nor one with only its header");
 // ...but a file that is genuinely malformed still has to say so rather than read as empty
 assert.throws(() => parseRegionsYaml("regions: [oops\n"), /deficient indentation|unexpected end/i, "real syntax errors still throw");
