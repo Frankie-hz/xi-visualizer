@@ -667,7 +667,15 @@ export default function RegionEditor(props: RegionEditorProps) {
 
   // Snapshots are taken at operation boundaries, so a whole vertex drag collapses into one step.
   // The label is what the step is called in the history list, so it names the change, not the click.
-  const { undoStack, redoStack, checkpoint, undo, redo, rewindTo, forget } = createHistory(snap, restore);
+  const history = createHistory(snap, restore);
+  const { undoStack, redoStack, checkpoint, forget } = history;
+  // Not while holes are being cut: the cut finishes from the shape it started on, and would quietly
+  // put back whatever an undo in the meantime took away.
+  const unlessCutting = <A extends unknown[]>(fn: (...args: A) => void) => (...args: A) =>
+    cutting() ? flash("still cutting holes; try again when it is done", "warn") : fn(...args);
+  const undo = unlessCutting(history.undo);
+  const redo = unlessCutting(history.redo);
+  const rewindTo = unlessCutting(history.rewindTo);
 
   // --- obstacles: holes drawn around the collision mesh's steep faces ---
   // The dials: how far off the faces the ring sits, what counts as steep, how close faces must be
@@ -2451,8 +2459,9 @@ export default function RegionEditor(props: RegionEditorProps) {
       if (ev.button === 2) rightDownAt = { x: ev.clientX, y: ev.clientY };
       if (ev.button !== 0) return;
       downAt = { x: ev.clientX, y: ev.clientY };
-      // Reviewing: the camera, hovering and selection all still work; nothing moves under them.
-      if (!canEdit()) return;
+      // Reviewing: the camera, hovering and selection all still work; nothing moves under them. Nor
+      // while holes are being cut, for the reason undo waits.
+      if (!canEdit() || cutting()) return;
       if (ev.altKey) return; // alt is for copying a position, never for dragging something
       aim(ev);
       // Carving: a click near a hole's corner is a click to cut, not a grab. The outline's own
