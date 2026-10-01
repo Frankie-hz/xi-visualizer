@@ -68,9 +68,6 @@ importers:
       three-mesh-bvh:
         specifier: ^0.8.3
         version: 0.8.3(three@0.171.0)
-      yaml:
-        specifier: ^2.9.1
-        version: 2.9.1
     devDependencies:
       '@types/d3-contour':
         specifier: ^3.0.6
@@ -3440,7 +3437,8 @@ snapshots:
 
   yallist@5.0.0: {}
 
-  yaml@2.9.1: {}
+  yaml@2.9.1:
+    optional: true
 
   yargs-parser@22.0.0: {}
 
