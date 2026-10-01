@@ -2746,6 +2746,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         if (ev.key !== "Escape") return;
         const t = tool();
         if (t.kind === "grow" || t.kind === "merge") setTool({ kind: t.back });
+        else if (simulating()) setSimulating(false);
         else if (t.kind === "carve") setMode("select");
         else if (replayId()) setReplayId(null);
         else if (walker()) editWalker(null);
@@ -3221,18 +3222,17 @@ export default function RegionEditor(props: RegionEditorProps) {
         </Show>
         <ShortcutsCard />
         {/* The map's own toolbar: tools that act on the view rather than the lists beside it. */}
-        <Show when={!props.readOnly}>
-          <MapToolbar
-            selected={!!active()}
-            carving={mode() === "obstacles"}
-            canGround={!!zoneMesh}
-            onCarve={() => setMode(m => (m === "obstacles" ? "select" : "obstacles"))}
-            onSimplify={simplifyActive}
-            onGround={groundActive}
-            simulating={simulating()}
-            onSimulate={() => setSimulating(on => !on)}
-          />
-        </Show>
+        <MapToolbar
+          readOnly={props.readOnly}
+          selected={!!active()}
+          carving={mode() === "obstacles"}
+          canGround={!!zoneMesh}
+          onCarve={() => setMode(m => (m === "obstacles" ? "select" : "obstacles"))}
+          onSimplify={simplifyActive}
+          onGround={groundActive}
+          simulating={simulating()}
+          onSimulate={() => setSimulating(on => !on)}
+        />
         <Show when={simulating() && active()}>
           <div class="absolute top-11 left-2 z-20 w-72 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-1">
             <div class="flex items-center justify-between">
