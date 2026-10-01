@@ -2608,9 +2608,11 @@ export default function RegionEditor(props: RegionEditorProps) {
       const act = active();
       // Only regions you can see can be dropped onto.
       const target = !p ? null : act ? (containsXZ(act, p.x, p.z) ? act.name : null) : regionAt(asSet(regions()), p.x, p.z, spawn.y);
-      if (!target) return;
+      if (!target) return flash(act ? `drop it inside ${act.name} to assign it there` : "drop it inside a region to assign it", "warn");
       checkpoint(`assign ${spawn.name} to ${target}`);
       setAssign(a => ({ ...a, [spawn.id]: [target] }));
+      // Said, since with "hide mobs that have a region" ticked the dot just disappears.
+      flash(`assigned ${spawn.name} to ${target}`);
     };
 
     const onMouseUp = (ev: MouseEvent) => {
