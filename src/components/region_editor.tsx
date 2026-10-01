@@ -2774,7 +2774,14 @@ export default function RegionEditor(props: RegionEditorProps) {
     window.addEventListener("click", onAnyClick);
     window.addEventListener("keydown", onKeyDown);
 
-    if (spawnPoints) fitCameraToContents(camera(), controls, fn => fn(spawnPoints!));
+    // The scene's flip only reaches world matrices on the first render, which has not happened yet;
+    // measured before it, the spawns' box came out mirrored and a zone opened off to one side.
+    scene().updateMatrixWorld(true);
+    // The regions as well as the spawns: fitted to the spawns alone, outlines past them were cut off.
+    fitCameraToContents(camera(), controls, fn => {
+      if (spawnPoints) fn(spawnPoints);
+      fn(overlay);
+    });
 
     // For scripts that drive the editor in a browser (scripts/howto): where things are on screen,
     // and what the editor holds. The dev server only; a build carries none of it.
