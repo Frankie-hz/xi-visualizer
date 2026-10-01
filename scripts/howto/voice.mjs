@@ -6,7 +6,7 @@
 // past its slot is spoken again a little faster, up to MAX_SPEED. Then the dead air goes: wherever
 // the picture holds still and nobody is talking, the pause is cut down to KEEP. Writes, next to the
 // recording in docs/howto/: <scene>.narrated.mp4, its subtitles <scene>.narrated.vtt, and the bare
-// voice track <scene>.narration.wav. VOICE picks the voice, af_heart by default.
+// voice track <scene>.narration.wav. VOICE picks the voice, am_echo by default.
 import ffmpeg from "ffmpeg-static";
 import { KokoroTTS } from "kokoro-js";
 import { spawn } from "node:child_process";
@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from "node:path";
 
 const DIR = new URL("../../docs/howto/", import.meta.url).pathname.replace(/^\/(\w:)/, "$1");
-const VOICE = process.env.VOICE ?? "af_heart";
+const VOICE = process.env.VOICE ?? "am_echo";
 const MAX_SPEED = 1.2;
 const GAP = 0.15; // seconds kept between two lines when one has to wait for the other
 const KEEP = 0.5; // what is left of a still, silent stretch

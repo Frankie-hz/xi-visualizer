@@ -19,7 +19,7 @@ node scripts/howto/record.mjs 02-expand-hole
 Then, to narrate them with [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M), locally and with no account (the model, about 300 MB, downloads on first use):
 
 ```
-node scripts/howto/voice.mjs                     # all four; VOICE=bm_george etc. for another voice
+node scripts/howto/voice.mjs                     # all four; VOICE=bm_george etc. for another voice than am_echo
 node scripts/howto/voice.mjs --voices            # the same line in every English voice, to choose one
 ```
 
