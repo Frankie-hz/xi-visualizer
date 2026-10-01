@@ -99,45 +99,24 @@ const BTN_PLAIN = BTN.plain;
 const BTN_QUIET = BTN.quiet;
 const BTN_GO = BTN.go;
 
-/** What a first visit sees before a zone is picked: what this is for, and how a change gets in. */
+/** What shows before a zone is picked. */
 function RegionsIntro() {
   return (
-    <div class="mt-6 max-w-3xl text-sm text-slate-300 space-y-4">
-      <div>
-        <h2 class="text-lg font-bold text-slate-100">Draw where mobs spawn</h2>
-        <p class="mt-1">
-          In LandSandBoat most mobs spawn on a fixed point. A spawn region is an outline on the map instead: each time the mob spawns, the server picks a spot
-          inside it. The regions here are drawn from recorded roam trails, the cyan dots, which show where each mob was actually seen walking.
-        </p>
-      </div>
-      <div>
-        <h3 class="font-bold text-slate-100">A good region</h3>
-        <ul class="mt-1 list-disc pl-5 space-y-0.5">
-          <li>covers its mobs' trails; the Review tab shows how much of each it covers</li>
-          <li>stays off walls, cliffs and water; cut holes around rocks and trees with Carve holes</li>
-          <li>holds every mob it should, and no more than a few dozen corners</li>
-        </ul>
-      </div>
-      <div>
-        <h3 class="font-bold text-slate-100">Getting a change in</h3>
-        <ol class="mt-1 list-decimal pl-5 space-y-0.5">
-          <li>Pick a zone above. Those with regions come first; the ones further down have none yet.</li>
-          <li>
-            Draw a region with <b>+ Region</b>, or have one built from the trails: in the mob list pick <b>Fixed</b>, then <b>Build a region</b>.
-          </li>
-          <li>
-            Put mobs in it: drag a dot inside, or use <b>Assign inside</b>.
-          </li>
-          <li>
-            <b>Save</b>. The first time, you sign in with GitHub and fork LandSandBoat/server; the editor walks you through it and keeps your edits meanwhile.
-          </li>
-          <li>
-            <b>Open pull request</b>. The description links reviewers to a map of what changed.
-          </li>
-        </ol>
-      </div>
+    <div class="mt-6 max-w-3xl text-sm text-slate-300 space-y-3">
+      <p>
+        Edit LandSandBoat's spawn regions: areas a mob spawns anywhere inside, instead of on a fixed spot. The cyan dots are recorded roam trails.
+      </p>
+      <ol class="list-decimal pl-5 space-y-0.5">
+        <li>Pick a zone above.</li>
+        <li>
+          Edit or draw regions, and assign mobs to them. <b>Review</b> flags problems.
+        </li>
+        <li>
+          <b>Save</b> to your fork of LandSandBoat/server (sign in with GitHub the first time), then <b>Open pull request</b>.
+        </li>
+      </ol>
       <p class="text-slate-400">
-        Edits are kept in this browser as you go, so a closed tab loses nothing. On the map, <b>?</b> lists every shortcut.
+        Edits are kept in this browser until saved. <b>?</b> on the map lists the shortcuts.
       </p>
     </div>
   );

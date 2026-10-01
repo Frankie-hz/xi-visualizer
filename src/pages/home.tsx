@@ -8,10 +8,10 @@ export default function HomePage() {
       <div class="content">
         <ul>
           <li>
-            <A href="/regions">Spawn regions editor</A>: draw where mobs spawn from their recorded roam trails, and open a pull request with it
+            <A href="/regions">Spawn regions editor</A>
           </li>
           <li>
-            <A href="/regions-diff">Regions diff</A>: paste a pull request to see what it does to the spawn regions
+            <A href="/regions-diff">Regions diff</A>
           </li>
           <li>
             <A href="/zone">Zone viewer</A>
