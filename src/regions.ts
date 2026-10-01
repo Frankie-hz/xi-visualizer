@@ -1,6 +1,7 @@
 import { load } from "js-yaml";
 import { difference, intersection, union } from "polyclip-ts";
 import type { Geom } from "polyclip-ts";
+import simplify from "simplify-js";
 import { cellOutlines, inRing, ringsIndex, signedArea } from "./geometry.ts";
 
 // A vertex is [x, y, z]: earcut triangulates on x/z and carries y through, so the polygon
@@ -549,15 +550,6 @@ export interface TrailPoint {
   t?: number;
 }
 
-/** Perpendicular distance in x/z from p to the segment ab. */
-function perpDistance(a: Vertex, b: Vertex, p: Vertex): number {
-  const dx = b[0] - a[0];
-  const dz = b[2] - a[2];
-  const len2 = dx * dx + dz * dz;
-  const t = len2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[2] - a[2]) * dz) / len2)) : 0;
-  return Math.hypot(p[0] - (a[0] + t * dx), p[2] - (a[2] + t * dz));
-}
-
 /**
  * Douglas-Peucker for an open line: the ends are fixed, and a point survives when dropping it would
  * pull the line more than `tolerance` yalms away from it. `max` legs is a ceiling, met by loosening
@@ -570,29 +562,10 @@ function perpDistance(a: Vertex, b: Vertex, p: Vertex): number {
  */
 export function simplifyLine(points: Vertex[], tolerance = 4, max = Infinity): Vertex[] {
   if (points.length <= 2) return points.slice();
-
-  const thin = (limit: number) => {
-    const keep = new Uint8Array(points.length);
-    keep[0] = keep[points.length - 1] = 1;
-    const spans: [number, number][] = [[0, points.length - 1]];
-    while (spans.length) {
-      const [from, to] = spans.pop()!;
-      let far = -1;
-      let worst = limit;
-      for (let i = from + 1; i < to; i++) {
-        const d = perpDistance(points[from], points[to], points[i]);
-        if (d > worst) {
-          worst = d;
-          far = i;
-        }
-      }
-      if (far < 0) continue;
-      keep[far] = 1;
-      spans.push([from, far], [far, to]);
-    }
-    return points.filter((_, i) => keep[i]);
-  };
-
+  // simplify-js hands back the very objects it was given, so each carries its vertex's index along.
+  // High quality: Douglas-Peucker alone, without the radial pre-pass that drops close points first.
+  const flat = points.map((p, i) => ({ x: p[0], y: p[2], i }));
+  const thin = (limit: number) => (simplify(flat, limit, true) as typeof flat).map(p => points[p.i]);
   let limit = tolerance;
   let out = thin(limit);
   while (out.length > max) out = thin(limit *= 1.5);
