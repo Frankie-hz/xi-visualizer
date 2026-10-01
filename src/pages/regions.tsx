@@ -540,7 +540,11 @@ export default function RegionsPage() {
       }
     }
     setLocal(false);
-    setStatus(`Listing ${repo()}…`);
+    const listing = `Listing ${repo()}…`;
+    setStatus(listing);
+    // Takes back only its own message: the zone opens alongside this, and what it says (a draft
+    // put back) is still worth reading when the list arrives.
+    const done = () => setStatus(now => (now === listing ? undefined : now));
     try {
       // The subtree under data/zones, not the whole repository: asking for the repository root
       // recursively downloaded nearly 7MB to read a few hundred directory names, on every visit.
@@ -556,10 +560,10 @@ export default function RegionsPage() {
         .sort((a, b) => zoneLabel(a).localeCompare(zoneLabel(b)));
       setStarted(new Set((json.tree ?? []).map(e => e.path.match(/^([^/]+)\/regions\.yaml$/)?.[1]).filter((n): n is string => !!n)));
       setFolders(names);
-      setStatus(undefined);
+      done();
       setError(names.length ? undefined : `No ${ZONES}/<zone>/mobs.yaml in ${repo()}@${ref()} yet`);
     } catch (e) {
-      setStatus(undefined);
+      done();
       // Out of requests for the hour. Opening a zone reads raw files, which that limit does not
       // cover, so a list of every zone name still gets somebody working.
       if ((e as { rateLimited?: boolean; }).rateLimited) {

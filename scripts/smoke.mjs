@@ -196,7 +196,7 @@ try {
   await settle(600);
   assert.match(await text(), /Viewing region e_46/, "clicking a label selects the region");
 
-  // an edit made just before leaving is in the draft when the zone opens again
+  // an edit made just before leaving is put straight back when the zone opens again
   await page.goto(URL, { waitUntil: "domcontentloaded" });
   await settle(ZONE_READY);
   const again = await label("e_46");
@@ -206,8 +206,7 @@ try {
   await settle(100); // well inside the autosave debounce
   await page.reload({ waitUntil: "domcontentloaded" });
   await settle(ZONE_READY);
-  assert.match(await text(), /Unsaved work on west_ronfaure/, "the edit survived the reload");
-  await press("Discard");
+  assert.match(await text(), /Put back your unsaved edits/, "the edit survived the reload");
 
   // the diff page opens a pull request by number, lists the zones it touched, and draws one
   await page.goto(`http://localhost:${PORT}/xi-visualizer/#/regions-diff?pr=11610`, { waitUntil: "domcontentloaded" });
