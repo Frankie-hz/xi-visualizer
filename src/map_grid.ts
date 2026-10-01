@@ -25,3 +25,33 @@ export function gridPos(zone: number, floor: number | null, x: number, z: number
   const py = -oy - trunc((z * scale) / 1280 + 0.5);
   return `${String.fromCharCode(65 + trunc((px - 16) / 32))}-${trunc((py - 16) / 32) + 1}`;
 }
+
+/** A map's grid laid on the zone: what the game draws over its map sheet, in zone coordinates. */
+export interface MapGrid {
+  /** The sixteen lines each way that bound columns A to O and rows 1 to 15, as [x1, z1, x2, z2]. */
+  lines: [number, number, number, number][];
+  /** The middle of every square, with the name <pos> gives it. */
+  squares: { name: string; x: number; z: number; }[];
+  /** Yalms across one square. */
+  size: number;
+}
+
+/** The grid of the map for a zone's floor, or null where the game has none. gridPos run backwards. */
+export function gridOf(zone: number, floor: number | null): MapGrid | null {
+  if (floor === null) return null;
+  const map = MAPS[zone]?.find(m => m[0] === floor);
+  if (!map) return null;
+  const [, , scale, ox, oy] = map;
+  const toX = (px: number) => ((px + ox) * 1280) / scale;
+  const toZ = (py: number) => (-(py + oy) * 1280) / scale;
+  const lines: MapGrid["lines"] = [];
+  for (let k = 0; k <= 15; k++) {
+    const at = 16 + 32 * k;
+    lines.push([toX(at), toZ(16), toX(at), toZ(496)], [toX(16), toZ(at), toX(496), toZ(at)]);
+  }
+  const squares: MapGrid["squares"] = [];
+  for (let col = 0; col < 15; col++) {
+    for (let row = 0; row < 15; row++) squares.push({ name: `${String.fromCharCode(65 + col)}-${row + 1}`, x: toX(32 + 32 * col), z: toZ(32 + 32 * row) });
+  }
+  return { lines, squares, size: (32 * 1280) / scale };
+}

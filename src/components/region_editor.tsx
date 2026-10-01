@@ -10,7 +10,7 @@ import { addNavMesh, addZoneMesh, fillRef, groundColours, groundUnder, paintOnce
 import { setupBaseScene } from "../graphics/scene";
 import { createViewer } from "../graphics/viewer";
 import { ColorKind, colorMesh, prepareMeshData } from "../graphics/ximesh";
-import { gridPos } from "../map_grid";
+import { gridOf, gridPos } from "../map_grid";
 import { obstacleArea, obstacleAt, ringsAround } from "../obstacles";
 import {
   containmentTest,
@@ -175,6 +175,16 @@ export default function RegionEditor(props: RegionEditorProps) {
   // zone ever has.
   const [floors, setFloors] = createSignal<number[]>([]);
   const [floor, setFloor] = createSignal<number | null>(null);
+  /** The game's map grid over the zone, for the floor on screen. */
+  const [showGrid, setShowGrid] = createSignal(false);
+  /** Ground under the middle of the view once the camera stops: which map the grid is from when no
+   * floor is picked, and the height it is laid at. */
+  const [viewGround, setViewGround] = createSignal<{ floor: number | null; y: number; } | null>(null);
+  const grid = createMemo(() => {
+    if (!showGrid()) return null;
+    const on = floor() ?? (floors().length > 1 ? viewGround()?.floor ?? null : floors()[0] ?? 0);
+    return gridOf(props.zoneData.id, on);
+  });
   const [hover, setHover] = createSignal<{ spawn: Spawn; x: number; y: number; } | null>(null);
   // The hole under the cursor in the active region, for the marker and the context menu.
   const [holeHover, setHoleHover] = createSignal<{ name: string; index: number; x: number; y: number; } | null>(null);
@@ -1384,6 +1394,25 @@ export default function RegionEditor(props: RegionEditorProps) {
   const AMBER = 0xffb020;
   const VIOLET = 0xc084fc;
 
+  // The grid lines, faint and over everything, at the height of the ground in view.
+  createEffect(() => {
+    const g = grid();
+    if (!g) return;
+    const y = untrack(viewGround)?.y ?? 0;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(g.lines.flatMap(([x1, z1, x2, z2]) => [x1, y, z1, x2, y, z2])), 3));
+    const material = new THREE.LineBasicMaterial({ color: 0xfde68a, transparent: true, opacity: 0.45, depthTest: false });
+    const lines = new THREE.LineSegments(geo, material);
+    lines.renderOrder = 3;
+    scene().add(lines);
+    onCleanup(() => {
+      scene().remove(lines);
+      geo.dispose();
+      material.dispose();
+    });
+  });
+  const gridLabelRefs = new Map<string, HTMLDivElement>();
+
   /** The region under the cursor while none is selected, drawn glowing in its own colour. */
   const [hoverRegion, setHoverRegion] = createSignal<string | null>(null);
   let glow: LineMaterial | undefined;
@@ -2373,6 +2402,8 @@ export default function RegionEditor(props: RegionEditorProps) {
       clearTimeout(viewTimer);
       viewTimer = setTimeout(() => {
         const t = controls!.target, p = camera().position;
+        // The scene is mirrored on y and z, so the target in zone coordinates is (x, -y, -z).
+        setViewGround({ floor: floorIndex?.at(t.x, -t.y, -t.z) ?? null, y: -t.y });
         props.onView?.({
           camera: [t.x, t.y, t.z, p.x, p.y, p.z].map(n => Math.round(n * 10) / 10),
           region: untrack(activeName) ?? undefined,
@@ -2418,6 +2449,15 @@ export default function RegionEditor(props: RegionEditorProps) {
     let spawnLabelsShown = true;
 
     const placeLabels = () => {
+      const g = grid();
+      if (g) {
+        const big = g.size / worldPerPixel(camera(), controls!.target, canvasElement.clientHeight) > 90;
+        const y = viewGround()?.y ?? 0;
+        for (const sq of g.squares) {
+          const el = gridLabelRefs.get(sq.name);
+          if (el) place(el, big ? [sq.x, y, sq.z] : null);
+        }
+      }
       const only = activeName();
       for (const r of regions()) {
         const el = labelRefs.get(r.name);
@@ -2655,6 +2695,20 @@ export default function RegionEditor(props: RegionEditorProps) {
       <div class="flex-1 relative">
         <canvas class="block w-full h-full outline-none" ref={canvasElement!} />
         <div class="absolute inset-0 overflow-hidden pointer-events-none">
+          <For each={grid()?.squares ?? []}>
+            {sq => {
+              onCleanup(() => gridLabelRefs.delete(sq.name));
+              return (
+                <div
+                  ref={el => gridLabelRefs.set(sq.name, el)}
+                  class="absolute left-0 top-0 text-sm font-bold text-amber-200/50 select-none"
+                  style={{ display: "none" }}
+                >
+                  {sq.name}
+                </div>
+              );
+            }}
+          </For>
           <For each={regions()}>
             {r => {
               onCleanup(() => labelRefs.delete(r.name));
@@ -2775,6 +2829,8 @@ export default function RegionEditor(props: RegionEditorProps) {
           onGround={groundActive}
           simulating={simulating()}
           onSimulate={() => setSimulating(on => !on)}
+          grid={showGrid()}
+          onGrid={() => setShowGrid(on => !on)}
         />
         <Show when={simulating() && active()}>
           <div class="absolute top-11 left-2 z-20 w-72 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-1">
