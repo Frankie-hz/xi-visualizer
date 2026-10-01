@@ -477,7 +477,9 @@ export default function RegionsPage() {
   onMount(() => {
     listZones();
     if (isCallback()) finishSignIn().finally(() => setAuthSettled(true));
-    else if (authToken()) locateFork().finally(() => setAuthSettled(true));
+    // Reviewing reads somebody else's branch: the reviewer's own fork and working branch have
+    // nothing to do with it, and looking them up asked GitHub for a branch named after a commit.
+    else if (authToken() && !reviewing()) locateFork().finally(() => setAuthSettled(true));
     else setAuthSettled(true);
     // With the draft written there is nothing to warn about, including on the way out to sign in.
     const guard = (e: BeforeUnloadEvent) => {
@@ -630,7 +632,8 @@ export default function RegionsPage() {
     const stamp = fingerprint(next.regionsYaml, next.mobsYaml);
     setSource(stamp);
     loaded = { regions: regionSet, placements: placementsOf(parsed) };
-    setDraft(findDraft(next.folder, stamp));
+    // A reviewer's own unsaved work is not on offer over the branch they are reviewing.
+    setDraft(reviewing() ? undefined : findDraft(next.folder, stamp));
     // Back from signing in with edits that were on screen when they left: put them straight back.
     if (sessionStorage.getItem(RESUME) === next.folder && draft()) {
       sessionStorage.removeItem(RESUME);
