@@ -682,8 +682,14 @@ export default function RegionEditor(props: RegionEditorProps) {
   // put back whatever an undo in the meantime took away.
   const unlessCutting = <A extends unknown[]>(fn: (...args: A) => void) => (...args: A) =>
     cutting() ? flash("still cutting holes; try again when it is done", "warn") : fn(...args);
-  const undo = unlessCutting(history.undo);
-  const redo = unlessCutting(history.redo);
+  const undo = unlessCutting(() => {
+    const label = history.undo();
+    if (label) flash(`undid: ${label}`);
+  });
+  const redo = unlessCutting(() => {
+    const label = history.redo();
+    if (label) flash(`redid: ${label}`);
+  });
   const rewindTo = unlessCutting(history.rewindTo);
 
   // --- obstacles: holes drawn around the collision mesh's steep faces ---

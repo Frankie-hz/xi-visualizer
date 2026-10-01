@@ -20,22 +20,25 @@ export function createHistory<S>(snap: () => S, restore: (s: S) => void, limit =
     setRedoStack([]);
   };
 
-  const undo = () => {
+  /** Returns what was undone, so it can be said: an undo of an assignment changes nothing in view. */
+  const undo = (): string | undefined => {
     const steps = undoStack();
     const step = steps[steps.length - 1];
     if (!step) return;
     setUndoStack(steps.slice(0, -1));
     setRedoStack(r => [...r, { label: step.label, before: snap() }]);
     restore(step.before);
+    return step.label;
   };
 
-  const redo = () => {
+  const redo = (): string | undefined => {
     const steps = redoStack();
     const step = steps[steps.length - 1];
     if (!step) return;
     setRedoStack(steps.slice(0, -1));
     setUndoStack(u => [...u, { label: step.label, before: snap() }]);
     restore(step.before);
+    return step.label;
   };
 
   /** Back to just before the numbered step, so the history list is clickable. */
