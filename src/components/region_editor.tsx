@@ -168,9 +168,10 @@ export default function RegionEditor(props: RegionEditorProps) {
    * region, + Region again) tidies it up as Done does, rather than saving a ring of one or two points.
    */
   const setTool = (next: Tool) => {
-    const now = tool();
+    // Untracked: an effect that sets the tool would otherwise subscribe to it and set it forever.
+    const now = untrack(tool);
     setToolRaw(next);
-    if (now.kind === "draw" && !(next.kind === "draw" && next.ring === now.ring && next.region === now.region)) closeDraw(now);
+    if (now.kind === "draw" && !(next.kind === "draw" && next.ring === now.ring && next.region === now.region)) untrack(() => closeDraw(now));
   };
   /** The click mode, as the handlers read it. A plan keeps the mode it was opened from. */
   const mode = (): Mode => {
