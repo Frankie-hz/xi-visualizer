@@ -29,6 +29,8 @@ export default function MapToolbar(props: {
   readOnly?: boolean;
   grid: boolean;
   onGrid: () => void;
+  sheet: boolean;
+  onSheet: () => void;
   density: boolean;
   onDensity: () => void;
   zoneInfo: boolean;
@@ -106,6 +108,18 @@ export default function MapToolbar(props: {
           <path d="M2 5.5h12M2 10.5h12M5.5 2v12M10.5 2v12" />
         </Icon>
         Grid
+      </button>
+      <button
+        class={`${TOOL} ${props.sheet ? "bg-amber-600 hover:bg-amber-500 text-white" : IDLE}`}
+        aria-pressed={props.sheet}
+        title="The game's own map of the floor on screen, laid under the regions"
+        onClick={() => props.onSheet()}
+      >
+        <Icon>
+          <path d="M2 3.5l4-1.5 4 1.5 4-1.5v10.5l-4 1.5-4-1.5-4 1.5z" />
+          <path d="M6 2v10.5M10 3.5V14" />
+        </Icon>
+        Map
       </button>
       <button
         class={`${TOOL} ${props.zoneInfo ? "bg-pink-600 hover:bg-pink-500 text-white" : IDLE}`}

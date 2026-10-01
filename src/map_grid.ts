@@ -1,6 +1,6 @@
 import table from "./data/map_grid.json" with { type: "json" };
 
-/** Per zone, each map it has: floor, map number, scale, offset x, offset y. From the client. */
+/** Per zone, each map it has: floor, map number, scale, offset x, offset y, map image. From the client. */
 const MAPS: Record<string, number[][]> = table;
 
 /** C's float-to-int conversion, which rounds toward zero rather than down. */
@@ -54,4 +54,16 @@ export function gridOf(zone: number, floor: number | null): MapGrid | null {
     for (let row = 0; row < 15; row++) squares.push({ name: `${String.fromCharCode(65 + col)}-${row + 1}`, x: toX(32 + 32 * col), z: toZ(32 + 32 * row) });
   }
   return { lines, squares, size: (32 * 1280) / scale };
+}
+
+/** The game's map sheet for a zone's floor, and where its corners fall in zone coordinates. */
+export function sheetOf(zone: number, floor: number | null): { file: string; x0: number; z0: number; x1: number; z1: number; } | null {
+  if (floor === null) return null;
+  const map = MAPS[zone]?.find(m => m[0] === floor);
+  if (!map) return null;
+  const [, number, scale, ox, oy, image] = map;
+  // Map number 0 marks a zone whose image numbers are not its own; its sheets are kept by floor.
+  const file = number === 0 ? `z${zone}_${floor}` : String(image);
+  // The sheet's top-left pixel and its bottom-right one, the same arithmetic as the grid's.
+  return { file, x0: (ox * 1280) / scale, z0: (-oy * 1280) / scale, x1: ((512 + ox) * 1280) / scale, z1: (-(512 + oy) * 1280) / scale };
 }

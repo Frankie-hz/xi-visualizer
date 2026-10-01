@@ -1,6 +1,6 @@
 // node src/map_grid.test.ts  (run by `pnpm test`)
 import assert from "node:assert";
-import { gridOf, gridPos } from "./map_grid.ts";
+import { gridOf, gridPos, sheetOf } from "./map_grid.ts";
 
 // West Ronfaure (100), one map: scale 256, offsets -312, -248. The middle of the zone sits at map
 // pixel (312, 248), nine squares right of the margin and seven down.
@@ -27,6 +27,17 @@ assert.strictEqual(gridPos(200, 0, 0, 0), null);
   for (const sq of grid.squares) assert.strictEqual(gridPos(100, 0, sq.x, sq.z), sq.name);
   assert.strictEqual(gridOf(100, 3), null);
   assert.strictEqual(gridOf(200, 1)!.squares.length, 225, "Garlaige's floors each have a map");
+}
+
+// The map sheet spans the grid: its 16-pixel margins sit outside the A-1 and O-15 corners.
+{
+  const sheet = sheetOf(100, 0)!;
+  const grid = gridOf(100, 0)!;
+  const [x, , z] = [grid.lines[0][0], 0, grid.lines[1][1]];
+  assert.ok(sheet.x0 < x && sheet.z0 > z, "the sheet starts above and left of the grid");
+  assert.strictEqual(sheet.file, "1", "West Ronfaure's sheet is map image 1");
+  assert.strictEqual(sheetOf(93, 3)!.file, "z93_3", "a zone whose image numbers are not its own is kept by floor");
+  assert.strictEqual(gridPos(100, 0, (sheet.x0 + sheet.x1) / 2, (sheet.z0 + sheet.z1) / 2), "H-8", "its middle is the middle square");
 }
 
 console.log("ok");

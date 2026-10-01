@@ -6,7 +6,7 @@
 # The table is 14-byte records: zone u16, floor u8, map number u8, scale u16, key item u16,
 # map image u16, offset x i16, offset y i16. The floor is the map id the collision mesh carries per
 # placement (mapIdOfPlacement in src/graphics/ximesh.ts). The arithmetic is GetMapPositionStr in the
-# PS2 client; see src/map_grid.ts.
+# PS2 client; see src/map_grid.ts. Each entry: floor, map number, scale, offset x, offset y, map image.
 import json
 import struct
 import sys
@@ -27,7 +27,7 @@ if at < 0:
 def record(offset):
     zone, floor, number, scale, key_item, image, ox, oy = RECORD.unpack_from(data, offset)
     sane = 0 < zone < 1000 and floor < 64 and number < 32 and 16 <= scale <= 8192 and image < 2000 and abs(ox) < 8000 and abs(oy) < 8000
-    return (zone, floor, number, scale, key_item, ox, oy) if sane else None
+    return (zone, floor, number, scale, key_item, image, ox, oy) if sane else None
 
 
 start = at
@@ -40,9 +40,9 @@ while row := record(offset):
     offset += RECORD.size
 
 grid = {}
-for zone, floor, number, scale, key_item, ox, oy in rows:
+for zone, floor, number, scale, key_item, image, ox, oy in rows:
     # No key item, no position: the client prints nothing there (the ships, for one).
     if key_item:
-        grid.setdefault(str(zone), []).append([floor, number, scale, ox, oy])
+        grid.setdefault(str(zone), []).append([floor, number, scale, ox, oy, image])
 OUT.write_text(json.dumps(grid, separators=(",", ":")) + "\n")
 print(f"{sum(map(len, grid.values()))} of {len(rows)} maps over {len(grid)} zones, from offset {start:#x}, to {OUT}")

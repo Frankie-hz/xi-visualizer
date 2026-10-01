@@ -12,7 +12,7 @@ import { addNavMesh, addZoneMesh, fillRef, groundColours, groundUnder, paintOnce
 import { setupBaseScene } from "../graphics/scene";
 import { createViewer } from "../graphics/viewer";
 import { ColorKind, colorMesh, prepareMeshData } from "../graphics/ximesh";
-import { gridOf, gridPos } from "../map_grid";
+import { gridOf, gridPos, sheetOf } from "../map_grid";
 import { obstacleArea, obstacleAt, ringsAround } from "../obstacles";
 import {
   containmentTest,
@@ -193,10 +193,13 @@ export default function RegionEditor(props: RegionEditorProps) {
   /** Ground under the middle of the view once the camera stops: which map the grid is from when no
    * floor is picked, and the height it is laid at. */
   const [viewGround, setViewGround] = createSignal<{ floor: number | null; y: number; } | null>(null);
-  const grid = createMemo(() => {
-    if (!showGrid()) return null;
-    const on = floor() ?? (floors().length > 1 ? viewGround()?.floor ?? null : floors()[0] ?? 0);
-    return gridOf(props.zoneData.id, on);
+  /** The floor whose map the grid and the map sheet are drawn from: the one picked, else the one in view. */
+  const mapFloor = () => floor() ?? (floors().length > 1 ? viewGround()?.floor ?? null : floors()[0] ?? 0);
+  const grid = createMemo(() => (showGrid() ? gridOf(props.zoneData.id, mapFloor()) : null));
+  /** The game's own map sheet laid over the zone, under the regions. */
+  const [showSheet, setShowSheet] = createSignal(false);
+  const sheet = createMemo(() => (showSheet() ? sheetOf(props.zoneData.id, mapFloor()) : null), undefined, {
+    equals: (a, b) => a?.file === b?.file,
   });
   const [hover, setHover] = createSignal<{ spawn: Spawn; x: number; y: number; } | null>(null);
   // The hole under the cursor in the active region, for the marker and the context menu.
@@ -1425,6 +1428,34 @@ export default function RegionEditor(props: RegionEditorProps) {
     });
   });
   const gridLabelRefs = new Map<string, HTMLDivElement>();
+  createEffect(() => {
+    const sh = sheet();
+    if (!sh) return;
+    const y = untrack(viewGround)?.y ?? 0;
+    const texture = new THREE.TextureLoader().load(
+      `${import.meta.env.BASE_URL.replace(/\/$/, "")}/maps/${sh.file}.webp`,
+      undefined,
+      undefined,
+      () => flash("no map sheet for this floor", "warn"),
+    );
+    texture.flipY = false;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array([sh.x0, y, sh.z0, sh.x1, y, sh.z0, sh.x1, y, sh.z1, sh.x0, y, sh.z1]), 3));
+    geo.setAttribute("uv", new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), 2));
+    geo.setIndex([0, 1, 2, 0, 2, 3]);
+    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.85, depthTest: false, side: THREE.DoubleSide });
+    const plane = new THREE.Mesh(geo, material);
+    // Over the terrain, under everything drawn on it.
+    plane.renderOrder = 0.3;
+    scene().add(plane);
+    onCleanup(() => {
+      scene().remove(plane);
+      geo.dispose();
+      material.dispose();
+      texture.dispose();
+    });
+  });
 
   // The zone's trigger areas and zone lines, drawn over the map for reference. Trigger areas pink,
   // zone line entrances cyan, the boxes zone lines from elsewhere land in green.
@@ -3005,6 +3036,8 @@ export default function RegionEditor(props: RegionEditorProps) {
           onSimulate={() => setSimulating(on => !on)}
           grid={showGrid()}
           onGrid={() => setShowGrid(on => !on)}
+          sheet={showSheet()}
+          onSheet={() => setShowSheet(on => !on)}
           density={showDensity()}
           onDensity={() => setShowDensity(on => !on)}
           zoneInfo={showZoneInfo()}
