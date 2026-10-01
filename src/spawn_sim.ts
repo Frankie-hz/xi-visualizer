@@ -3,7 +3,8 @@
 // to the navmesh, and thrown away when the snap had to carry it more than kSnapTolerance sideways
 // or out of the region. The server draws again, up to eight times for a roam leg and sixty-four
 // when it checks a region at load, and a region none of whose draws survive is not used at all.
-import { ShapeUtils, Vector2 } from "three";
+import { Box3, BufferAttribute, BufferGeometry, ShapeUtils, Vector2, Vector3 } from "three";
+import { MeshBVH } from "three-mesh-bvh";
 import { inRing } from "./geometry.ts";
 import type { Region, Vertex } from "./regions.ts";
 
@@ -52,91 +53,44 @@ export function samplePoint(triangles: Triangle[], random: () => number = Math.r
   return [0, 1, 2].map(k => a[k] + u * (b[k] - a[k]) + v * (c[k] - a[k])) as Vertex;
 }
 
-/** The navmesh's walkable triangles, bucketed on x/z so a snap only looks at the ones nearby. */
+/** The navmesh's walkable triangles, in a bounding volume tree so a snap only visits nearby ones. */
 export interface NavIndex {
-  cell: number;
-  /** Flat xyz, three vertices per triangle, in zone coordinates. */
-  tris: Float32Array;
-  buckets: Map<string, number[]>;
+  bvh: MeshBVH;
 }
 
-/** Builds the index from triangle soups: each a flat xyz list, three vertices a triangle. */
-export function indexNav(soups: ArrayLike<number>[], cell = 8): NavIndex {
+/** The navmesh's triangle soups, one per tile, as one tree. */
+export function indexNav(soups: ArrayLike<number>[]): NavIndex {
   const total = soups.reduce((n, s) => n + s.length, 0);
   const tris = new Float32Array(total);
   let at = 0;
   for (const s of soups) (tris.set(s as ArrayLike<number>, at), at += s.length);
-  const buckets = new Map<string, number[]>();
-  for (let t = 0; t < total / 9; t++) {
-    const o = t * 9;
-    const xs = [tris[o], tris[o + 3], tris[o + 6]], zs = [tris[o + 2], tris[o + 5], tris[o + 8]];
-    for (let ix = Math.floor(Math.min(...xs) / cell); ix <= Math.floor(Math.max(...xs) / cell); ix++) {
-      for (let iz = Math.floor(Math.min(...zs) / cell); iz <= Math.floor(Math.max(...zs) / cell); iz++) {
-        const key = `${ix},${iz}`;
-        const list = buckets.get(key);
-        if (list) list.push(t);
-        else buckets.set(key, [t]);
-      }
-    }
-  }
-  return { cell, tris, buckets };
-}
-
-/** Closest point on triangle abc to p, in 3D (Ericson, Real-Time Collision Detection 5.1.5). */
-function closestOnTriangle(p: number[], a: number[], b: number[], c: number[]): number[] {
-  const sub = (u: number[], v: number[]) => [u[0] - v[0], u[1] - v[1], u[2] - v[2]];
-  const dot = (u: number[], v: number[]) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
-  const along = (from: number[], d: number[], t: number) => [from[0] + d[0] * t, from[1] + d[1] * t, from[2] + d[2] * t];
-  const ab = sub(b, a), ac = sub(c, a), ap = sub(p, a);
-  const d1 = dot(ab, ap), d2 = dot(ac, ap);
-  if (d1 <= 0 && d2 <= 0) return a;
-  const bp = sub(p, b), d3 = dot(ab, bp), d4 = dot(ac, bp);
-  if (d3 >= 0 && d4 <= d3) return b;
-  const vc = d1 * d4 - d3 * d2;
-  if (vc <= 0 && d1 >= 0 && d3 <= 0) return along(a, ab, d1 / (d1 - d3));
-  const cp = sub(p, c), d5 = dot(ab, cp), d6 = dot(ac, cp);
-  if (d6 >= 0 && d5 <= d6) return c;
-  const vb = d5 * d2 - d1 * d6;
-  if (vb <= 0 && d2 >= 0 && d6 <= 0) return along(a, ac, d2 / (d2 - d6));
-  const va = d3 * d6 - d5 * d4;
-  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) return along(b, sub(c, b), (d4 - d3) / (d4 - d3 + (d5 - d6)));
-  const denom = 1 / (va + vb + vc);
-  return [0, 1, 2].map(k => a[k] + ab[k] * vb * denom + ac[k] * vc * denom);
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(tris, 3));
+  return { bvh: new MeshBVH(geometry) };
 }
 
 /**
- * The nearest walkable point to p, as Detour's findNearestPoly finds it within the pick box: a
- * point standing over a triangle drops straight onto it, one beside every triangle goes to the
- * nearest edge. Null when nothing walkable is in the box.
+ * Where Detour's findNearestPoly would put a point: the nearest point on any walkable triangle
+ * whose own nearest point lies within the pick box, or null when none does.
  */
 export function snapToNav(nav: NavIndex, p: Vertex): Vertex | null {
-  const { cell, tris, buckets } = nav;
-  let best: number[] | null = null;
+  const point = new Vector3(p[0], p[1], p[2]);
+  const pick = new Box3(new Vector3(p[0] - PICK.x, p[1] - PICK.y, p[2] - PICK.z), new Vector3(p[0] + PICK.x, p[1] + PICK.y, p[2] + PICK.z));
+  const q = new Vector3();
+  let best: Vertex | null = null;
   let bestD = Infinity;
-  const seen = new Set<number>();
-  const cx = Math.floor(p[0] / cell), cz = Math.floor(p[2] / cell);
-  // Outward a ring of cells at a time; once the nearest find is closer than the next ring can
-  // be, nothing further out can beat it.
-  for (let ring = 0; ring <= Math.ceil(PICK.x / cell) + 1; ring++) {
-    if (best && bestD <= ((ring - 1) * cell) ** 2) break;
-    for (let ix = cx - ring; ix <= cx + ring; ix++) {
-      for (let iz = cz - ring; iz <= cz + ring; iz++) {
-        if (Math.max(Math.abs(ix - cx), Math.abs(iz - cz)) !== ring) continue;
-        for (const t of buckets.get(`${ix},${iz}`) ?? []) {
-          if (seen.has(t)) continue;
-          seen.add(t);
-          const o = t * 9;
-          const a = [tris[o], tris[o + 1], tris[o + 2]], b = [tris[o + 3], tris[o + 4], tris[o + 5]], c = [tris[o + 6], tris[o + 7], tris[o + 8]];
-          const q = closestOnTriangle(p, a, b, c);
-          if (Math.abs(q[0] - p[0]) > PICK.x || Math.abs(q[1] - p[1]) > PICK.y || Math.abs(q[2] - p[2]) > PICK.z) continue;
-          // Over the triangle, only height separates them; Detour ranks those by it alone too.
-          const d = (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2 + (q[2] - p[2]) ** 2;
-          if (d < bestD) (bestD = d, best = q);
-        }
-      }
-    }
-  }
-  return best as Vertex | null;
+  nav.bvh.shapecast({
+    intersectsBounds: box => box.intersectsBox(pick),
+    intersectsTriangle: tri => {
+      tri.closestPointToPoint(point, q);
+      if (!pick.containsPoint(q)) return false;
+      // Over the triangle, only height separates them; Detour ranks those by it alone too.
+      const d = q.distanceToSquared(point);
+      if (d < bestD) (bestD = d, best = [q.x, q.y, q.z]);
+      return false;
+    },
+  });
+  return best;
 }
 
 export type Draw = { at: Vertex; ok: true; snapped: Vertex; } | { at: Vertex; ok: false; why: "no navmesh near" | "snap moved it" | "snap left the region"; };
