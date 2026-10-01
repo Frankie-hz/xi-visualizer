@@ -2,6 +2,7 @@ import { createEffect, createMemo, createResource, createSignal, For, on, onClea
 import * as THREE from "three";
 import { Line2, LineGeometry, LineMaterial, LineSegments2, LineSegmentsGeometry, MapControls } from "three/examples/jsm/Addons.js";
 import { zoneOfFolder } from "../data/zones";
+import { densityBands } from "../density";
 import { inRing, signedArea } from "../geometry";
 import { createMapCamera, fitCameraToContents } from "../graphics/camera";
 import { buildFloorIndex, type FloorIndex } from "../graphics/floors";
@@ -1456,6 +1457,55 @@ export default function RegionEditor(props: RegionEditorProps) {
     ];
   });
   const featureLabelRefs = new Map<string, HTMLDivElement>();
+
+  // How crowded the zone is: mobs alive at once, smoothed into bands, cool to hot. From the regions
+  // as they settle, so it follows edits without redoing the sums on every move of a drag.
+  const [showDensity, setShowDensity] = createSignal(false);
+  const DENSITY_COLOURS = [0x3b0f70, 0x641a80, 0x8c2981, 0xb73779, 0xde4968, 0xf7705c, 0xfe9f6d, 0xfecf92];
+  const density = createMemo(() => (showDensity() ? densityBands(props.spawns, asSet(settled()), assign(), paths()) : []));
+  // Painted onto a canvas and laid over the map as one picture: a canvas fills any polygon with holes
+  // the way it should, where triangulating the bands' outlines left stray wedges across the zone.
+  createEffect(() => {
+    const bands = density();
+    if (!bands.length) return;
+    const y = untrack(viewGround)?.y ?? 0;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const [x, z] of bands[0].polygons.flat(2)) (x0 = Math.min(x0, x), x1 = Math.max(x1, x), z0 = Math.min(z0, z), z1 = Math.max(z1, z));
+    const perPixel = Math.max(1, Math.max(x1 - x0, z1 - z0) / 2048);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil((x1 - x0) / perPixel);
+    canvas.height = Math.ceil((z1 - z0) / perPixel);
+    const ctx = canvas.getContext("2d")!;
+    for (const band of bands) {
+      // Hotter bands more solid, so the crowded spots stand out from the regions' own colours.
+      ctx.globalAlpha = 0.15 + 0.35 * band.level;
+      ctx.fillStyle = `#${DENSITY_COLOURS[Math.round(band.level * (DENSITY_COLOURS.length - 1))].toString(16).padStart(6, "0")}`;
+      ctx.beginPath();
+      for (const ring of band.polygons.flat()) {
+        ring.forEach(([x, z], k) => (k ? ctx.lineTo : ctx.moveTo).call(ctx, (x - x0) / perPixel, (z - z0) / perPixel));
+        ctx.closePath();
+      }
+      ctx.fill("evenodd");
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.flipY = false;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array([x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z1]), 3));
+    geo.setAttribute("uv", new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), 2));
+    geo.setIndex([0, 1, 2, 0, 2, 3]);
+    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthTest: false, side: THREE.DoubleSide });
+    const plane = new THREE.Mesh(geo, material);
+    // Over the region fills, under their outlines and the dots.
+    plane.renderOrder = 1.2;
+    scene().add(plane);
+    onCleanup(() => {
+      scene().remove(plane);
+      geo.dispose();
+      material.dispose();
+      texture.dispose();
+    });
+  });
   createEffect(() => {
     const f = zoneInfo();
     if (!f) return;
@@ -2955,6 +3005,8 @@ export default function RegionEditor(props: RegionEditorProps) {
           onSimulate={() => setSimulating(on => !on)}
           grid={showGrid()}
           onGrid={() => setShowGrid(on => !on)}
+          density={showDensity()}
+          onDensity={() => setShowDensity(on => !on)}
           zoneInfo={showZoneInfo()}
           zoneInfoNote={props.features
             ? `${props.features.triggers.areas.length} trigger areas, ${props.features.lines.length} zone lines out and ${props.features.arrivals.length} in${
@@ -2963,6 +3015,21 @@ export default function RegionEditor(props: RegionEditorProps) {
             : "Loading the zone's server files…"}
           onZoneInfo={() => setShowZoneInfo(on => !on)}
         />
+        <Show when={density().length}>
+          <div class="absolute bottom-10 left-2 z-20 text-xs bg-slate-900/85 rounded px-3 py-2 space-y-1 pointer-events-none">
+            <div class="text-[10px] uppercase tracking-wide text-slate-500">Mobs alive at once</div>
+            <div class="flex items-center gap-2">
+              <span class="text-slate-400">fewer</span>
+              <span class="flex">
+                <For each={DENSITY_COLOURS}>{c => <span class="w-4 h-3" style={{ background: `#${c.toString(16).padStart(6, "0")}` }} />}</For>
+              </span>
+              <span class="text-slate-400">more</span>
+            </div>
+            <div class="text-slate-500">
+              densest: {density().at(-1)!.value.toFixed(1)} per 100 y², fixed placeholders left out
+            </div>
+          </div>
+        </Show>
         <Show when={simulating() && active()}>
           <div class="absolute top-11 left-2 z-20 w-72 text-xs bg-slate-900/90 rounded px-3 py-2 space-y-1">
             <div class="flex items-center justify-between">

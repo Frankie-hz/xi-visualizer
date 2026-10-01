@@ -29,6 +29,8 @@ export default function MapToolbar(props: {
   readOnly?: boolean;
   grid: boolean;
   onGrid: () => void;
+  density: boolean;
+  onDensity: () => void;
   zoneInfo: boolean;
   /** What showing the zone info would show, for its tooltip. */
   zoneInfoNote: string;
@@ -116,6 +118,19 @@ export default function MapToolbar(props: {
           <path d="M11 7.5h3M12.5 6l1.5 1.5-1.5 1.5" />
         </Icon>
         Zone info
+      </button>
+      <button
+        class={`${TOOL} ${props.density ? "bg-orange-600 hover:bg-orange-500 text-white" : IDLE}`}
+        aria-pressed={props.density}
+        title="How crowded each part of the zone is: every mob counted where it can be, spread over its region or along its route"
+        onClick={() => props.onDensity()}
+      >
+        <Icon>
+          <circle cx="8" cy="8" r="6" />
+          <circle cx="8" cy="8" r="3.5" />
+          <circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" />
+        </Icon>
+        Density
       </button>
     </div>
   );
