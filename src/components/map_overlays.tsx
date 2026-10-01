@@ -5,16 +5,14 @@ import type * as THREE from "three";
 export const xyz = (p: THREE.Vector3) => [p.x, p.y, p.z].map(n => n.toFixed(3)).join(" ");
 
 /** The ground position under the cursor, in the map's corner, with the in-game grid square when the
- * zone has a map there; clicking copies the position. */
-export function CursorReadout(props: { at: THREE.Vector3; grid?: string | null; onCopy: (text: string) => void; }) {
+ * zone has a map there. Not clickable: reaching it moves the cursor off the spot it shows, so
+ * alt+click on the map is what copies a position. */
+export function CursorReadout(props: { at: THREE.Vector3; grid?: string | null; }) {
   return (
-    <div
-      class="absolute bottom-2 left-2 font-mono text-xs text-slate-200 bg-slate-900/75 rounded px-2 py-1 cursor-pointer select-none"
-      title="Ground position under the cursor, and the grid square <pos> would give. Click to copy, or alt+click the map for !pos"
-      onClick={() => props.onCopy(xyz(props.at))}
-    >
+    <div class="absolute bottom-2 left-2 font-mono text-xs text-slate-200 bg-slate-900/75 rounded px-2 py-1 pointer-events-none select-none">
       {props.grid && <span class="text-amber-300 mr-2">({props.grid})</span>}
       {xyz(props.at)}
+      <span class="text-slate-500 ml-2">alt+click copies !pos</span>
     </div>
   );
 }

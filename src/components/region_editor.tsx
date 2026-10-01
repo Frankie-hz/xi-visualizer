@@ -3339,7 +3339,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             onPreview={setArmed}
           />
         </Show>
-        <Show when={cursor()}>{at => <CursorReadout at={at()} grid={gridAt(at().x, at().y, at().z)} onCopy={copy} />}</Show>
+        <Show when={cursor()}>{at => <CursorReadout at={at()} grid={gridAt(at().x, at().y, at().z)} />}</Show>
         <Show when={menu()}>
           {target => <EditorMenu target={target()} ref={el => (menuElement = el)} actions={menuActions} />}
         </Show>

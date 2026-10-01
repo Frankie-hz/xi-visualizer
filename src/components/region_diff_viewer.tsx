@@ -666,7 +666,7 @@ export default function RegionDiffViewer(props: DiffViewerProps) {
         </For>
         <span style={{ color: css(STATUS_COLOR.reshaped) }}>● mob reassigned</span>
       </div>
-      <Show when={cursor()}>{at => <CursorReadout at={at()} onCopy={copy} />}</Show>
+      <Show when={cursor()}>{at => <CursorReadout at={at()} />}</Show>
       <Show when={toast()}>
         <div class="absolute bottom-2 right-2 text-xs text-slate-200 bg-slate-900/85 rounded px-2 py-1 pointer-events-none">{toast()}</div>
       </Show>
