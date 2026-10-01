@@ -19,9 +19,10 @@ node scripts/howto/record.mjs 02-expand-hole
 Then, to narrate them with [Kokoro](https://huggingface.co/hexgrad/Kokoro-82M), locally and with no account (the model, about 300 MB, downloads on first use):
 
 ```
-node scripts/howto/voice.mjs               # VOICE=am_michael etc. for another voice
+node scripts/howto/voice.mjs                     # all four; VOICE=bm_george etc. for another voice
+node scripts/howto/voice.mjs --voices            # the same line in every English voice, to choose one
 ```
 
-That writes `<scene>.narrated.webm` and the bare `<scene>.narration.wav` beside each video. Each cue is spoken on its own and placed at its start time, so the voice stays in sync; a line too long for its slot is sped up, up to 1.2×.
+That writes `<scene>.narrated.mp4`, its subtitles `<scene>.narrated.vtt`, and the bare `<scene>.narration.wav` beside each video. Each cue is spoken on its own and placed at its start time, so the voice stays in sync; a line too long for its slot is sped up, up to 1.2×. Then every stretch where the picture holds still and nobody is talking is cut down to half a second. `--voices` writes `voices/<voice>.wav` and `voices/all-voices.wav`, where each voice says its name before the line.
 
 Recording needs Playwright's Chromium and ffmpeg under `%LOCALAPPDATA%\ms-playwright`, or `BROWSER` and `FFMPEG` set. The scenes are in `scripts/howto/scenes.mjs`. They work out positions from the editor at record time, so an upstream change to these regions can change what a video shows; re-read the transcript against the video after recording.

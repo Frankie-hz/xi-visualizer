@@ -7,3 +7,5 @@ public/pathdata_gz
 .idea/
 docs/howto/*.webm
 docs/howto/*.wav
+docs/howto/*.mp4
+docs/howto/voices/
