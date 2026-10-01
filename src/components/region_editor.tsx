@@ -118,7 +118,13 @@ interface MergePlan {
  */
 type Tool =
   | { kind: "select"; }
-  | { kind: "draw"; /** Which ring of the active region a click adds to; routes ignore it. */ ring: number; }
+  | {
+    kind: "draw";
+    /** Which ring of the region a click adds to; routes ignore it. */
+    ring: number;
+    /** The region being drawn, so leaving the tool tidies up the right one. */
+    region: string | null;
+  }
   | { kind: "carve"; }
   | { kind: "grow"; plan: GrowPlan; back: "select" | "carve"; }
   | { kind: "merge"; plan: MergePlan; back: "select" | "carve"; };
@@ -156,7 +162,16 @@ export default function RegionEditor(props: RegionEditorProps) {
     props.assign ?? Object.fromEntries(props.spawns.filter(s => s.regions?.length).map(s => [s.id, s.regions!])),
   );
   const [activeName, setActiveName] = createSignal<string | null>(null);
-  const [tool, setTool] = createSignal<Tool>({ kind: "select" });
+  const [tool, setToolRaw] = createSignal<Tool>({ kind: "select" });
+  /**
+   * Every change of tool comes through here, so leaving a drawing by any route (another tool, another
+   * region, + Region again) tidies it up as Done does, rather than saving a ring of one or two points.
+   */
+  const setTool = (next: Tool) => {
+    const now = tool();
+    setToolRaw(next);
+    if (now.kind === "draw" && !(next.kind === "draw" && next.ring === now.ring && next.region === now.region)) closeDraw(now);
+  };
   /** The click mode, as the handlers read it. A plan keeps the mode it was opened from. */
   const mode = (): Mode => {
     const t = tool();
@@ -167,7 +182,7 @@ export default function RegionEditor(props: RegionEditorProps) {
   };
   const setMode = (next: Mode | ((now: Mode) => Mode)) => {
     const m = typeof next === "function" ? next(mode()) : next;
-    setTool(m === "draw" ? { kind: "draw", ring: 0 } : m === "obstacles" ? { kind: "carve" } : { kind: "select" });
+    setTool(m === "draw" ? { kind: "draw", ring: 0, region: activeName() } : m === "obstacles" ? { kind: "carve" } : { kind: "select" });
   };
   const planBack = () => (mode() === "obstacles" ? "carve" : "select") as "select" | "carve";
   const grow = () => {
@@ -633,8 +648,9 @@ export default function RegionEditor(props: RegionEditorProps) {
     setWalker(s.walker && s.paths[s.walker] ? s.walker : null);
     setMirror(s.mirror.filter(id => s.paths[id]));
     // The tool in hand stays in hand: undoing a cut after leaving carve mode is not a request to go
-    // back into it. Drawing is the exception, since the ring being drawn may be what was undone.
-    if (mode() === "draw") setMode("select");
+    // back into it. Drawing is the exception, since the ring being drawn may be what was undone;
+    // left without tidying, since the snapshot is already what it should be.
+    if (mode() === "draw") setToolRaw({ kind: "select" });
   };
 
   // Snapshots are taken at operation boundaries, so a whole vertex drag collapses into one step.
@@ -1273,7 +1289,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     const t = tool();
     return t.kind === "draw" ? t.ring : 0;
   };
-  const startDraw = (ring: number) => setTool({ kind: "draw", ring });
+  const startDraw = (ring: number) => setTool({ kind: "draw", ring, region: activeName() });
   const startHole = () => {
     const r = active();
     if (!r) return;
@@ -1281,31 +1297,37 @@ export default function RegionEditor(props: RegionEditorProps) {
     editActive(c => c.rings.push([]));
     startDraw(r.rings.length);
   };
+  const finishDraw = () => setMode("select");
   /**
-   * Leaves draw mode. A ring too short to be a shape goes, and so does the step that started it,
-   * so backing out of "+ Region" or "+ Hole" leaves neither an empty row nor a no-op in History.
+   * What leaving a drawing does. A ring too short to be a shape goes, and so does the step that
+   * started it, so backing out of "+ Region" or "+ Hole" leaves neither an empty row nor a no-op in
+   * History.
    */
-  const finishDraw = () => {
-    const k = drawRing();
-    setMode("select");
+  const closeDraw = (drawn: { ring: number; region: string | null; }) => {
     const id = walker();
     if (id) {
       // A route of one leg is not a route; drop it rather than leaving a stub behind.
       if ((paths()[id]?.legs.length ?? 0) < 2) dropPath(id);
       return;
     }
-    const r = active();
+    const k = drawn.ring;
+    const r = regions().find(x => x.name === drawn.region);
     if (!r || (r.rings[k]?.length ?? 3) >= 3) return;
     const started = undoStack().at(-1)?.label;
     if (k === 0 && started === "add a region") {
       setRegions(rs => rs.filter(x => x.name !== r.name));
-      setActiveName(null);
+      if (activeName() === r.name) setActiveName(null);
       forget();
     } else if (k > 0) {
-      editActive(c => void c.rings.splice(k, 1));
+      setRegions(rs => rs.map(x => (x.name === r.name ? { name: x.name, rings: x.rings.filter((_, i) => i !== k) } : x)));
       if (started === "start a hole") forget();
     }
   };
+  // Picking another region ends a drawing, or the next clicks would add to the one just picked.
+  createEffect(on(activeName, name => {
+    const t = tool();
+    if (t.kind === "draw" && !walker() && t.region !== name) finishDraw();
+  }, { defer: true }));
 
   // Returns false when the new name is empty or taken, so the input can snap back.
   const renameRegion = (from: string, raw: string) => {
