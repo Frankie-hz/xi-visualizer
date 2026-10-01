@@ -1,5 +1,6 @@
 // Ring arithmetic on the x/z plane, shared by the region model, the obstacle scan and the editor.
 // Heights ride along untouched: floors are told apart by y elsewhere, never here.
+import Flatbush from "flatbush";
 import type { Ring, Vertex } from "./regions.ts";
 
 /** Whether x/z is inside the ring, by the even-odd rule. A point on the edge may fall either way. */
@@ -77,3 +78,37 @@ export function convexHull(points: Vertex[]): Ring {
 
 /** Whether ring `a` lies mostly inside ring `b`, by the share of its vertices that do. */
 export const mostlyInside = (a: Ring, b: Ring, share = 0.8) => a.filter(([x, , z]) => inRing(b, x, z)).length >= share * a.length;
+
+/**
+ * inRing for many points against the same rings: each answer per ring, from only the edges a
+ * spatial index finds on the ray to the right of the point. `inside(x, z)` gives one flag per
+ * ring; callers decide what outline-minus-holes means to them.
+ */
+export function ringsIndex(rings: Ring[]): (x: number, z: number) => Uint8Array {
+  const edges: number[][] = []; // [ring, x1, z1, x2, z2]
+  rings.forEach((ring, k) => {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) edges.push([k, ring[i][0], ring[i][2], ring[j][0], ring[j][2]]);
+  });
+  const flips = new Uint8Array(rings.length);
+  if (!edges.length) return () => flips.fill(0);
+  const index = new Flatbush(edges.length);
+  for (const [, x1, z1, x2, z2] of edges) index.add(Math.min(x1, x2), Math.min(z1, z2), Math.max(x1, x2), Math.max(z1, z2));
+  index.finish();
+  return (x, z) => {
+    flips.fill(0);
+    for (const e of index.search(x, z, index.maxX, z)) {
+      const [k, xi, zi, xj, zj] = edges[e];
+      if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) flips[k] ^= 1;
+    }
+    return flips;
+  };
+}
+
+/** The height of the vertex nearest each asked-for spot, from a spatial index of the vertices. */
+export function nearestHeight(vertices: Vertex[]): (x: number, z: number) => number {
+  if (!vertices.length) return () => 0;
+  const index = new Flatbush(vertices.length);
+  for (const [x, , z] of vertices) index.add(x, z, x, z);
+  index.finish();
+  return (x, z) => vertices[index.neighbors(x, z, 1)[0]][1];
+}

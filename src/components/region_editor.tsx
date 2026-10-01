@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import * as THREE from "three";
 import { Line2, LineGeometry, LineMaterial, LineSegments2, LineSegmentsGeometry, MapControls } from "three/examples/jsm/Addons.js";
-import { convexHull, inRing, mostlyInside, ringDistance, signedArea, withinRing } from "../geometry";
+import { convexHull, inRing, mostlyInside, nearestHeight, ringDistance, signedArea, withinRing } from "../geometry";
 import { createMapCamera, fitCameraToContents } from "../graphics/camera";
 import { buildFloorIndex, type FloorIndex } from "../graphics/floors";
 import { parseNavMesh } from "../graphics/navmesh";
@@ -28,6 +28,7 @@ import {
 } from "../obstacles";
 import type { Obstacle } from "../obstacles";
 import {
+  containmentTest,
   containsXZ,
   regionAt,
   regionHue,
@@ -237,40 +238,8 @@ export default function RegionEditor(props: RegionEditorProps) {
   /** Holes of the active region within `reach` yalms of hole `index`, itself excluded. */
   const nearHoles = (r: Region, index: number, reach = 2) =>
     r.rings.map((ring, k) => k).filter(k => k >= 1 && k !== index && r.rings[k].length >= 3 && ringDistance(r.rings[index], r.rings[k]) <= reach);
-  /**
-   * lastYOf for the many spots of one scan: the region's corners bucketed once, then the nearest
-   * found among the buckets around a spot. Walking every corner for every spot was most of the time
-   * the carve tool took to open on a big region.
-   */
-  const heightsNear = (r: Region) => {
-    const SIZE = 8;
-    const buckets = new Map<string, Vertex[]>();
-    for (const v of r.rings.flat()) {
-      const key = `${Math.floor(v[0] / SIZE)},${Math.floor(v[2] / SIZE)}`;
-      const list = buckets.get(key);
-      if (list) list.push(v);
-      else buckets.set(key, [v]);
-    }
-    return (x: number, z: number) => {
-      const cx = Math.floor(x / SIZE), cz = Math.floor(z / SIZE);
-      let best = 0, near = Infinity;
-      // Widening square rings of buckets, and one more past the first hit, since a corner in the
-      // next ring out can still be nearer than one in the corner of this one.
-      for (let ring = 0, last = 400; ring <= last; ring++) {
-        for (let dx = -ring; dx <= ring; dx++) {
-          for (let dz = -ring; dz <= ring; dz++) {
-            if (Math.max(Math.abs(dx), Math.abs(dz)) !== ring) continue;
-            for (const [vx, vy, vz] of buckets.get(`${cx + dx},${cz + dz}`) ?? []) {
-              const d = (vx - x) ** 2 + (vz - z) ** 2;
-              if (d < near) (near = d, best = vy);
-            }
-          }
-        }
-        if (near < Infinity && last === 400) last = ring + 1;
-      }
-      return best;
-    };
-  };
+  /** lastYOf for the many spots of one scan, from a spatial index of the region's corners. */
+  const heightsNear = (r: Region) => nearestHeight(r.rings.flat());
   /** A height to build a ring at near a spot: the nearest vertex of the region. */
   const lastYOf = (name: string, x: number, z: number) => {
     const entry = regions().find(r => r.name === name);
@@ -551,6 +520,10 @@ export default function RegionEditor(props: RegionEditorProps) {
     if (!data || !wanted) return;
     coverageTimer = setTimeout(() => {
       const acc: Record<string, [number, number]> = {};
+      // One indexed test per region, built on first use: walking each outline per point froze the
+      // page for seconds in zones with millions of points.
+      const tests = new Map<string, (x: number, z: number) => boolean>();
+      const testOf = (name: string) => tests.get(name) ?? tests.set(name, containmentTest(set[name])).get(name)!;
       for (const [id, names] of Object.entries(a)) {
         const range = data.ranges[id];
         if (!range) continue;
@@ -563,10 +536,11 @@ export default function RegionEditor(props: RegionEditorProps) {
           const r = set[name];
           if (!r) continue;
           const tally = (acc[name] ??= [0, 0]);
+          const inside = testOf(name);
           for (let i = 0; i < count; i++) {
             const o = (start + i) * 3;
             tally[1]++;
-            if (containsXZ(r, data.positions[o], data.positions[o + 2])) tally[0]++;
+            if (inside(data.positions[o], data.positions[o + 2])) tally[0]++;
           }
         }
       }

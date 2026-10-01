@@ -1,7 +1,7 @@
 import { load } from "js-yaml";
 import { difference, intersection, union } from "polyclip-ts";
 import type { Geom } from "polyclip-ts";
-import { inRing, signedArea } from "./geometry.ts";
+import { inRing, ringsIndex, signedArea } from "./geometry.ts";
 
 // A vertex is [x, y, z]: earcut triangulates on x/z and carries y through, so the polygon
 // describes the floor surface itself. Stacked floors are told apart by whose floor is nearer.
@@ -455,6 +455,16 @@ export function patchMobsYaml(
 export function containsXZ(r: Region, x: number, z: number): boolean {
   if (!r.rings[0] || r.rings[0].length < 3 || !inRing(r.rings[0], x, z)) return false;
   return !r.rings.slice(1).some(h => inRing(h, x, z));
+}
+
+/** containsXZ for many points against one region, through a spatial index of its edges. */
+export function containmentTest(r: Region): (x: number, z: number) => boolean {
+  if (!r.rings[0] || r.rings[0].length < 3) return () => false;
+  const inside = ringsIndex(r.rings.map(ring => (ring.length >= 3 ? ring : [])));
+  return (x, z) => {
+    const flips = inside(x, z);
+    return flips[0] === 1 && !flips.some((f, k) => k > 0 && f === 1);
+  };
 }
 
 // ponytail: nearest outline vertex, not barycentric interpolation over the triangulation.

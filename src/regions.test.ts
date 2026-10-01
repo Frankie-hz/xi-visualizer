@@ -2,6 +2,7 @@
 import assert from "node:assert";
 import {
   commitMessage,
+  containmentTest,
   containsXZ,
   diffRegions,
   emitRegionsBlock,
@@ -641,6 +642,26 @@ assert.deepStrictEqual(splitPlacements(merged.placements).assign, { "1": ["north
   const rock: Region = { rings: [[[-2, 0, -2], [5, 0, -2], [5, 0, 5], [-2, 0, 5]]] };
   const taken = regionIntersection(rock, field);
   assert.strictEqual(taken.reduce((sum, r) => sum + regionArea(r), 0), 25 - 9, "outside the outline and inside the old hole are not taken again");
+}
+
+// The banded test answers as containsXZ does, point for point: a ragged outline, holes, and two
+// holes laid over each other, which an inside-count over all rings at once would get wrong.
+{
+  let seed = 7;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const outline: Vertex[] = Array.from({ length: 40 }, (_, i) => {
+    const a = (i / 40) * Math.PI * 2, rr = 40 + rand() * 25;
+    return [Math.cos(a) * rr, 0, Math.sin(a) * rr];
+  });
+  const square = (cx: number, cz: number, h: number): Vertex[] => [[cx - h, 0, cz - h], [cx + h, 0, cz - h], [cx + h, 0, cz + h], [cx - h, 0, cz + h]];
+  const r: Region = { rings: [outline, square(0, 0, 10), square(5, 5, 10), square(-25, 10, 4)] };
+  const test = containmentTest(r);
+  let disagree = 0;
+  for (let i = 0; i < 20000; i++) {
+    const x = rand() * 160 - 80, z = rand() * 160 - 80;
+    if (test(x, z) !== containsXZ(r, x, z)) disagree++;
+  }
+  assert.strictEqual(disagree, 0, "containmentTest agrees with containsXZ");
 }
 
 console.log("ok");

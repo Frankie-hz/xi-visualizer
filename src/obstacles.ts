@@ -1,4 +1,4 @@
-import { segmentDistance, signedArea } from "./geometry.ts";
+import { ringsIndex, segmentDistance, signedArea } from "./geometry.ts";
 import { simplifyRing } from "./regions.ts";
 import type { Ring, Vertex } from "./regions.ts";
 
@@ -487,38 +487,10 @@ export interface Patch {
   overBudget: boolean;
 }
 
-/**
- * Whether a cell's middle lies inside a ring, as inRing would say, from where the ring crosses each
- * row: worked out once per row, rather than walking the whole ring for every cell, which on a big
- * region was a million cells times hundreds of corners each time the carve tool looked.
- */
+/** Whether a cell's middle lies inside the outline, through a spatial index of its edges. */
 export function cellsInside(outline: Ring, cell: number): (ix: number, iz: number) => boolean {
-  const rows = new Map<number, number[]>();
-  const crossings = (iz: number) => {
-    let xs = rows.get(iz);
-    if (xs) return xs;
-    const z = (iz + 0.5) * cell;
-    xs = [];
-    for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
-      const [xi, , zi] = outline[i], [xj, , zj] = outline[j];
-      if ((zi > z) !== (zj > z)) xs.push(((xj - xi) * (z - zi)) / (zj - zi) + xi);
-    }
-    xs.sort((a, b) => a - b);
-    rows.set(iz, xs);
-    return xs;
-  };
-  return (ix, iz) => {
-    const xs = crossings(iz);
-    const x = (ix + 0.5) * cell;
-    // Inside when an odd number of crossings lie to the right, as inRing counts them.
-    let lo = 0, hi = xs.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (xs[mid] <= x) lo = mid + 1;
-      else hi = mid;
-    }
-    return (xs.length - lo) % 2 === 1;
-  };
+  const inside = ringsIndex([outline]);
+  return (ix, iz) => inside((ix + 0.5) * cell, (iz + 0.5) * cell)[0] === 1;
 }
 
 /**

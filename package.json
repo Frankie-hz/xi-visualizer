@@ -38,6 +38,7 @@
     "camera-controls": "^2.10.1",
     "chart.js": "^4.5.1",
     "dexie": "^4.4.5",
+    "flatbush": "^4.6.2",
     "fuse.js": "^7.5.0",
     "highlight.js": "^11.12.0",
     "hold-event": "^1.1.2",
