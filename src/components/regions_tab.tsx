@@ -133,7 +133,6 @@ export default function RegionsTab(props: {
                   class="flex-1 min-w-0 bg-transparent px-1 rounded outline-none hover:bg-slate-600 focus:bg-slate-900"
                   value={r.name}
                   title="Click to rename"
-                  aria-label={`Name of region ${r.name}`}
                   onClick={e => e.stopPropagation()}
                   onFocus={() => props.onSelect(r.name)}
                   onKeyDown={e => e.key === "Enter" && e.currentTarget.blur()}
@@ -167,16 +166,11 @@ export default function RegionsTab(props: {
                   {(props.coverage[r.name] * 100).toFixed(0)}%
                 </span>
               </Show>
-              <button class={BTN.icon} title="Centre on it" aria-label={`Centre on ${r.name}`} onClick={e => (e.stopPropagation(), props.onCentre(r.name))}>
+              <button class={BTN.icon} title="Centre on it" aria-label="Centre on it" onClick={e => (e.stopPropagation(), props.onCentre(r.name))}>
                 ⌖
               </button>
               <Show when={props.canEdit}>
-                <button
-                  class={BTN.iconDanger}
-                  title="Delete region"
-                  aria-label={`Delete region ${r.name}`}
-                  onClick={e => (e.stopPropagation(), props.onDelete(r.name))}
-                >
+                <button class={BTN.iconDanger} title="Delete region" aria-label="Delete region" onClick={e => (e.stopPropagation(), props.onDelete(r.name))}>
                   ✕
                 </button>
               </Show>
@@ -241,22 +235,12 @@ export default function RegionsTab(props: {
                     <span class="flex-1 truncate" title={s.name}>{s.name}</span>
                     <span class="text-slate-500">{s.id}</span>
                     <Show when={s.at} fallback={<span class="px-1 text-slate-600" title="Placed by the region, no fixed point">·</span>}>
-                      <button
-                        class={BTN.icon}
-                        title="Centre on it"
-                        aria-label={`Centre on ${s.name} ${s.id}`}
-                        onClick={e => (e.stopPropagation(), props.onFly(s))}
-                      >
+                      <button class={BTN.icon} title="Centre on it" aria-label="Centre on it" onClick={e => (e.stopPropagation(), props.onFly(s))}>
                         ⌖
                       </button>
                     </Show>
                     <Show when={props.canEdit}>
-                      <button
-                        class={BTN.iconDanger}
-                        title="Unassign"
-                        aria-label={`Unassign ${s.name} ${s.id}`}
-                        onClick={e => (e.stopPropagation(), props.onUnassign(s.id))}
-                      >
+                      <button class={BTN.iconDanger} title="Unassign" aria-label="Unassign" onClick={e => (e.stopPropagation(), props.onUnassign(s.id))}>
                         ✕
                       </button>
                     </Show>
