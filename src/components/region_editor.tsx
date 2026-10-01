@@ -396,22 +396,33 @@ export default function RegionEditor(props: RegionEditorProps) {
     for (const r of settled()) if ((r.rings[0]?.length ?? 0) >= 3) out[r.name] = groundUnder(g, r.rings[0], (x, z) => inRing(r.rings[0], x, z));
     return out;
   });
-  const hues = createMemo(() => {
-    const map: Record<string, number> = {};
-    const under = groundHues();
-    for (const r of regions()) {
-      if (!hueSlots.has(r.name)) hueSlots.set(r.name, hueSlots.size);
-      map[r.name] = contrastHue((hueSlots.get(r.name)! * GOLDEN + 0.11) % 1, under[r.name]);
-    }
-    return map;
-  });
+  // Equal when no region's hue moved, which is nearly always: a new object on every vertex drag sent
+  // every point, label and spawn dot that colours by region round to be repainted.
+  const hues = createMemo(
+    () => {
+      const map: Record<string, number> = {};
+      const under = groundHues();
+      for (const r of regions()) {
+        if (!hueSlots.has(r.name)) hueSlots.set(r.name, hueSlots.size);
+        map[r.name] = contrastHue((hueSlots.get(r.name)! * GOLDEN + 0.11) % 1, under[r.name]);
+      }
+      return map;
+    },
+    undefined,
+    { equals: (a, b) => Object.keys(a).length === Object.keys(b).length && Object.keys(a).every(k => a[k] === b[k]) },
+  );
   // Tolerates a missing name: Solid re-runs a Show's children once before tearing them down, so
   // these get called with the selection that just became null.
   const hueOf = (name?: string | null) => (name ? hues()[name] ?? regionHue(name) : 0);
   const colorOf = (name?: string | null) => new THREE.Color().setHSL(hueOf(name), 0.9, 0.6);
   const cssOf = (name?: string | null) => `hsl(${(hueOf(name) * 360).toFixed(0)} 90% 60%)`;
 
-  createEffect(() => props.onChange(asSet(regions()), assign(), paths()));
+  /** A corner is being dragged: the page hears about the shape when it is let go, not on every move. */
+  const [dragging, setDragging] = createSignal(false);
+  createEffect(() => {
+    const rs = regions(), a = assign(), p = paths();
+    if (!dragging()) props.onChange(asSet(rs), a, p);
+  });
   // Carving and its plans act on the selected region; with none selected every click would do
   // nothing under a panel that says "0 found".
   createEffect(() => {
@@ -1665,7 +1676,8 @@ export default function RegionEditor(props: RegionEditorProps) {
   const regionFloors = createMemo(() => {
     const out: Record<string, number | null> = {};
     if (!floorIndex) return out;
-    for (const r of regions()) {
+    // Settled, since a region does not change floor in the middle of a drag.
+    for (const r of settled()) {
       const ring = r.rings[0];
       if (!ring?.length) continue;
       const votes = new Map<number, number>();
@@ -2485,6 +2497,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         drag = { ring: handle.ring, idx: handle.idx, inserted: false, moved: false };
       }
       setHover(null); // otherwise a stale hover keeps overriding the pinned trail mid-drag
+      setDragging(true);
       controls!.enabled = false;
       ev.preventDefault();
     };
@@ -2565,6 +2578,7 @@ export default function RegionEditor(props: RegionEditorProps) {
       // Pressed on a corner and let go without moving it: nothing changed, so no step either.
       if (drag && !drag.inserted && !drag.moved) forget();
       drag = null;
+      setDragging(false);
       controls!.enabled = true;
     };
 
@@ -2707,7 +2721,8 @@ export default function RegionEditor(props: RegionEditorProps) {
     canvasElement.addEventListener("mousedown", onMouseDown);
     canvasElement.addEventListener("mousemove", onMouseMove);
     canvasElement.addEventListener("mouseleave", onMouseLeave);
-    canvasElement.addEventListener("mouseup", onMouseUp);
+    // On the window, so letting go off the map still ends a drag rather than leaving it stuck on.
+    window.addEventListener("mouseup", onMouseUp);
     canvasElement.addEventListener("click", onClick);
     canvasElement.addEventListener("contextmenu", onContextMenu);
     const onAnyClick = (ev: MouseEvent) => {
@@ -2942,7 +2957,7 @@ export default function RegionEditor(props: RegionEditorProps) {
       canvasElement.removeEventListener("mousedown", onMouseDown);
       canvasElement.removeEventListener("mousemove", onMouseMove);
       canvasElement.removeEventListener("mouseleave", onMouseLeave);
-      canvasElement.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("mouseup", onMouseUp);
       canvasElement.removeEventListener("click", onClick);
       canvasElement.removeEventListener("contextmenu", onContextMenu);
       viewer.dispose();
