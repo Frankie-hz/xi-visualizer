@@ -2817,6 +2817,8 @@ export default function RegionEditor(props: RegionEditorProps) {
             step();
           }),
         trail: (id: string) => trailPoints([id]),
+        floorAt: (x: number, y: number, z: number) => floorIndex?.at(x, y, z) ?? null,
+        paths: () => paths(),
       };
       onCleanup(() => delete (window as any).__regionEditor);
     }
