@@ -1,29 +1,17 @@
 // Ring arithmetic on the x/z plane, shared by the region model, the obstacle scan and the editor.
 // Heights ride along untouched: floors are told apart by y elsewhere, never here.
+import { polygonArea, polygonContains, polygonHull } from "d3-polygon";
 import Flatbush from "flatbush";
 import type { Ring, Vertex } from "./regions.ts";
 
-/** Whether x/z is inside the ring, by the even-odd rule. A point on the edge may fall either way. */
-export function inRing(ring: Ring, x: number, z: number): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, , zi] = ring[i];
-    const [xj, , zj] = ring[j];
-    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
-  }
-  return inside;
-}
+/** A ring as d3 takes it: [x, z] pairs. */
+const flat = (ring: Ring): [number, number][] => ring.map(v => [v[0], v[2]]);
 
-/** Area on x/z, positive for one winding and negative for the other. */
-export function signedArea(ring: Ring): number {
-  let sum = 0;
-  for (let i = 0; i < ring.length; i++) {
-    const a = ring[i];
-    const b = ring[(i + 1) % ring.length];
-    sum += a[0] * b[2] - b[0] * a[2];
-  }
-  return sum / 2;
-}
+/** Whether x/z is inside the ring, by the even-odd rule. A point on the edge may fall either way. */
+export const inRing = (ring: Ring, x: number, z: number): boolean => polygonContains(flat(ring), [x, z]);
+
+/** Area on x/z, positive for one winding and negative for the other (d3 counts the other way round). */
+export const signedArea = (ring: Ring): number => -polygonArea(flat(ring));
 
 /** Distance from a point to the segment a-b, on x/z. */
 export function segmentDistance(px: number, pz: number, ax: number, az: number, bx: number, bz: number): number {
@@ -59,21 +47,13 @@ export function ringDistance(a: Ring, b: Ring): number {
   return best;
 }
 
-/** The convex hull of the points on x/z, as a ring of copies. Monotone chain. */
+/** The convex hull of the points on x/z, as a ring of copies, wound with positive area. */
 export function convexHull(points: Vertex[]): Ring {
-  const sorted = [...points].sort((a, b) => a[0] - b[0] || a[2] - b[2]);
-  const cross = (o: Vertex, a: Vertex, b: Vertex) => (a[0] - o[0]) * (b[2] - o[2]) - (a[2] - o[2]) * (b[0] - o[0]);
-  const half = (list: Vertex[]) => {
-    const out: Vertex[] = [];
-    for (const p of list) {
-      while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
-      out.push(p);
-    }
-    return out;
-  };
-  const lower = half(sorted);
-  const upper = half([...sorted].reverse());
-  return [...lower.slice(0, -1), ...upper.slice(0, -1)].map(v => [...v] as Vertex);
+  // d3 hands back the very pairs it was given, so each carries the index of its vertex along.
+  const hull = polygonHull(points.map((v, i) => Object.assign([v[0], v[2]] as [number, number], { i })));
+  if (!hull) return [];
+  const ring = hull.map(p => [...points[(p as unknown as { i: number; }).i]] as Vertex);
+  return signedArea(ring) < 0 ? ring.reverse() : ring;
 }
 
 /** Whether ring `a` lies mostly inside ring `b`, by the share of its vertices that do. */
