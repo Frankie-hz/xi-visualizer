@@ -313,6 +313,7 @@ export default function RegionsDiffPage() {
           <input
             class={`${FIELD} w-72`}
             placeholder="Paste a pull request link or number"
+            aria-label="Pull request link or number"
             value={pasted()}
             onInput={e => setPasted(e.currentTarget.value)}
           />

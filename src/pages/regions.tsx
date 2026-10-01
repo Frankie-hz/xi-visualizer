@@ -1031,6 +1031,7 @@ export default function RegionsPage() {
         <select
           class={`${FIELD} max-w-64`}
           value={folders().includes(params.zone ?? "") ? params.zone! : ""}
+          aria-label="Zone"
           title={local() ? "served from a local folder" : `${repo()}@${ref()}`}
           onChange={e => navigate(zoneHref(e.currentTarget.value))}
         >
@@ -1048,6 +1049,7 @@ export default function RegionsPage() {
           class={BTN_PLAIN}
           onClick={listZones}
           title={local() ? "Re-read the local folder" : `Re-read ${repo()}@${ref()}`}
+          aria-label="Reload the zone list"
         >
           ⟳
         </button>
@@ -1188,6 +1190,7 @@ export default function RegionsPage() {
               <input
                 class="px-1 py-0.5 bg-slate-700 rounded font-mono text-slate-200 w-44"
                 value={branchName()}
+                aria-label="Branch name"
                 title="Name this branch, before anything is committed to it"
                 onChange={async e => {
                   const input = e.currentTarget;
@@ -1353,6 +1356,7 @@ export default function RegionsPage() {
             without committing anything, so Save is still what puts it anywhere.
           </span>
           <textarea
+            aria-label="Pasted regions.yaml and mobs.yaml"
             class="w-full h-40 px-2 py-1 bg-slate-900 rounded font-mono text-xs"
             placeholder={"# --- regions.yaml ---\nregions:\n  ..."}
             value={pasted()}
