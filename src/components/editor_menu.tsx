@@ -43,12 +43,13 @@ export interface MenuActions {
 }
 
 /** One entry in the menu. `danger` for the ones that delete something. */
-function MenuItem(props: { danger?: boolean; title?: string; onClick: () => void; children: JSX.Element; }) {
+function MenuItem(props: { danger?: boolean; disabled?: boolean; title?: string; onClick: () => void; children: JSX.Element; }) {
   return (
     <button
       role="menuitem"
-      class="block w-full text-left px-3 py-1 hover:bg-slate-700 focus:bg-slate-700 outline-none"
+      class="block w-full text-left px-3 py-1 hover:bg-slate-700 focus:bg-slate-700 outline-none disabled:opacity-40 disabled:hover:bg-transparent"
       classList={{ "text-red-400": props.danger }}
+      disabled={props.disabled}
       title={props.title}
       onClick={() => props.onClick()}
     >
@@ -95,7 +96,11 @@ export default function EditorMenu(props: { target: MenuTarget; ref: (el: HTMLDi
             <Heading>
               {hole().name} · hole {hole().index} · {a().holeArea(hole().name, hole().index).toFixed(0)} y²
             </Heading>
-            <MenuItem onClick={run(() => a().merge(hole().name, hole().index))}>
+            <MenuItem
+              disabled={!a().nearHoles(hole().name, hole().index)}
+              title={a().nearHoles(hole().name, hole().index) ? undefined : `No other hole within ${a().mergeReach()}y of this one`}
+              onClick={run(() => a().merge(hole().name, hole().index))}
+            >
               Merge nearby holes… ({a().nearHoles(hole().name, hole().index)} within {a().mergeReach()}y)
             </MenuItem>
             <MenuItem
