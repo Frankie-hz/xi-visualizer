@@ -437,12 +437,6 @@ function simplifyKeeping(ring: Ring, minArea: number, cell: number, avoid: Set<n
 export const cellOf = (key: number): [number, number] => unkey(key);
 export const keyOfCell = (ix: number, iz: number) => keyOf(ix, iz);
 
-/** The one ring around a single obstacle. */
-export function ringAround(o: Obstacle, margin: number, cell = 0.5, avoid?: Set<number>): Ring {
-  const rings = ringsAround([o], margin, cell, avoid);
-  return rings.reduce((best, r) => (r.length > best.length ? r : best), [] as Ring);
-}
-
 /** Area of an obstacle's footprint in square yalms, for telling a trunk from a cliff. */
 export function obstacleArea(o: Obstacle, cell = 0.5): number {
   return o.cells.length * cell * cell;

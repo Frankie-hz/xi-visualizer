@@ -1,5 +1,3 @@
-import CameraControls from "camera-controls";
-import * as holdEvent from "hold-event";
 import * as THREE from "three";
 import { MapControls } from "three/examples/jsm/controls/MapControls.js";
 
@@ -58,7 +56,7 @@ export function fitCameraToContents(camera: THREE.PerspectiveCamera, controls: M
   const fov = camera.fov * (Math.PI / 180);
 
   let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
-  cameraZ *= 1.1
+  cameraZ *= 1.1;
 
   const direction = new THREE.Vector3();
   camera.getWorldDirection(direction);
@@ -73,84 +71,4 @@ export function fitCameraToContents(camera: THREE.PerspectiveCamera, controls: M
 
 export function addMapControls(camera: THREE.Camera, element?: HTMLElement) {
   return new MapControls(camera, element);
-}
-
-export function addCustomCameraControls(camera: THREE.PerspectiveCamera | THREE.OrthographicCamera, element?: HTMLElement) {
-  CameraControls.install({ THREE: THREE });
-  const controls = new CameraControls(camera, element);
-  // Flips left and right mouse buttons
-  controls.draggingSmoothTime = 0;
-  controls.mouseButtons = {
-    left: CameraControls.ACTION.TRUCK,
-    right: CameraControls.ACTION.ROTATE,
-    middle: CameraControls.ACTION.DOLLY,
-    wheel: CameraControls.ACTION.DOLLY,
-  };
-
-  const baseSpeed = 0.05;
-  const shiftSpeed = baseSpeed * 3;
-  let currentSpeed = baseSpeed;
-
-  window.addEventListener("keydown", ev => {
-    if (ev.code == "ShiftLeft" || ev.code == "ShiftRight") {
-      currentSpeed = shiftSpeed;
-    }
-  });
-  window.addEventListener("keyup", ev => {
-    if (ev.code == "ShiftLeft" || ev.code == "ShiftRight") {
-      currentSpeed = baseSpeed;
-    }
-  });
-
-  const wKey = new holdEvent.KeyboardKeyHold("KeyW", 16.666);
-  const aKey = new holdEvent.KeyboardKeyHold("KeyA", 16.666);
-  const sKey = new holdEvent.KeyboardKeyHold("KeyS", 16.666);
-  const dKey = new holdEvent.KeyboardKeyHold("KeyD", 16.666);
-  aKey.addEventListener("holding", function (event) {
-    controls.truck(-1 * currentSpeed * event!.deltaTime, 0, false);
-  });
-  dKey.addEventListener("holding", function (event) {
-    controls.truck(currentSpeed * event!.deltaTime, 0, false);
-  });
-  wKey.addEventListener("holding", function (event) {
-    controls.forward(currentSpeed * event!.deltaTime, false);
-  });
-  sKey.addEventListener("holding", function (event) {
-    controls.forward(-1 * currentSpeed * event!.deltaTime, false);
-  });
-
-  const leftKey = new holdEvent.KeyboardKeyHold("ArrowLeft", 100);
-  const rightKey = new holdEvent.KeyboardKeyHold("ArrowRight", 100);
-  const upKey = new holdEvent.KeyboardKeyHold("ArrowUp", 100);
-  const downKey = new holdEvent.KeyboardKeyHold("ArrowDown", 100);
-  leftKey.addEventListener("holding", function (event) {
-    controls.rotate(
-      -0.1 * THREE.MathUtils.DEG2RAD * event!.deltaTime,
-      0,
-      true,
-    );
-  });
-  rightKey.addEventListener("holding", function (event) {
-    controls.rotate(
-      0.1 * THREE.MathUtils.DEG2RAD * event!.deltaTime,
-      0,
-      true,
-    );
-  });
-  upKey.addEventListener("holding", function (event) {
-    controls.rotate(
-      0,
-      -0.05 * THREE.MathUtils.DEG2RAD * event!.deltaTime,
-      true,
-    );
-  });
-  downKey.addEventListener("holding", function (event) {
-    controls.rotate(
-      0,
-      0.05 * THREE.MathUtils.DEG2RAD * event!.deltaTime,
-      true,
-    );
-  });
-
-  return controls;
 }

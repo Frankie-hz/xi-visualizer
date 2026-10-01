@@ -20,9 +20,6 @@ importers:
       '@three.ez/instanced-mesh':
         specifier: ^0.3.16
         version: 0.3.16(three@0.171.0)
-      camera-controls:
-        specifier: ^2.10.1
-        version: 2.10.1(three@0.171.0)
       chart.js:
         specifier: ^4.5.1
         version: 4.5.1
@@ -38,9 +35,6 @@ importers:
       highlight.js:
         specifier: ^11.12.0
         version: 11.12.0
-      hold-event:
-        specifier: ^1.1.2
-        version: 1.1.2
       js-yaml:
         specifier: ^5.3.0
         version: 5.3.0
@@ -1009,11 +1003,6 @@ packages:
     resolution: {integrity: sha512-QOSvevhslijgYwRx6Rv7zKdMF8lbRmx+uQGx2+vDc+KI/eBnsy9kit5aj23AgGu3pa4t9AgwbnXWqS+iOY+2aA==}
     engines: {node: '>= 6'}
 
-  camera-controls@2.10.1:
-    resolution: {integrity: sha512-KnaKdcvkBJ1Irbrzl8XD6WtZltkRjp869Jx8c0ujs9K+9WD+1D7ryBsCiVqJYUqt6i/HR5FxT7RLASieUD+Q5w==}
-    peerDependencies:
-      three: '>=0.126.1'
-
   caniuse-lite@1.0.30001809:
     resolution: {integrity: sha512-xxWVywk6a6Arlk+hymeycyn/VgqEfLDxupvhH/xiY5SJ/18kmi9o6MiO320DCUzypORHLtvh0I4i04tUhCNHNQ==}
 
@@ -1239,9 +1228,6 @@ packages:
   highlight.js@11.12.0:
     resolution: {integrity: sha512-nbfWpyRMcMrPMmDwJB+dhX/eiaPKtc2RB+0QZskqJ3WjRA/FDS0e9hZrx8EC/lbEv8gXy98FcDbNa/dspAaJMg==}
     engines: {node: '>=12.0.0'}
-
-  hold-event@1.1.2:
-    resolution: {integrity: sha512-Bx0A6OBY70cs23orUWk0DuBAAeJjEbmyg8Gnye9+M8+XeWy2CcmRyfiJhTnQQz9s25r9SYjici3URy176MFs5A==}
 
   html-entities@2.3.3:
     resolution: {integrity: sha512-DV5Ln36z34NNTDgnz0EWGBLZENelNAtkiFA4kyNOG2tDI6Mz1uSWiq1wAKdyjnJwyDiDO7Fa2SO1CTxPXL8VxA==}
@@ -2537,10 +2523,6 @@ snapshots:
 
   camelcase-css@2.0.1: {}
 
-  camera-controls@2.10.1(three@0.171.0):
-    dependencies:
-      three: 0.171.0
-
   caniuse-lite@1.0.30001809: {}
 
   caseless@0.12.0: {}
@@ -2770,8 +2752,6 @@ snapshots:
       function-bind: 1.1.2
 
   highlight.js@11.12.0: {}
-
-  hold-event@1.1.2: {}
 
   html-entities@2.3.3: {}
 

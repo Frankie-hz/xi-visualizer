@@ -1,8 +1,12 @@
 // node src/obstacles.test.ts
 import assert from "node:assert";
 import { inRing } from "./geometry.ts";
-import { cellKey, cellsInside, emptyPatches, findObstacles, floodPatch, groundNear, obstacleArea, obstacleAt, ringAround, ringsAround } from "./obstacles.ts";
+import { cellKey, cellsInside, emptyPatches, findObstacles, floodPatch, groundNear, obstacleArea, obstacleAt, ringsAround } from "./obstacles.ts";
 import type { Ring } from "./regions.ts";
+
+/** The longest ring around a single obstacle. */
+const ringAround = (o: Parameters<typeof ringsAround>[0][number], margin: number, cell: number): Ring =>
+  ringsAround([o], margin, cell).reduce((best, r) => (r.length > best.length ? r : best), [] as Ring);
 
 // A square trunk one yalm across standing on flat ground: four vertical quads (two triangles
 // each) from y=0 down to y=-4 (up is negative), plus a floor quad around it that must not count.
