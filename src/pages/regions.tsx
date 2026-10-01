@@ -420,11 +420,15 @@ export default function RegionsPage() {
   let draftTimer: ReturnType<typeof setTimeout> | undefined;
   let edited = false;
 
-  const clearDraft = (folder: string) => {
-    localStorage.removeItem(draftKey(folder, source()));
+  /** Drops the autosave of what is open now. A draft still on offer is left alone: only Restore or
+   * Discard decides about it, not an undo back to clean or a save of something else. */
+  const clearDraft = (folder: string) => localStorage.removeItem(draftKey(folder, source()));
+  const [confirmDiscard, setConfirmDiscard] = createSignal(false);
+  const discardDraft = () => {
     const offered = draft();
     if (offered) localStorage.removeItem(offered.key);
     setDraft(undefined);
+    setConfirmDiscard(false);
   };
 
   // Debounced: onChange fires on every mouse move while a vertex is being dragged.
@@ -594,8 +598,9 @@ export default function RegionsPage() {
       // Picked another zone while this one was on its way: showing it now would put the wrong
       // zone under the newer choice, and Save would commit to it.
       if (mineToOpen !== opening) return;
-      open({ folder, regionsYaml, mobsYaml, fromBranch: !local() && mine.repo === forkRepo() });
+      // Cleared first, so what opening the zone has to say (a draft put back) is not wiped.
       setStatus(undefined);
+      open({ folder, regionsYaml, mobsYaml, fromBranch: !local() && mine.repo === forkRepo() });
     } catch (e) {
       if (mineToOpen !== opening) return;
       setFiles(undefined);
@@ -634,10 +639,17 @@ export default function RegionsPage() {
     loaded = { regions: regionSet, placements: placementsOf(parsed) };
     // A reviewer's own unsaved work is not on offer over the branch they are reviewing.
     setDraft(reviewing() ? undefined : findDraft(next.folder, stamp));
-    // Back from signing in with edits that were on screen when they left: put them straight back.
-    if (sessionStorage.getItem(RESUME) === next.folder && draft()) {
-      sessionStorage.removeItem(RESUME);
+    setConfirmDiscard(false);
+    // A draft taken on exactly these files is this person's unsaved work, so it comes straight back
+    // rather than waiting behind a banner that the next edit would have written over. One taken on
+    // an older version is offered instead, since putting it back means merging. Back from signing
+    // in, either comes straight back: those edits were on screen when they left.
+    const resuming = sessionStorage.getItem(RESUME) === next.folder;
+    if (resuming) sessionStorage.removeItem(RESUME);
+    const found = draft();
+    if (found && (!found.stale || resuming)) {
       restoreDraft();
+      if (!found.stale) setStatus(`Put back your unsaved edits from ${new Date(found.draft.at).toLocaleString()}`);
     }
     // Keyed on the content, not the name: re-opening the same zone from a different branch used to
     // leave the key unchanged, so the editor was never rebuilt and went on showing the files it
@@ -1000,7 +1012,9 @@ export default function RegionsPage() {
   const [showNav, setShowNav] = createSignal(false);
   const [nav] = createResource(() => (showNav() ? zoneId() : undefined), id => loadNavMesh(id, setStatus));
 
-  const [zoneMesh] = createResource(zoneId, id => loadZoneMesh(id, setStatus));
+  // Its own line: the download's progress ending in "nothing" wiped whatever else the status said.
+  const [meshProgress, setMeshProgress] = createSignal<string>();
+  const [zoneMesh] = createResource(zoneId, id => loadZoneMesh(id, setMeshProgress));
 
   return (
     <section class="p-8 plain-ui">
@@ -1356,7 +1370,9 @@ export default function RegionsPage() {
             </Show>
           </span>
           <button class={BTN.warn} onClick={restoreDraft}>Restore</button>
-          <button class={BTN_QUIET} onClick={() => clearDraft(files()!.folder)}>Discard</button>
+          <button class={confirmDiscard() ? BTN.warn : BTN_QUIET} onClick={() => (confirmDiscard() ? discardDraft() : setConfirmDiscard(true))}>
+            {confirmDiscard() ? "Discard for good?" : "Discard"}
+          </button>
         </div>
       </Show>
 
@@ -1380,7 +1396,7 @@ export default function RegionsPage() {
       >
         <Switch>
           <Match when={zoneMesh.loading}>
-            <div class="mt-4">Loading... {status()}</div>
+            <div class="mt-4">Loading... {meshProgress()}</div>
           </Match>
           <Match when={zoneMesh.error}>
             <div class="mt-4 text-red-500">Failed to load zone mesh: {zoneMesh.error?.toString()}</div>
