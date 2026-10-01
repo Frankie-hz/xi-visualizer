@@ -10,6 +10,7 @@ import { addNavMesh, addZoneMesh, fillRef, groundColours, groundUnder, paintOnce
 import { setupBaseScene } from "../graphics/scene";
 import { createViewer } from "../graphics/viewer";
 import { ColorKind, colorMesh, prepareMeshData } from "../graphics/ximesh";
+import { gridPos } from "../map_grid";
 import {
   cellKey,
   cellOf,
@@ -1563,6 +1564,8 @@ export default function RegionEditor(props: RegionEditorProps) {
   let lastFocusRange: [number, number] | undefined;
   let zoneMesh: THREE.Mesh | undefined;
   let floorIndex: FloorIndex | undefined;
+  /** The in-game grid square of a spot, as <pos> gives it, on whichever floor the mesh puts it. */
+  const gridAt = (x: number, y: number, z: number) => gridPos(props.zoneData.id, floorIndex?.at(x, y, z) ?? null, x, z);
   let meshPrep: ReturnType<typeof prepareMeshData> | undefined;
   // `moved` stays false for a press that never became a drag, whose undo step is then dropped.
   let drag: { ring: number; idx: number; inserted: boolean; moved: boolean; } | null = null;
@@ -3257,7 +3260,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             onPreview={setArmed}
           />
         </Show>
-        <Show when={cursor()}>{at => <CursorReadout at={at()} onCopy={copy} />}</Show>
+        <Show when={cursor()}>{at => <CursorReadout at={at()} grid={gridAt(at().x, at().y, at().z)} onCopy={copy} />}</Show>
         <Show when={menu()}>
           {target => <EditorMenu target={target()} ref={el => (menuElement = el)} actions={menuActions} />}
         </Show>
@@ -3296,6 +3299,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             <div class="text-slate-400">{hover()!.spawn.id}</div>
             <div class="text-slate-400">
               {hover()!.spawn.x.toFixed(1)}, {hover()!.spawn.y.toFixed(1)}, {hover()!.spawn.z.toFixed(1)}
+              <Show when={gridAt(hover()!.spawn.x, hover()!.spawn.y, hover()!.spawn.z)}>{g => <span class="text-amber-300 ml-1">({g()})</span>}</Show>
             </div>
             {/* A fixed point is not necessarily an oversight: plenty of mobs are meant to stand still. */}
             <div style={{ color: assign()[hover()!.spawn.id]?.length ? cssOf(assign()[hover()!.spawn.id][0]) : "#888" }}>
