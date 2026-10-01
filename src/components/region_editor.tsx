@@ -2460,6 +2460,12 @@ export default function RegionEditor(props: RegionEditorProps) {
       aim(ev);
       const handle = pickHandle();
       if (handle && !handle.mid && canEdit()) {
+        // Below three corners an outline is no shape at all, and below two points a route goes nowhere.
+        const path = activePath();
+        if (path && path.legs.length <= 2) return flash("a route needs two points; drop the route instead", "warn");
+        if (!path && handle.ring === 0 && (active()?.rings[0]?.length ?? 0) <= 3) {
+          return flash("an outline needs three corners; delete the region instead", "warn");
+        }
         checkpoint("remove a vertex");
         return removeVertex(handle); // midpoints are not stored, so there is nothing to remove
       }
