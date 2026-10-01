@@ -327,6 +327,8 @@ const summaryOf = (message: string) => {
 export interface SaveResult {
   /** The commit, absent when the files already matched the branch. */
   sha?: string;
+  /** The staging commit the branch was rebuilt on: the common ancestor for the next merge. */
+  base?: string;
   unchanged: boolean;
   /** True the first time, when the branch was cut and the fork brought up to date first. */
   created: boolean;
@@ -586,5 +588,5 @@ export async function save(req: SaveRequest): Promise<SaveResult> {
     });
   }
 
-  return { sha: parent, unchanged: false, created: !head, onBranch: true, zones: listing(work) };
+  return { sha: parent, base: baseSha, unchanged: false, created: !head, onBranch: true, zones: listing(work) };
 }

@@ -909,8 +909,12 @@ export default function RegionsPage() {
           : `Committed, ${count(result.zones.length, "zone")} on ${branchName()}. Next: open the pull request.`,
       );
       if (!result.unchanged) {
-        // It is on a branch now, so this is as safe as saving to disk.
-        setFiles({ ...f, ...next });
+        // It is on a branch now, so this is as safe as saving to disk. From here on the zone is the
+        // branch's version, merged against the staging commit the branch was just rebuilt on: kept
+        // as files loaded from base, the next save read this one's edits as base undoing them.
+        setFiles({ ...f, ...next, fromBranch: true });
+        setSource(fingerprint(next.regionsYaml, next.mobsYaml));
+        loaded = { regions: parseRegionsYaml(next.regionsYaml), placements: placementsOf(parseMobsYaml(next.mobsYaml)) };
         setBaseline({ block: emitRegionsBlock(pending!.regions), assign: pending!.assign, paths: JSON.stringify(pending!.paths) });
         setDirty(false);
         clearDraft(f.folder);
@@ -919,7 +923,7 @@ export default function RegionsPage() {
         ...sitting()!,
         branch: branchName(),
         zones: result.zones,
-        ancestor: sitting()?.ancestor ?? "committed",
+        ancestor: result.base ?? sitting()?.ancestor,
         head: result.sha ?? sitting()?.head,
       });
       if (result.onBranch) setPushed(true);

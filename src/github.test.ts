@@ -280,6 +280,8 @@ let calls = fakeGitHub({ ...commonRoutes });
 let result = await save({ ...saving, ...thisZone });
 assert.deepStrictEqual(result, {
   sha: "commit-1",
+  // what the next save merges against, so it does not read this one's edits as base undoing them
+  base: "base-sha",
   unchanged: false,
   created: true,
   onBranch: true,
