@@ -298,6 +298,9 @@ export default function RegionsPage() {
       setShowSignIn(true);
       return setError("Your GitHub sign-in has expired; they last eight hours. Sign in again, your edits are kept.");
     }
+    // fetch throws a TypeError when the request never got an answer. A save only moves the branch
+    // as its last step, so a dropped connection leaves GitHub as it was.
+    if (e instanceof TypeError) return setError("Could not reach GitHub. Nothing there changed and your edits are kept; try again.");
     setError((e as Error)?.message ?? String(e));
   };
 
