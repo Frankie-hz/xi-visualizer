@@ -188,14 +188,13 @@ export default function RegionEditor(props: RegionEditorProps) {
   // zone ever has.
   const [floors, setFloors] = createSignal<number[]>([]);
   const [floor, setFloor] = createSignal<number | null>(null);
-  /** The game's map grid over the zone, for the floor on screen. */
-  const [showGrid, setShowGrid] = createSignal(false);
   /** Ground under the middle of the view once the camera stops: which map the grid is from when no
    * floor is picked, and the height it is laid at. */
   const [viewGround, setViewGround] = createSignal<{ floor: number | null; y: number; } | null>(null);
   /** The floor whose map the grid and the map sheet are drawn from: the one picked, else the one in view. */
   const mapFloor = () => floor() ?? (floors().length > 1 ? viewGround()?.floor ?? null : floors()[0] ?? 0);
-  const grid = createMemo(() => (showGrid() ? gridOf(props.zoneData.id, mapFloor()) : null));
+  /** The game's map grid over the zone, for the floor on screen. Always shown. */
+  const grid = createMemo(() => gridOf(props.zoneData.id, mapFloor()));
   /** The game's own map sheet laid over the zone, under the regions. */
   const [showSheet, setShowSheet] = createSignal(false);
   const sheet = createMemo(() => (showSheet() ? sheetOf(props.zoneData.id, mapFloor()) : null), undefined, {
@@ -3048,8 +3047,6 @@ export default function RegionEditor(props: RegionEditorProps) {
           onGround={groundActive}
           simulating={simulating()}
           onSimulate={() => setSimulating(on => !on)}
-          grid={showGrid()}
-          onGrid={() => setShowGrid(on => !on)}
           sheet={showSheet()}
           onSheet={() => setShowSheet(on => !on)}
           zoneInfo={showZoneInfo()}

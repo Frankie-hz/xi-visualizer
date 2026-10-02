@@ -27,8 +27,6 @@ export default function MapToolbar(props: {
   onSimulate: () => void;
   /** Reviewing: the tools that change shapes go, the spawn simulation stays. */
   readOnly?: boolean;
-  grid: boolean;
-  onGrid: () => void;
   sheet: boolean;
   onSheet: () => void;
   zoneInfo: boolean;
@@ -95,17 +93,6 @@ export default function MapToolbar(props: {
           <circle cx="4" cy="12" r="1.4" fill="currentColor" stroke="none" />
         </Icon>
         Spawns
-      </button>
-      <button
-        class={`${TOOL} ${props.grid ? "bg-amber-600 hover:bg-amber-500 text-white" : IDLE}`}
-        aria-pressed={props.grid}
-        title="The game's map grid, A to O and 1 to 15, as <pos> reads it, for the floor on screen"
-        onClick={() => props.onGrid()}
-      >
-        <Icon>
-          <path d="M2 5.5h12M2 10.5h12M5.5 2v12M10.5 2v12" />
-        </Icon>
-        Grid
       </button>
       <button
         class={`${TOOL} ${props.sheet ? "bg-amber-600 hover:bg-amber-500 text-white" : IDLE}`}
