@@ -11,9 +11,6 @@ export default function HomePage() {
             <A href="/regions">Spawn regions editor</A>
           </li>
           <li>
-            <A href="/regions-diff">Regions diff</A>
-          </li>
-          <li>
             <A href="/zone">Zone viewer</A>
           </li>
         </ul>

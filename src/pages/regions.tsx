@@ -1,5 +1,5 @@
 import { useBeforeLeave, useNavigate, useParams, useSearchParams } from "@solidjs/router";
-import { createEffect, createMemo, createResource, createSignal, ErrorBoundary, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, ErrorBoundary, For, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import RegionEditor, { type EditorFeatures, type EditorView } from "../components/region_editor";
 import { BTN, FIELD } from "../components/ui";
 import YamlView from "../components/yaml_view";
@@ -17,6 +17,7 @@ import {
   grantedOn,
   installUrl,
   listRegionBranches,
+  parsePr,
   prTitle,
   refusedForWorkflows,
   save,
@@ -29,6 +30,7 @@ import {
 import { canSignIn, completeSignIn, isCallback, signOut, startSignIn as beginSignIn, storedToken } from "../github_auth";
 import {
   commitMessage,
+  diffRegions,
   emitRegionsBlock,
   mergeZone,
   parseMobsYaml,
@@ -44,6 +46,7 @@ import {
 import type { Patrol, RegionSet, Spawn, ZoneState } from "../regions";
 import { copyText, isMissing } from "../util";
 // The wording of a pull request is prose, so it lives in a file that can be edited as prose.
+import { type CompareRequest, readSide, resolveComparison } from "../comparison";
 import prTemplate from "../pr_template.md?raw";
 import { loadRoam } from "../roam";
 import { parseTriggerAreas, parseZoneLines } from "../zone_features";
@@ -187,7 +190,21 @@ function findDraft(folder: string, source: string): FoundDraft | undefined {
 export default function RegionsPage() {
   // /regions/<zone> picks the zone; ?repo=owner/name&ref=branch override where it comes from.
   const params = useParams<{ zone?: string; }>();
-  const [query] = useSearchParams<{ repo?: string; ref?: string; review?: string; cam?: string; region?: string; floor?: string; }>();
+  const [query] = useSearchParams<
+    {
+      repo?: string;
+      ref?: string;
+      review?: string;
+      cam?: string;
+      region?: string;
+      floor?: string;
+      pr?: string;
+      base_repo?: string;
+      base?: string;
+      head_repo?: string;
+      head?: string;
+    }
+  >();
   /** The view a shared link asked for, read once when the zone opens. */
   const linkedView = (): EditorView => ({
     camera: query.cam?.split(",").map(Number),
@@ -208,7 +225,23 @@ export default function RegionsPage() {
     history.replaceState(history.state, "", `#${path}${params.size ? `?${params}` : ""}`);
   };
   const navigate = useNavigate();
-  const repo = () => query.repo || DEFAULT_REPO;
+
+  /**
+   * Reviewing a change: a pull request (?pr=1234) or a branch on a fork against one on the staging
+   * repository (?base_repo&base&head_repo&head), which is what a pull request description links to
+   * before the pull request exists. The zone is read at the change's head, read only, and its
+   * base side is drawn under it in the colours of what changed.
+   */
+  const compareRequest = (): CompareRequest | undefined => {
+    if (query.pr) return parsePr(query.pr, UPSTREAM);
+    if (!query.head) return undefined;
+    const baseRepo = query.base_repo || UPSTREAM;
+    return { baseRepo, base: query.base || UPSTREAM_BASE, headRepo: query.head_repo || baseRepo, head: query.head };
+  };
+  const comparing = () => !!compareRequest();
+  const [comparison] = createResource(compareRequest, what => resolveComparison(what, storedToken()?.token));
+  const cmp = () => (comparison.state === "ready" ? comparison() : undefined);
+  const repo = () => cmp()?.headRepo ?? (query.repo || DEFAULT_REPO);
 
   /**
    * Where the zone picker goes. The repository, branch and review flag live in the query, so
@@ -217,15 +250,26 @@ export default function RegionsPage() {
    */
   const zoneHref = (zone: string) => {
     const carried = new URLSearchParams();
-    for (const [key, value] of Object.entries({ repo: query.repo, ref: query.ref, review: query.review })) {
+    for (
+      const [key, value] of Object.entries({
+        repo: query.repo,
+        ref: query.ref,
+        review: query.review,
+        pr: query.pr,
+        base_repo: query.base_repo,
+        base: query.base,
+        head_repo: query.head_repo,
+        head: query.head,
+      })
+    ) {
       if (value) carried.set(key, value);
     }
     const rest = carried.toString();
     return `/regions/${zone}${rest ? `?${rest}` : ""}`;
   };
-  const ref = () => query.ref || DEFAULT_REF;
+  const ref = () => cmp()?.headSha ?? (query.ref || DEFAULT_REF);
   /** Opened from a review link: somebody else's branch, for reading against the roam data. */
-  const reviewing = () => query.review === "1";
+  const reviewing = () => query.review === "1" || comparing();
   // The only way in is signing in. api.github.com is CORS-enabled, so the token it yields is used
   // straight from here and needs no help from anybody.
   const [account, setAccount] = createSignal(storedToken());
@@ -483,6 +527,7 @@ export default function RegionsPage() {
   useBeforeLeave(() => void flushDraft());
 
   onMount(() => {
+    if (comparing()) return; // listed and opened once the comparison resolves, below
     listZones();
     if (isCallback()) finishSignIn().finally(() => setAuthSettled(true));
     // Reviewing reads somebody else's branch: the reviewer's own fork and working branch have
@@ -499,6 +544,42 @@ export default function RegionsPage() {
       clearTimeout(draftTimer);
     });
   });
+
+  // A comparison resolved: list its head side's zones, and open the biggest change if no zone is named.
+  createEffect(on(cmp, c => {
+    if (!c) return;
+    listZones();
+    setAuthSettled(true);
+    if (!params.zone && c.zones[0]) navigate(zoneHref(c.zones[0].zone), { replace: true });
+  }));
+
+  // Which zones of a comparison have been looked at, kept in the browser per head commit, so a push
+  // after the review un-ticks what it could have changed. A tick, not a verdict.
+  const reviewedKey = () => `reviewed:${cmp()?.headRepo}:${cmp()?.headSha}`;
+  const [reviewed, setReviewed] = createSignal<string[]>([]);
+  createEffect(() => {
+    if (!cmp()) return;
+    try {
+      setReviewed(JSON.parse(localStorage.getItem(reviewedKey()) ?? "[]"));
+    } catch {
+      setReviewed([]);
+    }
+  });
+  const toggleReviewed = (zone: string) => {
+    const next = reviewed().includes(zone) ? reviewed().filter(z => z !== zone) : [...reviewed(), zone];
+    setReviewed(next);
+    try {
+      localStorage.setItem(reviewedKey(), JSON.stringify(next));
+    } catch {
+      // A tick that does not survive a reload is not worth an error.
+    }
+  };
+  const stepZone = (dir: 1 | -1) => {
+    const list = cmp()?.zones ?? [];
+    if (!list.length) return;
+    const at = list.findIndex(z => z.zone === params.zone);
+    navigate(zoneHref(list[at < 0 ? 0 : (at + dir + list.length) % list.length].zone));
+  };
 
   // The URL is the source of truth for which zone is open, so deep links work without the listing.
   createEffect(() => {
@@ -990,7 +1071,7 @@ export default function RegionsPage() {
     // contributor's fork. Pointing both at one repository only ever worked for whoever owns the
     // staging repository, and read every region as newly added for everybody else.
     const diffFor = (name: string) =>
-      `${editor}#/regions-diff?${new URLSearchParams({ repo: repo(), base: ref(), head_repo: where.repo, head: branchName(), zone: name })}`;
+      `${editor}#/regions/${name}?${new URLSearchParams({ base_repo: repo(), base: ref(), head_repo: where.repo, head: branchName() })}`;
 
     // Every zone on the branch, not whichever one is open: a sitting's pull request covers all of
     // them, and a reviewer wants a diff link per zone rather than one into the middle of it.
@@ -1009,6 +1090,27 @@ export default function RegionsPage() {
     // What the branch holds, not whichever zone happened to be open when the link was clicked.
     const title = prTitle(onBranch.map(z => z.zone).filter(Boolean));
     return `${compareUrl(repo(), ref(), where.repo, branchName())}&title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const [baseSide] = createResource(
+    () => (cmp() && files() ? { c: cmp()!, zone: files()!.folder } : undefined),
+    ({ c, zone }) => readSide(c.baseRepo, c.baseSha, zone),
+  );
+  const compareSides = createMemo(() => {
+    const base = baseSide.state === "ready" ? baseSide() : undefined;
+    const spawnsNow = spawns();
+    if (!base || !spawnsNow) return undefined;
+    const head = { regions: regions(), spawns: spawnsNow };
+    return { base, head, diff: diffRegions(base, head) };
+  });
+  const [wipe, setWipe] = createSignal(false);
+  const [prInput, setPrInput] = createSignal("");
+  const reviewPr = () => {
+    const found = parsePr(prInput(), UPSTREAM);
+    if (!found) return setError("That is not a pull request link or number");
+    setError(undefined);
+    setPrInput("");
+    navigate(`/regions?pr=${found.repo === UPSTREAM ? found.number : encodeURIComponent(`${found.repo}#${found.number}`)}`);
   };
 
   // On by default; a zone's trails are a few MB, so unticking it also stops the fetch.
@@ -1060,6 +1162,18 @@ export default function RegionsPage() {
           onChange={e => navigate(zoneHref(e.currentTarget.value))}
         >
           <option value="">{folders().length ? `${folders().length} zones, pick one` : "no zones"}</option>
+          <Show when={cmp()?.zones.length}>
+            <optgroup label={`Changed (${cmp()!.zones.length})`}>
+              <For each={cmp()!.zones}>
+                {z => (
+                  <option value={z.zone}>
+                    {reviewed().includes(z.zone) ? "✓ " : ""}
+                    {zoneLabel(z.zone)} (+{z.additions} −{z.deletions})
+                  </option>
+                )}
+              </For>
+            </optgroup>
+          </Show>
           <Show when={started().size} fallback={<For each={folders()}>{f => <option value={f}>{zoneLabel(f)}</option>}</For>}>
             <optgroup label="Has regions">
               <For each={folders().filter(f => started().has(f))}>{f => <option value={f}>{zoneLabel(f)}</option>}</For>
@@ -1076,6 +1190,73 @@ export default function RegionsPage() {
         >
           ⟳
         </button>
+        <Show when={!comparing() && !reviewing()}>
+          <form class="flex items-center gap-1" onSubmit={e => (e.preventDefault(), reviewPr())}>
+            <input
+              class={`${FIELD} w-44`}
+              placeholder="Review a pull request…"
+              title="A pull request link or number on LandSandBoat/server"
+              value={prInput()}
+              onInput={e => setPrInput(e.currentTarget.value)}
+            />
+            <Show when={prInput().trim()}>
+              <button class={BTN.go} type="submit">Review</button>
+            </Show>
+          </form>
+        </Show>
+        <Show when={comparing()}>
+          <span class="flex items-center gap-2 bg-slate-800 rounded px-2 py-1">
+            <Show when={cmp()} fallback={<span class="text-slate-400">{comparison.error ? "" : "Comparing…"}</span>}>
+              {c => (
+                <>
+                  <Show
+                    when={c().pr}
+                    fallback={
+                      <span class="text-slate-300" title={`${c().baseRepo}@${c().baseName} against ${c().headRepo}@${c().headName}`}>
+                        {c().headName} <span class="text-slate-500">vs {c().baseName}</span>
+                      </span>
+                    }
+                  >
+                    {p => (
+                      <a class="text-slate-200 hover:text-white" href={p().url} target="_blank" rel="noreferrer" title="Open the pull request on GitHub">
+                        #{p().number} {p().title} <span class="text-slate-500">({p().merged ? "merged" : p().state})</span>
+                      </a>
+                    )}
+                  </Show>
+                  <span class="text-slate-400" title="[ and ] step through the changed zones">
+                    {c().zones.length
+                      ? `${c().zones.filter(z => reviewed().includes(z.zone)).length} of ${count(c().zones.length, "zone")} reviewed`
+                      : "no zone files changed"}
+                    {c().partial ? ", maybe more: GitHub lists only so many files" : ""}
+                  </span>
+                  <Show when={files() && c().zones.some(z => z.zone === files()!.folder)}>
+                    <label class="flex items-center gap-1 text-slate-300 cursor-pointer">
+                      <input type="checkbox" checked={reviewed().includes(files()!.folder)} onChange={() => toggleReviewed(files()!.folder)} />
+                      reviewed
+                    </label>
+                  </Show>
+                  <button
+                    class={wipe() ? BTN.quiet : BTN.plain}
+                    aria-pressed={wipe()}
+                    title="Before on one side of a line, after on the other, instead of laid over each other"
+                    onClick={() => setWipe(on => !on)}
+                  >
+                    {wipe() ? "Overlay" : "Wipe"}
+                  </button>
+                </>
+              )}
+            </Show>
+            <a class="text-slate-500 hover:text-slate-300" href={`#/regions${params.zone ? `/${params.zone}` : ""}`} title="Back to editing">
+              ✕
+            </a>
+          </span>
+          <Show when={comparison.error}>
+            <span class="text-red-500">{(comparison.error as Error).message}</span>
+          </Show>
+          <Show when={baseSide.error}>
+            <span class="text-red-500">base side: {(baseSide.error as Error).message}</span>
+          </Show>
+        </Show>
         <Show when={files()}>
           <span class="text-slate-400">
             {zones[zoneId()!]?.name ?? "?"} ({zoneId()}) · {spawns()?.length ?? 0} spawns
@@ -1363,7 +1544,8 @@ export default function RegionsPage() {
         </div>
       </Show>
 
-      <Show when={reviewing()}>
+      {/* A comparison says what it is reviewing in its own bar. */}
+      <Show when={reviewing() && !comparing()}>
         <div class="mt-3 flex flex-wrap items-center gap-2 text-sm bg-sky-900/40 border border-sky-700 rounded px-3 py-2">
           <span class="flex-grow">
             Reviewing <b>{repo()}</b> at <b>{ref()}</b>, read only.
@@ -1473,6 +1655,9 @@ export default function RegionsPage() {
                         roam={showRoam() && !roam.loading && !roam.error ? roam() : undefined}
                         nav={showNav() && !nav.loading && !nav.error ? nav() : undefined}
                         features={features.state === "ready" ? features() : undefined}
+                        compare={compareSides()}
+                        wipe={wipe()}
+                        onStepZone={stepZone}
                         onChange={(r, a, p) => {
                           pending = { regions: r, assign: a, paths: p };
                           // Compared against the last saved state, not by re-patching: this runs on

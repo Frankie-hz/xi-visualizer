@@ -208,15 +208,14 @@ try {
   await settle(ZONE_READY);
   assert.match(await text(), /Put back your unsaved edits/, "the edit survived the reload");
 
-  // the diff page opens a pull request by number, lists the zones it touched, and draws one
-  await page.goto(`http://localhost:${PORT}/xi-visualizer/#/regions-diff?pr=11610`, { waitUntil: "domcontentloaded" });
-  await settle(6000);
-  assert.match(await text(), /Implement Spawn Region for Barge Mobs/, "the pull request was found");
-  assert.match(await text(), /zones changed \(1\)/i, "and the zone it touched is listed");
-  await page.evaluate(() => [...document.querySelectorAll("div")].find(d => d.title?.endsWith("changed") && d.innerText.includes("phanauet_channel")).click());
+  // a pull request opens in the editor on the zone it touched, read only, with its changes listed
+  await page.goto(`http://localhost:${PORT}/xi-visualizer/#/regions?pr=11610`, { waitUntil: "domcontentloaded" });
   await settle(ZONE_READY);
-  assert.match(await text(), /Phanauet Channel · \d+ changes/, "the zone's changes were counted");
-  assert.ok(await page.evaluate(() => !!document.querySelector("canvas")), "and drawn");
+  assert.match(await text(), /Implement Spawn Region for Barge Mobs/, "the pull request was found");
+  assert.match(page.url(), /regions\/phanauet_channel\?/, "and the zone it touched was opened");
+  assert.match(await text(), /Changes \(\d+\)/, "its changes are counted in a tab of their own");
+  assert.match(await text(), /added, \d+ vertices/, "and listed");
+  assert.doesNotMatch(await text(), /No changes|Sign in to save/, "with nothing to save, since it is read only");
 
   assert.deepStrictEqual(errors, [], "no errors on the page");
   console.log("ok");

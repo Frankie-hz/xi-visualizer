@@ -32,10 +32,6 @@ export const routes: RouteDefinition[] = [
     component: lazy(() => import("./pages/regions")),
   },
   {
-    path: "/regions-diff",
-    component: lazy(() => import("./pages/regions_diff")),
-  },
-  {
     path: "**",
     component: lazy(() => import("./errors/404")),
   },

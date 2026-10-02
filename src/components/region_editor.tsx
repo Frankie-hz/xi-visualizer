@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import * as THREE from "three";
 import { Line2, LineGeometry, LineMaterial, LineSegments2, LineSegmentsGeometry, MapControls } from "three/examples/jsm/Addons.js";
+import { changeCount } from "../comparison";
 import zoneLineBoxes from "../data/zonelines.json";
 import { zoneOfFolder } from "../data/zones";
 import { inRing, signedArea } from "../geometry";
@@ -37,6 +38,8 @@ import { type TriggerArea, type ZoneLine, zoneLineBox } from "../zone_features";
 import { loadNavMesh } from "../zone_mesh";
 import { createCarve, type GrowPlan, type MergePlan, OBSTACLE_CELL, type RegionEntry } from "./carve";
 import { CarvePanel, PlanPanel } from "./carve_panels";
+import ChangesTab, { changeList } from "./changes_tab";
+import { type CompareFocus, type CompareSides, createCompare, STATUS_COLOR } from "./compare_overlay";
 import EditorMenu, { type MenuActions, type MenuTarget } from "./editor_menu";
 import { createHistory } from "./history";
 import HistoryTab from "./history_tab";
@@ -75,6 +78,12 @@ interface RegionEditorProps {
   onView?: (view: EditorView) => void;
   /** The zone's trigger areas and zone lines, from the server's files, to draw for reference. */
   features?: EditorFeatures;
+  /** Reviewing a change: both sides of this zone and the difference, drawn over the map. */
+  compare?: CompareSides;
+  /** Before and after split by a handle, instead of laid over each other. */
+  wipe?: boolean;
+  /** Step to the next or previous zone the change touches. */
+  onStepZone?: (dir: 1 | -1) => void;
 }
 
 /** What the server's files place in a zone besides its mobs. */
@@ -182,7 +191,7 @@ export default function RegionEditor(props: RegionEditorProps) {
   const [mirror, setMirror] = createSignal<string[]>([]); // mobs walking the same route as the walker
   const [filter, setFilter] = createSignal("");
   const [hideAssigned, setHideAssigned] = createSignal(true);
-  const [tab, setTab] = createSignal<"regions" | "paths" | "review" | "history">("regions");
+  const [tab, setTab] = createSignal<"changes" | "regions" | "paths" | "review" | "history">(props.compare ? "changes" : "regions");
   const [terrainColors, setTerrainColors] = createSignal(true);
   // The floor being worked on, as a map sheet id. Null is the whole zone, which is all an outdoor
   // zone ever has.
@@ -654,6 +663,38 @@ export default function RegionEditor(props: RegionEditorProps) {
     flash,
     setHoleHover,
   });
+
+  // --- reviewing a change: what it does to this zone, drawn over the map (see compare_overlay.ts) ---
+  const [compareFocus, setCompareFocus] = createSignal<CompareFocus | undefined>();
+  const compare = createCompare({
+    sides: () => props.compare,
+    focus: compareFocus,
+    wipe: () => !!props.wipe,
+    scene,
+    camera,
+    controls: () => controls,
+    canvas: () => canvasElement,
+  });
+  // The base side arrives after the map does; when it does, the changes are what to look at.
+  createEffect(on(() => !!props.compare, (has, had) => has && !had && setTab("changes")));
+  // Picking a region on the map is picking it in the list, and the other way round.
+  createEffect(on(activeName, name => props.compare && name && setCompareFocus({ name }), { defer: true }));
+  const focusChange = (f: CompareFocus) => {
+    setCompareFocus(f);
+    const name = f.name && regions().some(r => r.name === f.name) ? f.name : null;
+    if (name !== activeName()) setActiveName(name);
+  };
+  const stepChange = (dir: 1 | -1) => {
+    const sides = props.compare;
+    if (!sides) return;
+    const list = changeList(sides);
+    if (!list.length) return;
+    const now = compareFocus();
+    const at = list.findIndex(c => (c.name && c.name === now?.name) || (c.spawn && c.spawn === now?.spawn));
+    focusChange(list[at < 0 ? (dir > 0 ? 0 : list.length - 1) : (at + dir + list.length) % list.length]);
+  };
+  const statusColour = (name: string) => css(STATUS_COLOR[compare.statuses()[name] ?? "unchanged"]);
+  const legLabelRefs: HTMLDivElement[] = [];
 
   const editActive = (fn: (r: RegionEntry) => void) => {
     const name = activeName();
@@ -1207,6 +1248,8 @@ export default function RegionEditor(props: RegionEditorProps) {
     setFloors(floorIndex.floors);
     setFloor(null);
     scene().add(overlay);
+    // Reviewing a change draws the regions itself, in the colours of the change.
+    createEffect(() => (overlay.visible = !props.compare));
     onCleanup(dispose);
   });
 
@@ -2105,6 +2148,7 @@ export default function RegionEditor(props: RegionEditorProps) {
         for (const m of overlayMaterials.values()) if (m instanceof LineMaterial) m.resolution.set(w, h);
         stalkMaterial.resolution.set(w, h);
         stepReplay(dt);
+        compare.onFrame(dt);
         flashFrame(canvasElement.clientWidth, canvasElement.clientHeight);
         if (glow) {
           const beat = 0.5 + 0.5 * Math.sin(performance.now() / 260);
@@ -2116,6 +2160,7 @@ export default function RegionEditor(props: RegionEditorProps) {
       onAfterRender: () => placeLabels(),
     });
     controls = viewer.controls;
+    viewer.renderer.localClippingEnabled = true; // for the comparison's wipe
 
     const raycaster = new THREE.Raycaster();
     raycaster.params.Points = { threshold: 2 };
@@ -2461,6 +2506,9 @@ export default function RegionEditor(props: RegionEditorProps) {
         if (key === "y" || (key === "z" && ev.shiftKey)) return (ev.preventDefault(), redo());
         return;
       }
+      if (props.compare && (ev.key === "j" || ev.key === "k")) return stepChange(ev.key === "j" ? 1 : -1);
+      if (props.compare && (ev.key === "]" || ev.key === "[")) return props.onStepZone?.(ev.key === "]" ? 1 : -1);
+      if (props.compare && ev.key === "Escape" && compareFocus()) setCompareFocus(undefined);
       if ((ev.key === "PageDown" || ev.key === "PageUp") && mode() !== "draw") {
         ev.preventDefault();
         return stepRegion(ev.key === "PageDown" ? 1 : -1);
@@ -2611,6 +2659,10 @@ export default function RegionEditor(props: RegionEditorProps) {
     let spawnLabelsShown = true;
 
     const placeLabels = () => {
+      compare.legs().forEach((leg, i) => {
+        const el = legLabelRefs[i];
+        if (el) place(el, [leg.dot.position.x, leg.dot.position.y - 4, leg.dot.position.z]);
+      });
       for (const label of featureLabels()) {
         const el = featureLabelRefs.get(label.key);
         if (el) place(el, label.at);
@@ -2876,6 +2928,24 @@ export default function RegionEditor(props: RegionEditorProps) {
       />
       <div class="flex-1 relative">
         <canvas class="block w-full h-full outline-none" ref={canvasElement!} />
+        <Show when={props.compare && props.wipe}>
+          <div class="absolute top-0 bottom-0 w-0.5 -translate-x-1/2 bg-white/80 pointer-events-none z-10" style={{ left: `${compare.split() * 100}%` }} />
+          <div
+            class="absolute top-12 -translate-x-full pr-2 text-xs font-bold text-slate-100 pointer-events-none z-10"
+            style={{ left: `${compare.split() * 100}%` }}
+          >
+            before
+          </div>
+          <div class="absolute top-12 pl-2 text-xs font-bold text-slate-100 pointer-events-none z-10" style={{ left: `${compare.split() * 100}%` }}>after</div>
+          <div
+            class="absolute top-1/2 z-10 w-7 h-12 -translate-x-1/2 -translate-y-1/2 rounded-md bg-white text-slate-900 flex items-center justify-center cursor-ew-resize select-none shadow-lg touch-none"
+            style={{ left: `${compare.split() * 100}%` }}
+            title="Drag to wipe between before and after"
+            onPointerDown={compare.dragWipe}
+          >
+            ⇔
+          </div>
+        </Show>
         <div class="absolute inset-0 overflow-hidden pointer-events-none">
           <For each={featureLabels()}>
             {label => {
@@ -2927,6 +2997,16 @@ export default function RegionEditor(props: RegionEditorProps) {
               </>
             )}
           </Show>
+          <For each={compare.legs()}>
+            {(leg, i) => (
+              <div
+                ref={el => (legLabelRefs[i()] = el)}
+                class="absolute top-0 left-0 hidden whitespace-nowrap text-xs px-1.5 py-0.5 rounded bg-slate-900/85 text-slate-100"
+              >
+                {leg.text}
+              </div>
+            )}
+          </For>
           <For each={regions()}>
             {r => {
               onCleanup(() => labelRefs.delete(r.name));
@@ -2938,7 +3018,10 @@ export default function RegionEditor(props: RegionEditorProps) {
                   class="absolute top-0 left-0 hidden whitespace-nowrap text-xs font-bold px-1.5 py-0.5 rounded bg-slate-900/75 cursor-pointer hover:bg-slate-900 hover:ring-1 hover:ring-slate-500"
                   // while drawing, the map owns every click: a label here would silently eat one
                   classList={{ "pointer-events-auto": mode() !== "draw", "pointer-events-none": mode() === "draw" }}
-                  style={{ color: cssOf(r.name) }}
+                  style={{
+                    color: props.compare ? statusColour(r.name) : cssOf(r.name),
+                    opacity: props.compare && compare.statuses()[r.name] === "unchanged" ? 0.6 : 1,
+                  }}
                   title={`Select ${r.name}, right-click for more`}
                   onClick={() => (setActiveName(r.name), zoomTo(r.name))}
                   onContextMenu={e => (e.preventDefault(), setMenu({ kind: "region", name: r.name, x: e.clientX, y: e.clientY }))}
@@ -3219,6 +3302,19 @@ export default function RegionEditor(props: RegionEditorProps) {
 
       <div class="w-80 flex flex-col bg-slate-800 rounded-lg p-2 overflow-hidden text-sm">
         <div class="flex gap-1 mb-2" role="tablist">
+          <Show when={props.compare}>
+            {sides => (
+              <button
+                class="flex-1 px-1 py-1 rounded text-xs whitespace-nowrap"
+                classList={{ "bg-slate-600": tab() === "changes", "bg-slate-700 text-slate-400": tab() !== "changes" }}
+                role="tab"
+                aria-selected={tab() === "changes"}
+                onClick={() => setTab("changes")}
+              >
+                Changes ({changeCount(sides().diff)})
+              </button>
+            )}
+          </Show>
           <button
             class="flex-1 px-1 py-1 rounded text-xs whitespace-nowrap"
             classList={{ "bg-slate-600": tab() === "regions", "bg-slate-700 text-slate-400": tab() !== "regions" }}
@@ -3258,6 +3354,13 @@ export default function RegionEditor(props: RegionEditorProps) {
           </button>
         </div>
 
+        <Show when={tab() === "changes" && props.compare}>
+          {sides => (
+            <div class="flex-1 overflow-y-auto">
+              <ChangesTab sides={sides()} focus={compareFocus()} onFocus={focusChange} hasTrail={id => !!props.roam?.ranges[id]} />
+            </div>
+          )}
+        </Show>
         <Show when={tab() === "history"}>
           <HistoryTab undoStack={undoStack()} redoStack={redoStack()} onUndo={undo} onRedo={redo} onRewind={rewindTo} />
         </Show>
