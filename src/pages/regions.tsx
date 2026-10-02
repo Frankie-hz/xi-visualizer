@@ -1241,7 +1241,7 @@ export default function RegionsPage() {
                     title="Before on one side of a line, after on the other, instead of laid over each other"
                     onClick={() => setWipe(on => !on)}
                   >
-                    {wipe() ? "Overlay" : "Wipe"}
+                    {wipe() ? "Overlay" : "Split"}
                   </button>
                 </>
               )}

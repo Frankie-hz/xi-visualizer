@@ -2940,7 +2940,7 @@ export default function RegionEditor(props: RegionEditorProps) {
           <div
             class="absolute top-1/2 z-10 w-7 h-12 -translate-x-1/2 -translate-y-1/2 rounded-md bg-white text-slate-900 flex items-center justify-center cursor-ew-resize select-none shadow-lg touch-none"
             style={{ left: `${compare.split() * 100}%` }}
-            title="Drag to wipe between before and after"
+            title="Drag to move the split between before and after"
             onPointerDown={compare.dragWipe}
           >
             ⇔
