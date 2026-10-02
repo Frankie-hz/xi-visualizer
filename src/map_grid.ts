@@ -32,6 +32,9 @@ export interface MapGrid {
   lines: [number, number, number, number][];
   /** The middle of every square, with the name <pos> gives it. */
   squares: { name: string; x: number; z: number; }[];
+  /** The middle of each column, A to O, west to east, and of each row, 1 to 15, north to south. */
+  columns: { name: string; x: number; }[];
+  rows: { name: string; z: number; }[];
   /** Yalms across one square. */
   size: number;
 }
@@ -53,7 +56,9 @@ export function gridOf(zone: number, floor: number | null): MapGrid | null {
   for (let col = 0; col < 15; col++) {
     for (let row = 0; row < 15; row++) squares.push({ name: `${String.fromCharCode(65 + col)}-${row + 1}`, x: toX(32 + 32 * col), z: toZ(32 + 32 * row) });
   }
-  return { lines, squares, size: (32 * 1280) / scale };
+  const columns = Array.from({ length: 15 }, (_, k) => ({ name: String.fromCharCode(65 + k), x: toX(32 + 32 * k) }));
+  const rows = Array.from({ length: 15 }, (_, k) => ({ name: String(k + 1), z: toZ(32 + 32 * k) }));
+  return { lines, squares, columns, rows, size: (32 * 1280) / scale };
 }
 
 /** The game's map sheet for a zone's floor, and where its corners fall in zone coordinates. */

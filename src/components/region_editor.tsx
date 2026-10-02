@@ -1427,7 +1427,7 @@ export default function RegionEditor(props: RegionEditorProps) {
       material.dispose();
     });
   });
-  const gridLabelRefs = new Map<string, HTMLDivElement>();
+  const gridHeaderRefs = new Map<string, HTMLDivElement>();
   createEffect(() => {
     const sh = sheet();
     if (!sh) return;
@@ -2618,11 +2618,27 @@ export default function RegionEditor(props: RegionEditorProps) {
       }
       const g = grid();
       if (g) {
-        const big = g.size / worldPerPixel(camera(), controls!.target, canvasElement.clientHeight) > 90;
+        // The headers sit on the bottom and right edges of the view, like the frame of the game's map
+        // (the top and left are the toolbar's), each slid
+        // along to where its column or row crosses the middle of the view.
         const y = viewGround()?.y ?? 0;
-        for (const sq of g.squares) {
-          const el = gridLabelRefs.get(sq.name);
-          if (el) place(el, big ? [sq.x, y, sq.z] : null);
+        const t = controls!.target;
+        const w = canvasElement.clientWidth, h = canvasElement.clientHeight;
+        const toScreen = (x: number, z: number) => {
+          const v = new THREE.Vector3(x, -y, -z).project(camera());
+          return { x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h, ok: v.z < 1 };
+        };
+        for (const col of g.columns) {
+          const el = gridHeaderRefs.get(`c${col.name}`);
+          const p = toScreen(col.x, -t.z);
+          const show = p.ok && p.x > 10 && p.x < w - 30;
+          if (el) (el.style.display = show ? "block" : "none", show && (el.style.transform = `translate(-50%, 0) translate(${p.x}px, 0)`));
+        }
+        for (const row of g.rows) {
+          const el = gridHeaderRefs.get(`r${row.name}`);
+          const p = toScreen(t.x, row.z);
+          const show = p.ok && p.y > 40 && p.y < h - 30;
+          if (el) (el.style.display = show ? "block" : "none", show && (el.style.transform = `translate(0, -50%) translate(0, ${p.y}px)`));
         }
       }
       const only = activeName();
@@ -2876,20 +2892,42 @@ export default function RegionEditor(props: RegionEditorProps) {
               );
             }}
           </For>
-          <For each={grid()?.squares ?? []}>
-            {sq => {
-              onCleanup(() => gridLabelRefs.delete(sq.name));
-              return (
-                <div
-                  ref={el => gridLabelRefs.set(sq.name, el)}
-                  class="absolute left-0 top-0 text-sm font-bold text-amber-200/50 select-none"
-                  style={{ display: "none" }}
-                >
-                  {sq.name}
-                </div>
-              );
-            }}
-          </For>
+          <Show when={grid()}>
+            {g => (
+              <>
+                <div class="absolute left-0 right-0 bottom-0 h-6 bg-slate-900/60" />
+                <div class="absolute top-0 bottom-0 right-0 w-7 bg-slate-900/60" />
+                <For each={g().columns}>
+                  {col => {
+                    onCleanup(() => gridHeaderRefs.delete(`c${col.name}`));
+                    return (
+                      <div
+                        ref={el => gridHeaderRefs.set(`c${col.name}`, el)}
+                        class="absolute left-0 bottom-1 text-xs font-bold text-amber-200 select-none"
+                        style={{ display: "none" }}
+                      >
+                        {col.name}
+                      </div>
+                    );
+                  }}
+                </For>
+                <For each={g().rows}>
+                  {row => {
+                    onCleanup(() => gridHeaderRefs.delete(`r${row.name}`));
+                    return (
+                      <div
+                        ref={el => gridHeaderRefs.set(`r${row.name}`, el)}
+                        class="absolute top-0 right-0 w-7 text-center text-xs font-bold text-amber-200 select-none"
+                        style={{ display: "none" }}
+                      >
+                        {row.name}
+                      </div>
+                    );
+                  }}
+                </For>
+              </>
+            )}
+          </Show>
           <For each={regions()}>
             {r => {
               onCleanup(() => labelRefs.delete(r.name));
@@ -3128,7 +3166,7 @@ export default function RegionEditor(props: RegionEditorProps) {
             onPreview={setArmed}
           />
         </Show>
-        <Show when={cursor()}>{at => <CursorReadout at={at()} grid={gridAt(at().x, at().y, at().z)} />}</Show>
+        <Show when={cursor()}>{at => <CursorReadout at={at()} grid={gridAt(at().x, at().y, at().z)} raised={!!grid()} />}</Show>
         <Show when={menu()}>
           {target => <EditorMenu target={target()} ref={el => (menuElement = el)} actions={menuActions} />}
         </Show>
