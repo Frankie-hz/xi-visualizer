@@ -1,6 +1,6 @@
 // node src/zone_features.test.ts  (run by `pnpm test`)
 import assert from "node:assert";
-import { parseTriggerAreas, parseZoneLines } from "./zone_features.ts";
+import { parseTriggerAreas, parseZoneLines, zoneLineBox } from "./zone_features.ts";
 
 const lua = `
 zoneObject.onInitialize = function(zone)
@@ -43,5 +43,14 @@ assert.deepStrictEqual(lines[0], {
 });
 assert.strictEqual(lines[1].facing, undefined);
 assert.deepStrictEqual(parseZoneLines("type: [outdoors]\n"), [], "a zone with no zone lines");
+
+// A zone line's box, by id and centre, or by id and the nearest centre when the server's has moved.
+{
+  const boxes = { "z2s0 -119.1 280.9": [-119.065, -65.707, 280.921, 2.347, 8.7, 10, 25], "z2s0 500.0 500.0": [500, 0, 500, 0, 1, 1, 1] };
+  const line = lines[0];
+  assert.deepStrictEqual(zoneLineBox(line, boxes), { centre: [-119.065, -65.707, 280.921], rotation: 2.347, size: [8.7, 10, 25] });
+  assert.strictEqual(zoneLineBox({ ...line, from: [-117, -65, 282] }, boxes)?.rotation, 2.347, "a nudged centre still finds its box");
+  assert.strictEqual(zoneLineBox({ ...line, from: [0, 0, 0] }, boxes), null, "nothing near, nothing drawn");
+}
 
 console.log("ok");

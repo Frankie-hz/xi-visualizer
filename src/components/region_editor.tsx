@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import * as THREE from "three";
 import { Line2, LineGeometry, LineMaterial, LineSegments2, LineSegmentsGeometry, MapControls } from "three/examples/jsm/Addons.js";
+import zoneLineBoxes from "../data/zonelines.json";
 import { zoneOfFolder } from "../data/zones";
 import { densityBands } from "../density";
 import { inRing, signedArea } from "../geometry";
@@ -33,7 +34,7 @@ import { indexNav, simulate, SNAP_TOLERANCE } from "../spawn_sim";
 import { COLORS, contrastHue, css } from "../theme";
 import type { ZoneData } from "../types";
 import { copyText, isTyping } from "../util";
-import type { TriggerArea, ZoneLine } from "../zone_features";
+import { type TriggerArea, type ZoneLine, zoneLineBox } from "../zone_features";
 import { loadNavMesh } from "../zone_mesh";
 import { createCarve, type GrowPlan, type MergePlan, OBSTACLE_CELL, type RegionEntry } from "./carve";
 import { CarvePanel, PlanPanel } from "./carve_panels";
@@ -1472,7 +1473,7 @@ export default function RegionEditor(props: RegionEditorProps) {
     const f = zoneInfo();
     if (!f) return [];
     const y = untrack(viewGround)?.y ?? 0;
-    return [
+    const items = [
       ...f.triggers.areas.map(a => ({
         key: `t${a.id}:${a.kind}`,
         text: `trigger ${a.id}`,
@@ -1486,6 +1487,16 @@ export default function RegionEditor(props: RegionEditorProps) {
       ...f.lines.map(l => ({ key: `l${l.id}`, text: `to ${placeName(l.to)}`, tone: "text-cyan-300", at: l.from })),
       ...f.arrivals.map(l => ({ key: `a${l.comesFrom}:${l.id}`, text: `from ${placeName(l.comesFrom)}`, tone: "text-green-300", at: l.at })),
     ];
+    // Labels within a few yalms of each other share one, a line each: a gate's way out and the
+    // way in beside it, or two zone lines into the same corridor, were printed on top of each other.
+    const groups: { key: string; at: Vertex; lines: { text: string; tone: string; }[]; }[] = [];
+    for (const item of items) {
+      const near = groups.find(g => Math.hypot(g.at[0] - item.at[0], g.at[2] - item.at[2]) < 12 && Math.abs(g.at[1] - item.at[1]) < 8);
+      const line = { text: item.text, tone: item.tone };
+      if (!near) groups.push({ key: item.key, at: item.at, lines: [line] });
+      else if (!near.lines.some(l => l.text === line.text)) near.lines.push(line);
+    }
+    return groups;
   });
   const featureLabelRefs = new Map<string, HTMLDivElement>();
 
@@ -1566,12 +1577,26 @@ export default function RegionEditor(props: RegionEditorProps) {
       else circle(pink, a.x, groundBelow(a.x, a.z, y), a.z, a.radius);
     }
     // A zone line's own size is the client's; a small diamond marks where it is.
+    // A box turned about its middle: the eight corners, then its twelve edges.
+    const box = (into: number[], [cx, cy, cz]: Vertex, [sx, sy, sz]: Vertex, turn: number) => {
+      const c = Math.cos(turn), sn = Math.sin(turn);
+      const at = (u: number, v: number, w: number): Vertex => [cx + u * c - w * sn, cy + v, cz + u * sn + w * c];
+      const ring = (v: number) => [at(-sx / 2, v, -sz / 2), at(sx / 2, v, -sz / 2), at(sx / 2, v, sz / 2), at(-sx / 2, v, sz / 2)];
+      const top = ring(-sy / 2), bottom = ring(sy / 2);
+      loop(into, top);
+      loop(into, bottom);
+      top.forEach((p, i) => segment(into, p, bottom[i]));
+    };
     for (const l of f.lines) {
-      loop(cyan, [[l.from[0] + 3, l.from[1], l.from[2]], [l.from[0], l.from[1], l.from[2] + 3], [l.from[0] - 3, l.from[1], l.from[2]], [
-        l.from[0],
-        l.from[1],
-        l.from[2] - 3,
-      ]]);
+      const found = zoneLineBox(l, zoneLineBoxes as Record<string, number[]>);
+      // The client turns the other way round from the server's trigger boxes.
+      if (found) box(cyan, found.centre, found.size, -found.rotation);
+      // Not in the client's data: a small diamond where the server has it.
+      else {loop(cyan, [[l.from[0] + 3, l.from[1], l.from[2]], [l.from[0], l.from[1], l.from[2] + 3], [l.from[0] - 3, l.from[1], l.from[2]], [
+          l.from[0],
+          l.from[1],
+          l.from[2] - 3,
+        ]]);}
     }
     for (const l of f.arrivals) {
       const [w, d] = [l.scale[0] / 2, l.scale[1] / 2];
@@ -2892,10 +2917,10 @@ export default function RegionEditor(props: RegionEditorProps) {
               return (
                 <div
                   ref={el => featureLabelRefs.set(label.key, el)}
-                  class={`absolute left-0 top-0 text-xs font-bold whitespace-nowrap select-none bg-slate-900/70 rounded px-1 ${label.tone}`}
+                  class="absolute left-0 top-0 text-xs font-bold whitespace-nowrap select-none bg-slate-900/70 rounded px-1 leading-tight"
                   style={{ display: "none" }}
                 >
-                  {label.text}
+                  <For each={label.lines}>{line => <div class={line.tone}>{line.text}</div>}</For>
                 </div>
               );
             }}

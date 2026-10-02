@@ -63,3 +63,32 @@ export function parseZoneLines(yaml: string): ZoneLine[] {
     }];
   });
 }
+
+/** A zone line's trigger box as the client has it: centre, turn about the vertical, and full size. */
+export interface ZoneLineBox {
+  centre: Vertex;
+  /** Radians about y. */
+  rotation: number;
+  size: Vertex;
+}
+
+/**
+ * The client's box for a zone line of LandSandBoat's, from src/data/zonelines.json (see
+ * scripts/extract_zonelines.py). Matched by id and centre; a centre LandSandBoat has nudged takes
+ * the nearest box with the same id within a few yalms.
+ */
+export function zoneLineBox(line: ZoneLine, boxes: Record<string, number[]>): ZoneLineBox | null {
+  const [x, , z] = line.from;
+  let found = boxes[`${line.id} ${x.toFixed(1)} ${z.toFixed(1)}`];
+  if (!found) {
+    let near = 5;
+    for (const [key, box] of Object.entries(boxes)) {
+      if (!key.startsWith(`${line.id} `)) continue;
+      const d = Math.hypot(box[0] - x, box[2] - z);
+      if (d < near) (near = d, found = box);
+    }
+  }
+  if (!found) return null;
+  const [bx, by, bz, rotation, sx, sy, sz] = found;
+  return { centre: [bx, by, bz], rotation, size: [sx, sy, sz] };
+}
